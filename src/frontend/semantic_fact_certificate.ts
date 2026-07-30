@@ -5,6 +5,7 @@ import {
   integer_type_from_name,
   integer_val_type,
   type IntegerType,
+  normalize_integer,
 } from "../integer.ts";
 import type { FactProposition } from "./fact_graph.ts";
 import { proof_limits } from "./proof_limits.ts";
@@ -41,6 +42,7 @@ type VerificationState = {
   block: SemanticBlockId;
   predecessor: SemanticBlockId | undefined;
   booleans: ReadonlyMap<ValueId, boolean>;
+  aliases: ReadonlyMap<ValueId, ValueId>;
   premises: readonly SemanticMachineRequirement[];
   visited: ReadonlySet<SemanticBlockId>;
 };
@@ -160,6 +162,7 @@ function verify_semantic_paths(
     block: control_flow.entry,
     predecessor: undefined,
     booleans: new Map(),
+    aliases: new Map(),
     premises: [],
     visited: new Set(),
   }];
@@ -176,19 +179,26 @@ function verify_semantic_paths(
     if (visited.size > proof_limits.compiler_search_depth) return "rejected";
     const block = blocks.get(state.block);
     if (block === undefined) return "rejected";
-    const booleans = transfer_boolean_values(
+    const transferred = transfer_semantic_values(
       block,
       state.predecessor,
       state.booleans,
+      state.aliases,
+      state.premises,
+      ranges,
+      producers,
       target.node,
     );
+    const booleans = transferred.booleans;
+    const aliases = transferred.aliases;
+    const path_premises = transferred.premises;
     let reached_call = false;
     for (const node of block.nodes) {
       steps += 1;
       if (steps > proof_limits.compiler_search_steps) return "rejected";
       if (node !== target.node) continue;
       reached_call = true;
-      if (premises_are_contradictory(state.premises, ranges)) break;
+      if (premises_are_contradictory(path_premises, ranges)) break;
       if (requirement === undefined) {
         feasible_paths += 1;
         break;
@@ -197,10 +207,14 @@ function verify_semantic_paths(
         goal_value !== undefined && goal_range !== undefined,
         "Semantic fact goal lost its machine range.",
       );
+      const path_goal_value = resolved_alias(goal_value, aliases);
+      if (path_goal_value === undefined) return "rejected";
+      const path_goal_range = ranges.get(path_goal_value);
+      if (path_goal_range === undefined) return "rejected";
       const interval = interval_from_premises(
-        state.premises,
-        goal_value,
-        goal_range,
+        path_premises,
+        path_goal_value,
+        path_goal_range,
       );
       if (interval.contradiction) break;
       feasible_paths += 1;
@@ -221,7 +235,8 @@ function verify_semantic_paths(
               block: successor,
               predecessor: block.id,
               booleans,
-              premises: state.premises,
+              aliases,
+              premises: path_premises,
               visited,
             },
           )
@@ -252,7 +267,7 @@ function verify_semantic_paths(
       ) {
         continue;
       }
-      const premises = [...state.premises];
+      const premises = [...path_premises];
       if (comparison !== undefined) {
         const premise = verified_comparison_requirement(
           comparison,
@@ -260,7 +275,9 @@ function verify_semantic_paths(
           ranges,
           producers,
         );
-        if (premise !== undefined) premises.push(premise);
+        if (premise !== undefined) {
+          premises.push(aliased_machine_requirement(premise, aliases));
+        }
       }
       if (
         !enqueue_verification_state(
@@ -270,6 +287,7 @@ function verify_semantic_paths(
             block: successor,
             predecessor: block.id,
             booleans,
+            aliases,
             premises,
             visited,
           },
@@ -394,13 +412,23 @@ function enqueue_verification_state(
   return true;
 }
 
-function transfer_boolean_values(
+function transfer_semantic_values(
   block: SemanticBlock,
   predecessor: SemanticBlockId | undefined,
   current: ReadonlyMap<ValueId, boolean>,
+  current_aliases: ReadonlyMap<ValueId, ValueId>,
+  current_premises: readonly SemanticMachineRequirement[],
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
   target: SemanticNode,
-): ReadonlyMap<ValueId, boolean> {
+): {
+  booleans: ReadonlyMap<ValueId, boolean>;
+  aliases: ReadonlyMap<ValueId, ValueId>;
+  premises: readonly SemanticMachineRequirement[];
+} {
   const booleans = new Map(current);
+  const aliases = new Map(current_aliases);
+  const premises = [...current_premises];
   for (const node of block.nodes) {
     if (node === target) break;
     const output = node.outputs[0];
@@ -412,6 +440,21 @@ function transfer_boolean_values(
       booleans.set(output, node.operation.value);
       continue;
     }
+    if (node.operation.tag === "constant") {
+      const range = ranges.get(output);
+      const constant = verified_integer_constant(output, producers);
+      if (range !== undefined && constant !== undefined) {
+        premises.push({
+          tag: "fact",
+          proposition: {
+            tag: "equal",
+            value: output,
+            expected: normalize_integer(range, constant),
+          },
+        });
+      }
+      continue;
+    }
     if (node.operation.tag !== "phi" || predecessor === undefined) continue;
     const incoming = node.operation.incoming.find((candidate) =>
       candidate.predecessor === predecessor
@@ -419,8 +462,49 @@ function transfer_boolean_values(
     if (incoming === undefined) continue;
     const value = booleans.get(incoming.value);
     if (value !== undefined) booleans.set(output, value);
+    const incoming_value = resolved_alias(incoming.value, aliases);
+    if (incoming_value !== undefined) aliases.set(output, incoming_value);
   }
-  return booleans;
+  return { booleans, aliases, premises };
+}
+
+function aliased_machine_requirement(
+  requirement: SemanticMachineRequirement,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): SemanticMachineRequirement {
+  const value = requirement_value(requirement);
+  const resolved = resolved_alias(value, aliases);
+  if (resolved === undefined || resolved === value) return requirement;
+  if (requirement.tag === "exclusion") {
+    return {
+      tag: "exclusion",
+      value: resolved,
+      expected: requirement.expected,
+    };
+  }
+  return {
+    tag: "fact",
+    proposition: {
+      ...requirement.proposition,
+      value: resolved,
+    },
+  };
+}
+
+function resolved_alias(
+  value: ValueId,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): ValueId | undefined {
+  const visited = new Set<ValueId>();
+  let current = value;
+  while (aliases.has(current)) {
+    if (visited.has(current)) return undefined;
+    visited.add(current);
+    const next = aliases.get(current);
+    if (next === undefined) return undefined;
+    current = next;
+  }
+  return current;
 }
 
 function verified_comparison_requirement(
@@ -542,27 +626,29 @@ function verified_comparison_truth(
     return undefined;
   }
   const primitive = comparison.operation.name;
-  if (primitive.endsWith(".eq")) return left_constant === right_constant;
-  if (primitive.endsWith(".ne")) return left_constant !== right_constant;
+  const normalized_left = normalize_integer(left_range, left_constant);
+  const normalized_right = normalize_integer(right_range, right_constant);
+  if (primitive.endsWith(".eq")) return normalized_left === normalized_right;
+  if (primitive.endsWith(".ne")) return normalized_left !== normalized_right;
   if (
     primitive.endsWith(".lt_s") || primitive.endsWith(".lt_u")
   ) {
-    return left_constant < right_constant;
+    return normalized_left < normalized_right;
   }
   if (
     primitive.endsWith(".le_s") || primitive.endsWith(".le_u")
   ) {
-    return left_constant <= right_constant;
+    return normalized_left <= normalized_right;
   }
   if (
     primitive.endsWith(".gt_s") || primitive.endsWith(".gt_u")
   ) {
-    return left_constant > right_constant;
+    return normalized_left > normalized_right;
   }
   if (
     primitive.endsWith(".ge_s") || primitive.endsWith(".ge_u")
   ) {
-    return left_constant >= right_constant;
+    return normalized_left >= normalized_right;
   }
   return undefined;
 }
@@ -585,7 +671,7 @@ function verified_constant_comparison(
     return verified_value_constant_requirement(
       relation,
       left,
-      right_constant,
+      normalize_integer(right_range, right_constant),
       false,
     );
   }
@@ -596,7 +682,7 @@ function verified_constant_comparison(
     return verified_value_constant_requirement(
       relation,
       right,
-      left_constant,
+      normalize_integer(left_range, left_constant),
       true,
     );
   }

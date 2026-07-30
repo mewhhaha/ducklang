@@ -1,4 +1,8 @@
-import { integer_type_from_name, integer_val_type } from "../integer.ts";
+import {
+  integer_type_from_name,
+  integer_val_type,
+  normalize_integer,
+} from "../integer.ts";
 import {
   assume_machine_fact,
   exclude_machine_fact,
@@ -32,6 +36,7 @@ type PathState = {
   predecessor: SemanticBlockId | undefined;
   domain: MachineFactDomain;
   booleans: ReadonlyMap<ValueId, boolean>;
+  aliases: ReadonlyMap<ValueId, ValueId>;
   visited: ReadonlySet<SemanticBlockId>;
 };
 
@@ -109,6 +114,7 @@ function semantic_cfg_machine_path_result(
     predecessor: undefined,
     domain: machine_fact_domain(ranges),
     booleans: new Map(),
+    aliases: new Map(),
     visited: new Set(),
   }];
   let paths = 0;
@@ -126,6 +132,7 @@ function semantic_cfg_machine_path_result(
     if (block === undefined) return "unknown";
     let domain = state.domain;
     let booleans = new Map(state.booleans);
+    let aliases = new Map(state.aliases);
     for (const node of block.nodes) {
       steps += 1;
       if (steps > proof_limits.compiler_search_steps) return "unknown";
@@ -133,7 +140,10 @@ function semantic_cfg_machine_path_result(
         paths += 1;
         if (
           requirement !== undefined &&
-          !machine_requirement_holds(domain, requirement)
+          !machine_requirement_holds(
+            domain,
+            aliased_machine_requirement(requirement, aliases),
+          )
         ) {
           return "unproved";
         }
@@ -144,9 +154,11 @@ function semantic_cfg_machine_path_result(
         state.predecessor,
         domain,
         booleans,
+        aliases,
       );
       domain = transferred.domain;
       booleans = transferred.booleans;
+      aliases = transferred.aliases;
     }
     if (block.id === target.block.id) continue;
     if (!domain.reachable) continue;
@@ -162,6 +174,7 @@ function semantic_cfg_machine_path_result(
               predecessor: block.id,
               domain,
               booleans,
+              aliases,
               visited,
             },
           )
@@ -196,7 +209,7 @@ function semantic_cfg_machine_path_result(
         if (branch_requirement !== undefined) {
           branch_domain = assume_machine_requirement(
             domain,
-            branch_requirement,
+            aliased_machine_requirement(branch_requirement, aliases),
           );
         }
       }
@@ -210,6 +223,7 @@ function semantic_cfg_machine_path_result(
             predecessor: block.id,
             domain: branch_domain,
             booleans,
+            aliases,
             visited,
           },
         )
@@ -284,43 +298,107 @@ function transfer_semantic_node(
   predecessor: SemanticBlockId | undefined,
   domain: MachineFactDomain,
   booleans: ReadonlyMap<ValueId, boolean>,
-): { domain: MachineFactDomain; booleans: Map<ValueId, boolean> } {
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): {
+  domain: MachineFactDomain;
+  booleans: Map<ValueId, boolean>;
+  aliases: Map<ValueId, ValueId>;
+} {
   const next_booleans = new Map(booleans);
+  const next_aliases = new Map(aliases);
   if (node.operation.tag === "constant") {
     const output = node.outputs[0];
-    if (output === undefined) return { domain, booleans: next_booleans };
+    if (output === undefined) {
+      return { domain, booleans: next_booleans, aliases: next_aliases };
+    }
     if (typeof node.operation.value === "boolean") {
       next_booleans.set(output, node.operation.value);
-      return { domain, booleans: next_booleans };
+      return { domain, booleans: next_booleans, aliases: next_aliases };
     }
     const constant = integer_constant(node.operation.value);
-    if (constant === undefined || !domain.ranges.has(output)) {
-      return { domain, booleans: next_booleans };
+    const range = domain.ranges.get(output);
+    if (constant === undefined || range === undefined) {
+      return { domain, booleans: next_booleans, aliases: next_aliases };
     }
     return {
       domain: assume_machine_fact(domain, {
         tag: "equal",
         value: output,
-        expected: constant,
+        expected: normalize_integer(range, constant),
       }),
       booleans: next_booleans,
+      aliases: next_aliases,
     };
   }
   if (node.operation.tag !== "phi" || predecessor === undefined) {
-    return { domain, booleans: next_booleans };
+    return { domain, booleans: next_booleans, aliases: next_aliases };
   }
   const incoming = node.operation.incoming.find((candidate) =>
     candidate.predecessor === predecessor
   );
   const output = node.outputs[0];
   if (incoming === undefined || output === undefined) {
-    return { domain, booleans: next_booleans };
+    return { domain, booleans: next_booleans, aliases: next_aliases };
   }
   const incoming_boolean = next_booleans.get(incoming.value);
   if (incoming_boolean !== undefined) {
     next_booleans.set(output, incoming_boolean);
   }
-  return { domain, booleans: next_booleans };
+  const incoming_value = resolved_alias(incoming.value, next_aliases);
+  if (incoming_value !== undefined) {
+    next_aliases.set(output, incoming_value);
+  }
+  return {
+    domain,
+    booleans: next_booleans,
+    aliases: next_aliases,
+  };
+}
+
+function aliased_machine_requirement(
+  requirement: SemanticMachineRequirement,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): SemanticMachineRequirement {
+  const value = requirement_value(requirement);
+  const resolved = resolved_alias(value, aliases);
+  if (resolved === undefined || resolved === value) return requirement;
+  if (requirement.tag === "exclusion") {
+    return {
+      tag: "exclusion",
+      value: resolved,
+      expected: requirement.expected,
+    };
+  }
+  return {
+    tag: "fact",
+    proposition: {
+      ...requirement.proposition,
+      value: resolved,
+    },
+  };
+}
+
+function requirement_value(
+  requirement: SemanticMachineRequirement,
+): ValueId {
+  if (requirement.tag === "fact") return requirement.proposition.value;
+  return requirement.value;
+}
+
+function resolved_alias(
+  value: ValueId,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): ValueId | undefined {
+  const visited = new Set<ValueId>();
+  let current = value;
+  while (aliases.has(current)) {
+    if (visited.has(current)) return undefined;
+    visited.add(current);
+    const next = aliases.get(current);
+    if (next === undefined) return undefined;
+    current = next;
+  }
+  return current;
 }
 
 function integer_constant(
@@ -457,11 +535,29 @@ function comparison_with_constant(
 ): SemanticMachineRequirement | undefined {
   const left_constant = produced_integer_constant(left, producers);
   const right_constant = produced_integer_constant(right, producers);
-  if (right_constant !== undefined && ranges.has(left)) {
-    return value_constant_requirement(relation, left, right_constant, false);
+  const left_range = ranges.get(left);
+  const right_range = ranges.get(right);
+  if (
+    right_constant !== undefined && left_range !== undefined &&
+    right_range !== undefined
+  ) {
+    return value_constant_requirement(
+      relation,
+      left,
+      normalize_integer(right_range, right_constant),
+      false,
+    );
   }
-  if (left_constant !== undefined && ranges.has(right)) {
-    return value_constant_requirement(relation, right, left_constant, true);
+  if (
+    left_constant !== undefined && right_range !== undefined &&
+    left_range !== undefined
+  ) {
+    return value_constant_requirement(
+      relation,
+      right,
+      normalize_integer(left_range, left_constant),
+      true,
+    );
   }
   return undefined;
 }

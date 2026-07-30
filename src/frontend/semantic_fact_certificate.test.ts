@@ -15,6 +15,7 @@ import type { ValueId } from "./semantic_identity.ts";
 
 const origin = "fact-certificate:0:1:0" as never;
 const i32_type = { tag: "scalar", name: "I32" } as const;
+const u32_type = { tag: "scalar", name: "U32" } as const;
 const bool_type = { tag: "scalar", name: "Bool" } as const;
 
 Deno.test("semantic machine certificates independently verify CFG bounds", () => {
@@ -382,6 +383,169 @@ Deno.test("semantic unreachable certificates fail closed on cycles", () => {
   )[0];
   if (call === undefined) throw new Error("Expected call result.");
   builder.terminate(target, { tag: "return", value: call });
+  const control_flow = builder.finish();
+  assert_equals(
+    infer_semantic_unreachable_certificate(control_flow, call_span),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_unreachable_certificate(
+      semantic_unreachable_certificate(call_span),
+      control_flow,
+      call_span,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic machine certificates preserve path facts through numeric phis", () => {
+  for (const alternate of [10, 30]) {
+    const builder = new SemanticCfgBuilder(
+      "numeric-phi-certificate-" + alternate.toString(),
+    );
+    const entry = builder.add_block(origin);
+    const when_true = builder.add_block("fact-true:1:2:0" as never);
+    const when_false = builder.add_block("fact-false:2:3:0" as never);
+    const joined = builder.add_block("fact-join:3:4:0" as never);
+    const ready = ("numeric-phi-ready-" + alternate.toString()) as ValueId;
+    builder.add_parameter(ready, bool_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+    builder.connect(entry, when_true);
+    builder.connect(entry, when_false);
+    builder.terminate(entry, {
+      tag: "branch",
+      condition: ready,
+      when_true,
+      when_false,
+    });
+    const consequent = builder.add_node(
+      when_true,
+      "fact-true:1:2:0" as never,
+      { start: 2, end: 3 },
+      { tag: "constant", value: 5 },
+      [],
+      [i32_type],
+    )[0];
+    const alternative = builder.add_node(
+      when_false,
+      "fact-false:2:3:0" as never,
+      { start: 4, end: 6 },
+      { tag: "constant", value: alternate },
+      [],
+      [i32_type],
+    )[0];
+    if (consequent === undefined || alternative === undefined) {
+      throw new Error("Expected phi inputs.");
+    }
+    builder.connect(when_true, joined);
+    builder.connect(when_false, joined);
+    builder.terminate(when_true, { tag: "jump", target: joined });
+    builder.terminate(when_false, { tag: "jump", target: joined });
+    const selected = builder.add_phi(
+      joined,
+      "fact-join:3:4:0" as never,
+      { start: 2, end: 6 },
+      new Map([
+        [when_true, consequent],
+        [when_false, alternative],
+      ]),
+      i32_type,
+    );
+    const call_span = { start: 7, end: 14 };
+    const result = builder.add_node(
+      joined,
+      "fact-join:3:4:0" as never,
+      call_span,
+      { tag: "call", function_name: "consume" },
+      [selected],
+      [i32_type],
+    )[0];
+    if (result === undefined) throw new Error("Expected call result.");
+    builder.terminate(joined, { tag: "return", value: result });
+    const control_flow = builder.finish();
+    const requirement: SemanticMachineRequirement = {
+      tag: "fact",
+      proposition: { tag: "less_than", value: selected, bound: 20n },
+    };
+    const certificate = infer_semantic_machine_certificate(
+      control_flow,
+      call_span,
+      requirement,
+    );
+    assert_equals(certificate !== undefined, alternate < 20);
+    const forged = semantic_machine_certificate(call_span, requirement);
+    assert_equals(
+      verify_semantic_machine_certificate(
+        forged,
+        control_flow,
+        call_span,
+        requirement,
+      ),
+      alternate < 20,
+    );
+  }
+});
+
+Deno.test("semantic unreachable certificates normalize wrapping comparison constants", () => {
+  const builder = new SemanticCfgBuilder("wrapping-constant-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("fact-true:1:2:0" as never);
+  const when_false = builder.add_block("fact-false:2:3:0" as never);
+  const value = "wrapping-constant-parameter" as ValueId;
+  builder.add_parameter(value, u32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const wrapped_zero = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 12 },
+    { tag: "constant", value: 4294967296n },
+    [],
+    [u32_type],
+  )[0];
+  if (wrapped_zero === undefined) throw new Error("Expected wrapped zero.");
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 12 },
+    { tag: "primitive", name: "i32.eq" },
+    [value, wrapped_zero],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected branch condition.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const call_span = { start: 13, end: 20 };
+  const call = builder.add_node(
+    when_true,
+    "fact-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [value],
+    [u32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected call result.");
+  builder.terminate(when_true, { tag: "return", value: call });
+  const fallback = builder.add_node(
+    when_false,
+    "fact-false:2:3:0" as never,
+    { start: 21, end: 22 },
+    { tag: "constant", value: 0 },
+    [],
+    [u32_type],
+  )[0];
+  builder.terminate(when_false, { tag: "return", value: fallback });
   const control_flow = builder.finish();
   assert_equals(
     infer_semantic_unreachable_certificate(control_flow, call_span),

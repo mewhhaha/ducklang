@@ -1793,6 +1793,27 @@ Deno.test("statically unreachable calls do not require proof evidence", () => {
   }
 });
 
+Deno.test("branch joins retain facts from every live predecessor", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 20) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type joined = (value: I32, ready: I32) -> I32\n" +
+      "let joined = (actual, ready) => do\n" +
+      "if ready != 0 then\n" +
+      "if actual >= 20 then return 0; end;\n" +
+      "else\n" +
+      "if actual >= 10 then return 0; end;\n" +
+      "end;\n" +
+      "consume actual\n" +
+      "end;\n" +
+      "joined (15, 1)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
 Deno.test("short-circuit facts stay bound to their original ValueId", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +

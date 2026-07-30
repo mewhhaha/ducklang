@@ -234,6 +234,29 @@ Deno.test("Duck compiler preserves unsigned comparison semantics for proved bran
   }
 });
 
+Deno.test("Duck compiler erases facts retained across live branch joins", async () => {
+  const source = "type consume = " +
+    "(value: I32, evidence: Proof value < 20) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type joined = (value: I32, ready: I32) -> I32\n" +
+    "let joined = (actual, ready) => do\n" +
+    "if ready != 0 then\n" +
+    "if actual >= 20 then return 0; end;\n" +
+    "else\n" +
+    "if actual >= 10 then return 0; end;\n" +
+    "end;\n" +
+    "consume actual\n" +
+    "end;\n" +
+    "joined (15, 1) + joined (15, 0)\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 15 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
     "type merge = (choice: Proof True or True) -> Proof True\n" +
