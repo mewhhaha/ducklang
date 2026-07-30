@@ -17,6 +17,10 @@ import {
   unique_semantic_call_at_span,
 } from "./semantic_cfg.ts";
 import type { ValueId } from "./semantic_identity.ts";
+import {
+  type RepresentationType,
+  same_representation_type,
+} from "./representation_type.ts";
 import type { SourceSpan } from "./syntax.ts";
 
 export type SemanticMachineRequirement =
@@ -29,6 +33,18 @@ export type SemanticMachineCertificate = {
   requirement: SemanticMachineRequirement;
 };
 
+export type SemanticPredicateAtom = {
+  predicate: string;
+  arguments: readonly ValueId[];
+};
+
+export type SemanticPredicateCertificate = {
+  tag: "predicate_alias";
+  call_span: SourceSpan;
+  premise: SemanticPredicateAtom;
+  conclusion: SemanticPredicateAtom;
+};
+
 export type SemanticUnreachableCertificate = {
   tag: "machine_unreachable";
   call_span: SourceSpan;
@@ -36,6 +52,7 @@ export type SemanticUnreachableCertificate = {
 
 export type SemanticControlFlowCertificate =
   | SemanticMachineCertificate
+  | SemanticPredicateCertificate
   | SemanticUnreachableCertificate;
 
 type VerificationState = {
@@ -78,6 +95,161 @@ export function semantic_unreachable_certificate(
       end: call_span.end,
     }),
   });
+}
+
+export function semantic_predicate_certificate(
+  call_span: SourceSpan,
+  premise: SemanticPredicateAtom,
+  conclusion: SemanticPredicateAtom,
+): SemanticPredicateCertificate {
+  return Object.freeze({
+    tag: "predicate_alias",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    premise: snapshot_predicate_atom(premise),
+    conclusion: snapshot_predicate_atom(conclusion),
+  });
+}
+
+export function verify_semantic_predicate_certificate(
+  certificate: SemanticPredicateCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  available_premises: readonly SemanticPredicateAtom[],
+  conclusion: SemanticPredicateAtom,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic predicate certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "predicate_alias",
+    "Semantic predicate certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    !available_premises.some((premise) =>
+      same_predicate_atom(certificate.premise, premise)
+    ) ||
+    !same_predicate_atom(certificate.conclusion, conclusion) ||
+    certificate.premise.predicate !== conclusion.predicate ||
+    certificate.premise.arguments.length !== conclusion.arguments.length
+  ) {
+    return false;
+  }
+  const premise = certificate.premise;
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (target === undefined) return false;
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
+  for (const argument of [...premise.arguments, ...conclusion.arguments]) {
+    if (!value_types.has(argument)) return false;
+  }
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  if (target_block_can_repeat(target.block.id, blocks)) return false;
+  const reaches_target = blocks_reaching_target(target.block.id, blocks);
+  const entry_counts = new Map<SemanticBlockId, number>();
+  entry_counts.set(control_flow.entry, 1);
+  const pending: {
+    block: SemanticBlockId;
+    predecessor: SemanticBlockId | undefined;
+    aliases: ReadonlyMap<ValueId, ValueId>;
+    visited: ReadonlySet<SemanticBlockId>;
+  }[] = [{
+    block: control_flow.entry,
+    predecessor: undefined,
+    aliases: new Map(),
+    visited: new Set(),
+  }];
+  let paths = 0;
+  let steps = 0;
+  while (pending.length > 0) {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) return false;
+    const state = pending.pop();
+    expect(
+      state !== undefined,
+      "Semantic predicate certificate worklist disappeared.",
+    );
+    if (state.visited.has(state.block)) return false;
+    const visited = new Set(state.visited);
+    visited.add(state.block);
+    if (visited.size > proof_limits.compiler_search_depth) return false;
+    const block = blocks.get(state.block);
+    if (block === undefined) return false;
+    const aliases = new Map(state.aliases);
+    let reached_call = false;
+    for (const node of block.nodes) {
+      steps += 1;
+      if (steps > proof_limits.compiler_search_steps) return false;
+      if (node === target.node) {
+        reached_call = true;
+        paths += 1;
+        for (let index = 0; index < premise.arguments.length; index += 1) {
+          const source = premise.arguments[index];
+          const destination = conclusion.arguments[index];
+          expect(
+            source !== undefined && destination !== undefined,
+            `Semantic predicate ${premise.predicate} lost argument ${index}.`,
+          );
+          if (
+            resolved_alias(source, aliases) !==
+              resolved_alias(destination, aliases)
+          ) {
+            return false;
+          }
+        }
+        break;
+      }
+      record_value_alias(node, state.predecessor, aliases, value_types);
+    }
+    if (reached_call || block.id === target.block.id) continue;
+    for (const successor of block.successors) {
+      if (!reaches_target.has(successor)) continue;
+      let count = 1;
+      const previous = entry_counts.get(successor);
+      if (previous !== undefined) count = previous + 1;
+      if (count > proof_limits.maximum_formula_disjuncts) return false;
+      entry_counts.set(successor, count);
+      pending.push({
+        block: successor,
+        predecessor: block.id,
+        aliases,
+        visited,
+      });
+    }
+  }
+  return paths > 0;
+}
+
+function snapshot_predicate_atom(
+  atom: SemanticPredicateAtom,
+): SemanticPredicateAtom {
+  return Object.freeze({
+    predicate: atom.predicate,
+    arguments: Object.freeze([...atom.arguments]),
+  });
+}
+
+function same_predicate_atom(
+  left: SemanticPredicateAtom,
+  right: SemanticPredicateAtom,
+): boolean {
+  if (
+    left.predicate !== right.predicate ||
+    left.arguments.length !== right.arguments.length
+  ) {
+    return false;
+  }
+  return left.arguments.every((argument, index) =>
+    argument === right.arguments[index]
+  );
 }
 
 export function verify_semantic_machine_certificate(
@@ -155,6 +327,9 @@ function verify_semantic_paths(
     control_flow.blocks.map((block) => [block.id, block]),
   );
   const producers = semantic_value_producers(control_flow);
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
   if (target_block_can_repeat(target.block.id, blocks)) {
     if (
       requirement !== undefined &&
@@ -202,6 +377,7 @@ function verify_semantic_paths(
       state.premises,
       ranges,
       producers,
+      value_types,
       target.node,
     );
     const booleans = transferred.booleans;
@@ -547,6 +723,7 @@ function transfer_semantic_values(
   current_premises: readonly SemanticMachineRequirement[],
   ranges: ReadonlyMap<ValueId, IntegerType>,
   producers: ReadonlyMap<ValueId, SemanticNode>,
+  value_types: ReadonlyMap<ValueId, RepresentationType>,
   target: SemanticNode,
 ): {
   booleans: ReadonlyMap<ValueId, boolean>;
@@ -582,6 +759,13 @@ function transfer_semantic_values(
       }
       continue;
     }
+    if (
+      node.operation.tag === "primitive" &&
+      node.operation.name.startsWith("bind:") &&
+      record_value_alias(node, predecessor, aliases, value_types)
+    ) {
+      continue;
+    }
     if (node.operation.tag !== "phi" || predecessor === undefined) continue;
     const incoming = node.operation.incoming.find((candidate) =>
       candidate.predecessor === predecessor
@@ -593,6 +777,53 @@ function transfer_semantic_values(
     if (incoming_value !== undefined) aliases.set(output, incoming_value);
   }
   return { booleans, aliases, premises };
+}
+
+function record_value_alias(
+  node: SemanticNode,
+  predecessor: SemanticBlockId | undefined,
+  aliases: Map<ValueId, ValueId>,
+  value_types: ReadonlyMap<ValueId, RepresentationType>,
+): boolean {
+  const output = node.outputs[0];
+  if (output === undefined) return false;
+  if (
+    node.operation.tag === "primitive" &&
+    node.operation.name.startsWith("bind:") &&
+    node.inputs.length === 1
+  ) {
+    const input = node.inputs[0];
+    expect(input !== undefined, "Semantic binding alias lost its input.");
+    const input_type = value_types.get(input);
+    const output_type = value_types.get(output);
+    if (
+      input_type === undefined || output_type === undefined ||
+      !same_representation_type(input_type, output_type)
+    ) {
+      return false;
+    }
+    const value = resolved_alias(input, aliases);
+    if (value === undefined) return false;
+    aliases.set(output, value);
+    return true;
+  }
+  if (node.operation.tag !== "phi" || predecessor === undefined) return false;
+  const incoming = node.operation.incoming.find((candidate) =>
+    candidate.predecessor === predecessor
+  );
+  if (incoming === undefined) return false;
+  const input_type = value_types.get(incoming.value);
+  const output_type = value_types.get(output);
+  if (
+    input_type === undefined || output_type === undefined ||
+    !same_representation_type(input_type, output_type)
+  ) {
+    return false;
+  }
+  const value = resolved_alias(incoming.value, aliases);
+  if (value === undefined) return false;
+  aliases.set(output, value);
+  return true;
 }
 
 function aliased_machine_requirement(

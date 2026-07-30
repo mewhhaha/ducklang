@@ -216,6 +216,39 @@ Deno.test("Duck compiler erases polymorphic transparent fact proofs", async () =
   }
 });
 
+Deno.test("Duck compiler erases aliased opaque predicate evidence", async () => {
+  const proved_source = "type p = (value: I32) -> Prop\n" +
+    "opaque fact p = value => True;\n" +
+    "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+    "let forward = (actual, evidence) => do\n" +
+    "  let alias = actual;\n" +
+    "  consume alias\n" +
+    "end;\n" +
+    "42\n";
+  const plain_source = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type forward = (value: I32) -> I32\n" +
+    "let forward = actual => do\n" +
+    "  let alias = actual;\n" +
+    "  consume alias\n" +
+    "end;\n" +
+    "42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test(
   "Duck compiler erases ordered branch proofs across argument packs",
   async () => {

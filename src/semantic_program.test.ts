@@ -3151,6 +3151,175 @@ Deno.test("opaque facts do not unfold into contextual call obligations", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
+Deno.test("opaque predicate evidence follows value-preserving aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  let alias = actual;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("opaque predicate evidence stays bound to ordered arguments", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (left: I32, right: I32) -> Prop\n" +
+      "opaque fact p = (left, right) => True;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof p(left, right)) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "type forward = " +
+      "(left: I32, right: I32, evidence: Proof p(left, right)) -> I32\n" +
+      "let forward = (left, right, evidence) => consume (right, left);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("opaque predicate evidence does not cross mixed alias joins", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  let alias = if actual == 0 then actual else 0 end;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("opaque predicate evidence survives joins of proven aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = " +
+      "(value: I32, choose_left: Bool, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, choose_left, evidence) => do\n" +
+      "  let alias = if choose_left then actual else actual end;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("opaque predicate evidence does not cross rebinding", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  let actual = 0;\n" +
+      "  consume actual\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("captured opaque evidence keeps its lexical predicate identity", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  let alias = actual;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("transparent aliases retain lexical opaque predicate identities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "do\n" +
+      "  type q = (value: I32) -> Prop\n" +
+      "  fact q = value => p(value);\n" +
+      "  type forward = " +
+      "(value: I32, evidence: Proof p(value)) -> I32\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  type consume = " +
+      "(value: I32, evidence: Proof q(value)) -> I32\n" +
+      "  let consume = (actual, evidence) => actual;\n" +
+      "  let forward = (actual, evidence) => do\n" +
+      "    let alias = actual;\n" +
+      "    consume alias\n" +
+      "  end;\n" +
+      "  42\n" +
+      "end\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
 Deno.test("shadowed opaque facts cannot satisfy outer contracts", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type p = (value: I32) -> Prop\n" +

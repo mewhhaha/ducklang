@@ -1,9 +1,11 @@
 import { assert_equals } from "../assert.ts";
 import {
   semantic_machine_certificate,
+  semantic_predicate_certificate,
   semantic_unreachable_certificate,
   type SemanticMachineRequirement,
   verify_semantic_machine_certificate,
+  verify_semantic_predicate_certificate,
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
 import {
@@ -17,6 +19,178 @@ const origin = "fact-certificate:0:1:0" as never;
 const i32_type = { tag: "scalar", name: "I32" } as const;
 const u32_type = { tag: "scalar", name: "U32" } as const;
 const bool_type = { tag: "scalar", name: "Bool" } as const;
+
+Deno.test("semantic predicate certificates verify only value-preserving aliases", () => {
+  const builder = new SemanticCfgBuilder("predicate-certificate");
+  const entry = builder.add_block(origin);
+  const value = "predicate-parameter" as ValueId;
+  builder.add_parameter(value, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const alias = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 12 },
+    { tag: "primitive", name: "bind:alias" },
+    [value],
+    [i32_type],
+  )[0];
+  if (alias === undefined) throw new Error("Expected predicate alias.");
+  const replacement = builder.add_node(
+    entry,
+    origin,
+    { start: 13, end: 14 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (replacement === undefined) throw new Error("Expected replacement.");
+  const call_span = { start: 15, end: 28 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [alias],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected predicate call.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const premise = {
+    predicate: "fact:root:p",
+    arguments: [value],
+  };
+  const conclusion = {
+    predicate: "fact:root:p",
+    arguments: [alias],
+  };
+  const certificate = semantic_predicate_certificate(
+    call_span,
+    premise,
+    conclusion,
+  );
+  assert_equals(
+    verify_semantic_predicate_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      [premise],
+      conclusion,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(certificate), true);
+  assert_equals(Object.isFrozen(certificate.premise.arguments), true);
+  assert_equals(
+    verify_semantic_predicate_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      [],
+      conclusion,
+    ),
+    false,
+  );
+
+  const invalid_conclusion = {
+    predicate: "fact:root:p",
+    arguments: [replacement],
+  };
+  const invalid = semantic_predicate_certificate(
+    call_span,
+    premise,
+    invalid_conclusion,
+  );
+  assert_equals(
+    verify_semantic_predicate_certificate(
+      invalid,
+      control_flow,
+      call_span,
+      [premise],
+      invalid_conclusion,
+    ),
+    false,
+  );
+
+  const missing = "missing-predicate-value" as ValueId;
+  const forged_conclusion = {
+    predicate: "fact:root:p",
+    arguments: [missing],
+  };
+  const forged = semantic_predicate_certificate(
+    call_span,
+    premise,
+    forged_conclusion,
+  );
+  assert_equals(
+    verify_semantic_predicate_certificate(
+      forged,
+      control_flow,
+      call_span,
+      [premise],
+      forged_conclusion,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic predicate certificates reject representation-changing aliases", () => {
+  const builder = new SemanticCfgBuilder("predicate-representation");
+  const entry = builder.add_block(origin);
+  const value = "predicate-i32-parameter" as ValueId;
+  builder.add_parameter(value, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const changed = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 12 },
+    { tag: "primitive", name: "bind:changed" },
+    [value],
+    [u32_type],
+  )[0];
+  if (changed === undefined) throw new Error("Expected changed alias.");
+  const call_span = { start: 13, end: 26 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [changed],
+    [u32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected changed call.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const premise = {
+    predicate: "fact:root:p",
+    arguments: [value],
+  };
+  const conclusion = {
+    predicate: "fact:root:p",
+    arguments: [changed],
+  };
+  const certificate = semantic_predicate_certificate(
+    call_span,
+    premise,
+    conclusion,
+  );
+  assert_equals(
+    verify_semantic_predicate_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      [premise],
+      conclusion,
+    ),
+    false,
+  );
+});
 
 Deno.test("semantic machine certificates independently verify CFG bounds", () => {
   const builder = new SemanticCfgBuilder("fact-certificate");

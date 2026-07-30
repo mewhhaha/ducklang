@@ -98,8 +98,11 @@ import {
   type SemanticMachineRequirement,
 } from "./frontend/semantic_fact_graph.ts";
 import {
-  type SemanticMachineCertificate,
+  semantic_predicate_certificate,
+  type SemanticControlFlowCertificate,
+  type SemanticPredicateAtom,
   verify_semantic_machine_certificate,
+  verify_semantic_predicate_certificate,
   verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
 import {
@@ -141,7 +144,7 @@ export type CheckedKernelCertificate = {
   certificate: KernelCertificate;
   environment: KernelEnvironment;
   term_context: KernelContext;
-  semantic_certificate?: SemanticMachineCertificate;
+  semantic_certificate?: SemanticControlFlowCertificate;
 };
 export type KernelCertificateIndex = ReadonlyMap<
   string,
@@ -1603,6 +1606,7 @@ function check_prefix_call_obligations(
         binding_values,
         term_types,
         facts,
+        hypotheses,
         control_flow,
         callable_control_flow,
       );
@@ -1633,7 +1637,7 @@ function check_prefix_call_obligations(
 
 type VerifiedBranchHypotheses = {
   propositions: readonly PrefixProposition[];
-  certificate: SemanticMachineCertificate | undefined;
+  certificate: SemanticControlFlowCertificate | undefined;
 };
 
 function verified_branch_hypotheses(
@@ -1643,6 +1647,7 @@ function verified_branch_hypotheses(
   binding_values: ReadonlyMap<EntityId, ValueId>,
   term_types: ReadonlyMap<string, LogicalTermType>,
   facts: ReadonlyMap<string, PrefixFactSignature>,
+  hypotheses: readonly PrefixCallHypothesis[],
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
 ): VerifiedBranchHypotheses {
@@ -1684,7 +1689,51 @@ function verified_branch_hypotheses(
         "FactGraph produced an invalid semantic machine certificate.",
       );
       return {
-        propositions: [normalized],
+        propositions: [proposition],
+        certificate,
+      };
+    }
+  }
+  const goal_atom = prefix_opaque_predicate_atom(
+    declaration_name,
+    proposition,
+    binding_values,
+    term_types,
+    facts,
+  );
+  if (goal_atom !== undefined) {
+    for (const hypothesis of hypotheses) {
+      const premise_atom = prefix_opaque_predicate_atom(
+        declaration_name,
+        hypothesis.proposition,
+        binding_values,
+        term_types,
+        hypothesis.facts,
+      );
+      if (
+        premise_atom === undefined ||
+        premise_atom.predicate !== goal_atom.predicate
+      ) {
+        continue;
+      }
+      const certificate = semantic_predicate_certificate(
+        call_span,
+        premise_atom,
+        goal_atom,
+      );
+      if (
+        !verify_semantic_predicate_certificate(
+          certificate,
+          candidate,
+          call_span,
+          [premise_atom],
+          goal_atom,
+        )
+      ) {
+        continue;
+      }
+      return {
+        propositions: [proposition],
         certificate,
       };
     }
@@ -1698,7 +1747,7 @@ function verified_branch_hypotheses(
     )
   ) {
     return {
-      propositions: [normalized],
+      propositions: [proposition],
       certificate: undefined,
     };
   }
@@ -2042,6 +2091,63 @@ function prefix_machine_requirement(
   return undefined;
 }
 
+function prefix_opaque_predicate_atom(
+  declaration_name: string,
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+  active_facts: ReadonlySet<string> = new Set(),
+): SemanticPredicateAtom | undefined {
+  if (proposition.tag !== "holds") return undefined;
+  const application = prefix_fact_application(proposition.value);
+  if (application === undefined) return undefined;
+  const fact = facts.get(application.name);
+  if (fact === undefined) return undefined;
+  if (fact.opaque) {
+    if (application.arguments.length !== fact.parameters.length) {
+      return undefined;
+    }
+    const arguments_: ValueId[] = [];
+    for (const argument of application.arguments) {
+      const value = prefix_semantic_value(argument, binding_values);
+      if (value === undefined) return undefined;
+      arguments_.push(value);
+    }
+    return {
+      predicate: fact.kernel_name,
+      arguments: arguments_,
+    };
+  }
+  if (
+    fact.body === undefined || fact.body_parameters === undefined ||
+    active_facts.has(fact.kernel_name)
+  ) {
+    return undefined;
+  }
+  const body = instantiate_transparent_fact(
+    declaration_name,
+    application.name,
+    fact,
+    application.arguments,
+    term_types,
+    facts,
+  );
+  if (body === undefined) return undefined;
+  const nested_active = new Set(active_facts);
+  nested_active.add(fact.kernel_name);
+  let body_facts = facts;
+  if (fact.body_facts !== undefined) body_facts = fact.body_facts;
+  return prefix_opaque_predicate_atom(
+    declaration_name,
+    body,
+    binding_values,
+    term_types,
+    body_facts,
+    nested_active,
+  );
+}
+
 function prefix_integer_constant(term: PrefixTerm): bigint | undefined {
   if (term.shape.tag !== "number") return undefined;
   const literal = parse_number_expr(term.text);
@@ -2247,7 +2353,7 @@ function check_prefix_call_obligation(
   definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
   obligation_index: number,
-  semantic_certificate: SemanticMachineCertificate | undefined,
+  semantic_certificate: SemanticControlFlowCertificate | undefined,
 ): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
   const declarations = new Map<string, KernelType>();
   const term_context: KernelType[] = [];
@@ -5832,6 +5938,7 @@ type PrefixFactSignature = {
   body_facts?: ReadonlyMap<string, PrefixFactSignature>;
   body_parameters?: readonly string[];
   kernel_name: string;
+  opaque: boolean;
   parameters: readonly LogicalTermType[];
   type_parameters: ReadonlySet<string>;
 };
@@ -5905,6 +6012,7 @@ function prefix_fact_signatures(
     if (signature.span.start > visible_at) continue;
     const fact: PrefixFactSignature = {
       kernel_name: "fact:" + signature.scope + ":" + signature.name,
+      opaque: signature.kind === "opaque fact",
       parameters: signature.type.parameters.map((parameter) =>
         logical_term_type_from_reference(parameter.type)
       ),
