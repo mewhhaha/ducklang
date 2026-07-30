@@ -134,6 +134,21 @@ export type PrefixProofTerm =
     evidence_name: string;
     body: PrefixProofTerm;
     span: PrefixSpan;
+  }
+  | {
+    tag: "congr";
+    parameter_name: string;
+    function: PrefixTerm;
+    proof: PrefixProofTerm;
+    span: PrefixSpan;
+  }
+  | {
+    tag: "transport";
+    equality: PrefixProofTerm;
+    motive_name: string;
+    motive: PrefixProposition;
+    proof: PrefixProofTerm;
+    span: PrefixSpan;
   };
 
 export type PrefixProposition =
@@ -984,6 +999,56 @@ function snapshot_proof_term(
         ),
         body: snapshot_proof_term(
           own_value<PrefixProofTerm>(proof, "body"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (tag === "congr") {
+      return Object.freeze({
+        tag,
+        parameter_name: require_text(
+          own_value<string>(proof, "parameter_name"),
+          "Prefix congruence parameter",
+        ),
+        function: snapshot_term(
+          own_value<PrefixTerm>(proof, "function"),
+          new WeakSet<object>(),
+          0,
+          budget,
+        ),
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (tag === "transport") {
+      return Object.freeze({
+        tag,
+        equality: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "equality"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        motive_name: require_text(
+          own_value<string>(proof, "motive_name"),
+          "Prefix transport motive parameter",
+        ),
+        motive: snapshot_proposition(
+          own_value<PrefixProposition>(proof, "motive"),
+          new WeakSet<object>(),
+          0,
+          budget,
+        ),
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
           active,
           depth + 1,
           budget,

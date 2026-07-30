@@ -630,6 +630,67 @@ function proof_term_from_node(
       span,
     };
   }
+  const congr_node = node.children.find((child) => child.kind === '"congr"');
+  if (congr_node !== undefined) {
+    const parameter_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    const function_node = node.children.find((child) =>
+      child.kind === "prefix_proposition_term"
+    );
+    const proof_node = nested[0];
+    if (
+      parameter_node === undefined || function_node === undefined ||
+      proof_node === undefined
+    ) {
+      return undefined;
+    }
+    const proof = proof_term_from_node(proof_node, source);
+    if (proof === undefined) return undefined;
+    return {
+      tag: "congr",
+      parameter_name: source.slice(parameter_node.start, parameter_node.end),
+      function: term_from_node(function_node, source),
+      proof,
+      span,
+    };
+  }
+  const transport_node = node.children.find((child) =>
+    child.kind === '"transport"'
+  );
+  if (transport_node !== undefined) {
+    const equality_node = nested[0];
+    const motive_name_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    const motive_node = node.children.find((child) =>
+      child.kind === "prefix_proposition"
+    );
+    const proof_node = nested[1];
+    if (
+      equality_node === undefined || motive_name_node === undefined ||
+      motive_node === undefined || proof_node === undefined
+    ) {
+      return undefined;
+    }
+    const equality = proof_term_from_node(equality_node, source);
+    const motive = proposition_from_node(motive_node, source);
+    const proof = proof_term_from_node(proof_node, source);
+    if (equality === undefined || motive === undefined || proof === undefined) {
+      return undefined;
+    }
+    return {
+      tag: "transport",
+      equality,
+      motive_name: source.slice(
+        motive_name_node.start,
+        motive_name_node.end,
+      ),
+      motive,
+      proof,
+      span,
+    };
+  }
   const arrow_node = node.children.find((child) => child.kind === '"=>"');
   if (arrow_node !== undefined) {
     const name_node = node.children.find((child) =>

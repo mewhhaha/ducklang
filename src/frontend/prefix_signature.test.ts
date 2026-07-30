@@ -332,6 +332,137 @@ Deno.test("prefix proof snapshots seal quantified arguments", () => {
   assert_equals(Object.isFrozen(body.argument), true);
 });
 
+Deno.test("prefix proof snapshots seal equality transformations", () => {
+  const function_term: PrefixTerm = {
+    text: "value",
+    references: ["value"],
+    shape: { tag: "name", name: "value" },
+    span: { start: 24, end: 29 },
+  };
+  const motive_term: PrefixTerm = {
+    text: "predicate(value)",
+    references: ["predicate", "value"],
+    shape: {
+      tag: "call",
+      function: {
+        text: "predicate",
+        references: ["predicate"],
+        shape: { tag: "name", name: "predicate" },
+        span: { start: 50, end: 59 },
+      },
+      arguments: [{
+        text: "value",
+        references: ["value"],
+        shape: { tag: "name", name: "value" },
+        span: { start: 60, end: 65 },
+      }],
+    },
+    span: { start: 50, end: 66 },
+  };
+  const motive: PrefixProposition = {
+    tag: "holds",
+    value: motive_term,
+    span: { start: 50, end: 66 },
+  };
+  const proof: PrefixProofTerm = {
+    tag: "transport",
+    equality: {
+      tag: "name",
+      name: "equality",
+      span: { start: 40, end: 48 },
+    },
+    motive_name: "value",
+    motive,
+    proof: {
+      tag: "congr",
+      parameter_name: "value",
+      function: function_term,
+      proof: {
+        tag: "name",
+        name: "equality",
+        span: { start: 68, end: 76 },
+      },
+      span: { start: 68, end: 90 },
+    },
+    span: { start: 15, end: 91 },
+  };
+  const index = checked_value(
+    associate_prefix_signatures(
+      [signature()],
+      [definition({ callable_proof_body: proof })],
+    ),
+  );
+  if (index === undefined) throw new Error("Expected associated signature.");
+  function_term.shape = { tag: "name", name: "changed" };
+  motive_term.shape = { tag: "name", name: "changed" };
+
+  const associated = [...index.values()][0];
+  const body = associated?.definition.callable_proof_body;
+  assert_equals(body?.tag, "transport");
+  if (body?.tag !== "transport") {
+    throw new Error("Expected snapshotted equality transport.");
+  }
+  assert_equals(body.motive.tag, "holds");
+  assert_equals(body.proof.tag, "congr");
+  if (body.proof.tag !== "congr") {
+    throw new Error("Expected snapshotted congruence.");
+  }
+  assert_equals(body.proof.function.shape, {
+    tag: "name",
+    name: "value",
+  });
+  assert_equals(Object.isFrozen(body.motive), true);
+  assert_equals(Object.isFrozen(body.proof.function), true);
+});
+
+Deno.test("equality transport snapshots share one structural node budget", () => {
+  let motive: PrefixProposition = {
+    tag: "true",
+    span: { start: 40, end: 44 },
+  };
+  for (let depth = 0; depth < 13; depth += 1) {
+    motive = {
+      tag: "and",
+      left: motive,
+      right: motive,
+      span: { start: 40, end: 44 },
+    };
+  }
+  let transported: PrefixProofTerm = {
+    tag: "true_intro",
+    span: { start: 46, end: 56 },
+  };
+  for (let depth = 0; depth < 12; depth += 1) {
+    transported = {
+      tag: "and_intro",
+      left: transported,
+      right: transported,
+      span: { start: 46, end: 56 },
+    };
+  }
+  const proof: PrefixProofTerm = {
+    tag: "transport",
+    equality: {
+      tag: "name",
+      name: "equality",
+      span: { start: 20, end: 28 },
+    },
+    motive_name: "value",
+    motive,
+    proof: transported,
+    span: { start: 15, end: 57 },
+  };
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({ callable_proof_body: proof })],
+      ),
+    "Prefix proof snapshot exceeded 20000 nodes.",
+  );
+});
+
 Deno.test("prefix signature snapshots seal disjunction case binders", () => {
   const proof: PrefixProofTerm = {
     tag: "or_cases",

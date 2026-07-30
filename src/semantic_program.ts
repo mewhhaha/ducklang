@@ -1846,6 +1846,7 @@ type PrefixKernelProofContext = {
   term_context: KernelType[];
   term_indices: ReadonlyMap<string, number>;
   term_types: ReadonlyMap<string, LogicalTermType>;
+  type_names: ReadonlySet<string>;
 };
 
 function check_prefix_proof_definition(
@@ -2037,6 +2038,7 @@ function check_prefix_proof_definition(
     signature.scope,
     signature.span.start,
   );
+  const type_names = signature_type_names(signature, declared_type_names);
   const context: PrefixKernelProofContext = {
     declaration_name: signature.name,
     declarations,
@@ -2046,8 +2048,8 @@ function check_prefix_proof_definition(
     term_context,
     term_indices,
     term_types,
+    type_names,
   };
-  const type_names = signature_type_names(signature, declared_type_names);
   const goal = prefix_kernel_proposition(
     signature.name,
     goal_source,
@@ -3189,6 +3191,144 @@ function synthesize_prefix_proof(
       ),
     });
   }
+  if (proof.tag === "congr") {
+    const equality_check = synthesize_prefix_proof(proof.proof, context);
+    const equality = checked_value(equality_check);
+    if (equality === undefined) return equality_check;
+    if (equality.proposition.tag !== "equal") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "congr requires an equality proof.",
+          proof.proof.span,
+        ),
+      );
+    }
+    const function_context = extend_prefix_term_context(
+      context,
+      proof.parameter_name,
+      equality.proposition.type,
+    );
+    const function_body = prefix_kernel_term(
+      context.declaration_name,
+      proof.function,
+      function_context,
+      context.facts,
+    );
+    if (function_body === undefined) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          `Unsupported congruence function ${proof.function.text}.`,
+          proof.function.span,
+        ),
+      );
+    }
+    const function_term: KernelTerm = {
+      tag: "lam",
+      domain: equality.proposition.type,
+      body: function_body.term,
+    };
+    return ok({
+      term: {
+        tag: "congr",
+        function: function_term,
+        proof: equality.term,
+      },
+      proposition: {
+        tag: "equal",
+        type: function_body.type,
+        left: {
+          tag: "app",
+          function: function_term,
+          argument: equality.proposition.left,
+        },
+        right: {
+          tag: "app",
+          function: function_term,
+          argument: equality.proposition.right,
+        },
+      },
+    });
+  }
+  if (proof.tag === "transport") {
+    const equality_check = synthesize_prefix_proof(proof.equality, context);
+    const equality = checked_value(equality_check);
+    if (equality === undefined) return equality_check;
+    if (equality.proposition.tag !== "equal") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "transport requires an equality proof.",
+          proof.equality.span,
+        ),
+      );
+    }
+    const motive_context = extend_prefix_term_context(
+      context,
+      proof.motive_name,
+      equality.proposition.type,
+    );
+    const unstructured_motive = first_unstructured_quantified_proposition(
+      proof.motive,
+      context.facts,
+      true,
+    );
+    if (unstructured_motive !== undefined) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "transport motive requires structured kernel terms.",
+          unstructured_motive.span,
+        ),
+      );
+    }
+    const motive_formation = check_prefix_proposition(
+      context.declaration_name,
+      proof.motive,
+      motive_context.term_types,
+      context.type_names,
+      context.facts,
+      new Set(),
+    );
+    const motive_diagnostics = diagnostics_of(motive_formation);
+    if (motive_diagnostics.length > 0) {
+      return fail(
+        ...motive_diagnostics.map((diagnostic) => ({
+          ...diagnostic,
+          code: diagnostic_codes.prefix_proof_invalid,
+        })),
+      );
+    }
+    const motive = prefix_kernel_proposition(
+      context.declaration_name,
+      proof.motive,
+      motive_context,
+      context.facts,
+      context.type_names,
+    );
+    const source = instantiate_proposition(
+      motive,
+      equality.proposition.left,
+    );
+    const target = instantiate_proposition(
+      motive,
+      equality.proposition.right,
+    );
+    return elaborate_prefix_proof(
+      proof.proof,
+      source,
+      context,
+    ).map((transported): SynthesizedPrefixProof => ({
+      term: {
+        tag: "transport",
+        equality: equality.term,
+        motive,
+        proof: transported,
+      },
+      proposition: target,
+    }));
+  }
   if (proof.tag === "or_left" || proof.tag === "or_right") {
     return fail(
       compiler_diagnostic(
@@ -3358,6 +3498,12 @@ function prefix_proof_synthesizes(proof: PrefixProofTerm): boolean {
   }
   if (proof.tag === "forall_apply") {
     return prefix_proof_synthesizes(proof.proof);
+  }
+  if (proof.tag === "congr") {
+    return prefix_proof_synthesizes(proof.proof);
+  }
+  if (proof.tag === "transport") {
+    return prefix_proof_synthesizes(proof.equality);
   }
   if (
     proof.tag !== "trans" && proof.tag !== "and_intro" &&

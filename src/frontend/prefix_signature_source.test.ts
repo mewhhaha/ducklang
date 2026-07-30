@@ -299,3 +299,29 @@ Deno.test("prefix source extraction retains quantified proof terms", () => {
   assert_equals(open.evidence_name, "evidence");
   assert_equals(open.body.tag, "name");
 });
+
+Deno.test("prefix source extraction retains equality transformations", () => {
+  const metadata = extract_prefix_source_metadata(parse_duck_source(
+    "let mapped = equality => by congr(value => value, equality);\n" +
+      "let substituted = (equality, evidence) => " +
+      "by transport(equality, value => predicate(value), evidence);\n",
+  ));
+  const mapped = metadata.definitions[0]?.callable_proof_body;
+  const substituted = metadata.definitions[1]?.callable_proof_body;
+
+  assert_equals(mapped?.tag, "congr");
+  if (mapped?.tag !== "congr") {
+    throw new Error("Expected a congruence proof.");
+  }
+  assert_equals(mapped.parameter_name, "value");
+  assert_equals(mapped.function.shape, { tag: "name", name: "value" });
+  assert_equals(mapped.proof.tag, "name");
+
+  assert_equals(substituted?.tag, "transport");
+  if (substituted?.tag !== "transport") {
+    throw new Error("Expected an equality transport proof.");
+  }
+  assert_equals(substituted.motive_name, "value");
+  assert_equals(substituted.motive.tag, "holds");
+  assert_equals(substituted.proof.tag, "name");
+});

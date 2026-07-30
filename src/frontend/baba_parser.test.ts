@@ -256,6 +256,28 @@ Deno.test("Baba parses direct quantified proof terms", () => {
   }
 });
 
+Deno.test("Baba parses direct equality transformation proof terms", () => {
+  const parsed = parse_duck_source(
+    "let mapped = equality => by congr(value => value, equality);\n" +
+      "let substituted = (equality, evidence) => " +
+      "by transport(equality, value => predicate(value), evidence);\n" +
+      "let named = () => by congruent;\n" +
+      "let carried = () => by transported;\n",
+  );
+
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(parsed.cst.tree.includes('"congr"'), true);
+  assert_equals(parsed.cst.tree.includes('"transport"'), true);
+  for (const name of ["congruent", "transported"]) {
+    assert_equals(
+      parsed.tokens.some((token) =>
+        token.kind === "identifier" && token.text === name
+      ),
+      true,
+    );
+  }
+});
+
 Deno.test("Baba reserves Proof without splitting longer type names", () => {
   const parsed = parse_duck_source(
     "type boxed = () -> ProofBox\n" +

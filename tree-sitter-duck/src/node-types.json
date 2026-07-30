@@ -5899,12 +5899,32 @@
           }
         ]
       },
+      "equality": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
       "evidence_name": {
         "multiple": false,
         "required": false,
         "types": [
           {
             "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "function": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proposition_term",
             "named": true
           }
         ]
@@ -5930,6 +5950,26 @@
         ]
       },
       "left_name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "motive": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proposition",
+            "named": true
+          }
+        ]
+      },
+      "motive_name": {
         "multiple": false,
         "required": false,
         "types": [
@@ -5988,6 +6028,16 @@
           {
             "type": "trans",
             "named": false
+          }
+        ]
+      },
+      "parameter_name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
           }
         ]
       },
@@ -8812,6 +8862,10 @@
     "named": false
   },
   {
+    "type": "congr",
+    "named": false
+  },
+  {
     "type": "const",
     "named": false
   },
@@ -9109,6 +9163,10 @@
   },
   {
     "type": "trans",
+    "named": false
+  },
+  {
+    "type": "transport",
     "named": false
   },
   {

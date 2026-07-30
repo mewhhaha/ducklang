@@ -144,6 +144,39 @@ Deno.test("format_text round trips quantified proof terms", () => {
   assert_equals(format_text(wide_formatted), wide_formatted);
 });
 
+Deno.test("format_text round trips equality transformation proofs", () => {
+  const source = "type mapped=(left:I32,right:I32,equality:Proof left=right)" +
+    "->Proof left=right\n" +
+    "let mapped=(left,right,equality)=>" +
+    "by congr(value=>value,equality);\n" +
+    "type moved=(left:I32,right:I32,equality:Proof left=right," +
+    "evidence:Proof predicate(left))->Proof predicate(right)\n" +
+    "let moved=(left,right,equality,evidence)=>" +
+    "by transport(equality,value=>predicate(value),evidence);\n";
+  const formatted = format_text(source);
+
+  assert_equals(
+    formatted,
+    "type mapped =\n" +
+      "  (left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let mapped = (left, right, equality) => " +
+      "by congr(value => value, equality);\n" +
+      "type moved = (\n" +
+      "  left: I32,\n" +
+      "  right: I32,\n" +
+      "  equality: Proof left = right,\n" +
+      "  evidence: Proof predicate (left),\n" +
+      ") -> Proof predicate (right)\n" +
+      "let moved = (left, right, equality, evidence) => by transport(\n" +
+      "  equality,\n" +
+      "  value => predicate (value),\n" +
+      "  evidence,\n" +
+      ");\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
 Deno.test("format_text normalizes expressions inside template literals", () => {
   assert_equals(
     format_text('render   `hello { name+ "!" } {{reader}}`\n'),

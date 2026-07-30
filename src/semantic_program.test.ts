@@ -1580,6 +1580,117 @@ Deno.test("direct quantified proof terms produce checked kernel terms", () => {
   }
 });
 
+Deno.test("direct equality transformations produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type mapped = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let mapped = (left, right, equality) => " +
+      "by congr(value => value, equality);\n42\n",
+      "type constant_map = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof true = true\n" +
+      "let constant_map = (left, right, equality) => " +
+      "by congr(value => true, equality);\n42\n",
+      "type substitute_reflexivity = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof left = left) -> Proof right = right\n" +
+      "let substitute_reflexivity = (left, right, equality, evidence) => " +
+      "by transport(equality, value => value = value, evidence);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type substitute = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+      "let substitute = (left, right, equality, evidence) => " +
+      "by transport(equality, value => predicate(value), evidence);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type shadowed_substitute = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+      "let shadowed_substitute = (actual_left, actual_right, same, known) => " +
+      "by transport(same, actual_left => predicate(actual_left), known);\n" +
+      "42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("invalid equality transformations fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => by congr(value => value, evidence);\n42\n",
+        "congr requires an equality proof",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => " +
+        "by transport(evidence, value => True, evidence);\n42\n",
+        "transport requires an equality proof",
+      ],
+      [
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right) -> " +
+        "Proof left = right\n" +
+        "let bad = (left, right, equality) => " +
+        "by congr(value => value + 1, equality);\n42\n",
+        "Unsupported congruence function value + 1",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "fact predicate = value => True;\n" +
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right, " +
+        "evidence: Proof predicate(right)) -> Proof predicate(right)\n" +
+        "let bad = (left, right, equality, evidence) => " +
+        "by transport(equality, value => predicate(value), evidence);\n42\n",
+        "Proof establishes fact:predicate(#1), not fact:predicate(#0)",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "fact predicate = value => True;\n" +
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right, " +
+        "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+        "let bad = (left, right, equality, evidence) => " +
+        "by transport(equality, value => predicate(missing), evidence);\n42\n",
+        "refers to unbound logical value missing",
+      ],
+      [
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right, " +
+        "evidence: Proof left + 0 = left + 0) -> " +
+        "Proof right + 0 = right + 0\n" +
+        "let bad = (left, right, equality, evidence) => " +
+        "by transport(" +
+        "equality, value => value + 0 = value + 0, evidence);\n42\n",
+        "transport motive requires structured kernel terms",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
 Deno.test("quantified predicate certificates retain structured arguments", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type predicate = (value: I32) -> Prop\n" +

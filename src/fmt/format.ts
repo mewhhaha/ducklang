@@ -70,6 +70,7 @@ const proof_term_operators = new Set([
   "and_intro",
   "and_left",
   "and_right",
+  "congr",
   "exists_elim",
   "exists_intro",
   "false_elim",
@@ -80,6 +81,7 @@ const proof_term_operators = new Set([
   "or_right",
   "symm",
   "trans",
+  "transport",
 ]);
 const spaced_symbols = new Set([
   "=",

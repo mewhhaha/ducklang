@@ -556,6 +556,30 @@ prefix_proof_term = (
                          (",")?
                          ")"
                        )
+                     | (
+                         "congr"
+                         "("
+                         parameter_name:(identifier)
+                         "=>"
+                         function:(prefix_proposition_term)
+                         ","
+                         proof:(prefix_proof_term)
+                         (",")?
+                         ")"
+                       )
+                     | (
+                         "transport"
+                         "("
+                         equality:(prefix_proof_term)
+                         ","
+                         motive_name:(identifier)
+                         "=>"
+                         motive:(prefix_proposition)
+                         ","
+                         proof:(prefix_proof_term)
+                         (",")?
+                         ")"
+                       )
                      | name:(identifier)
                      | "refl"
                      | "true_intro"
