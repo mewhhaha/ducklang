@@ -204,6 +204,24 @@ Deno.test("Baba parses explicit proof types and direct proof terms", () => {
   );
 });
 
+Deno.test("Baba parses direct propositional proof terms", () => {
+  const parsed = parse_duck_source(
+    "let implication = () => by evidence => evidence;\n" +
+      "let left = evidence => by or_left(evidence);\n" +
+      "let right = evidence => by or_right(evidence);\n" +
+      "let impossible = evidence => by false_elim(evidence);\n" +
+      "let cases = choice => " +
+      "by or_cases(choice, left => left, right => right);\n",
+  );
+
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(
+    parsed.cst.tree.match(/\(prefix_by_proof_expression/g)?.length,
+    5,
+  );
+  assert_equals(parsed.cst.tree.includes('"or_cases"'), true);
+});
+
 Deno.test("Baba reserves Proof without splitting longer type names", () => {
   const parsed = parse_duck_source(
     "type boxed = () -> ProofBox\n" +

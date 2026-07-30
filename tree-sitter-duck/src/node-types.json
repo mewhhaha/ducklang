@@ -5879,12 +5879,42 @@
     "type": "prefix_proof_term",
     "named": true,
     "fields": {
+      "body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
       "left": {
         "multiple": false,
         "required": false,
         "types": [
           {
             "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "left_body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "left_name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -5916,7 +5946,19 @@
             "named": false
           },
           {
+            "type": "false_elim",
+            "named": false
+          },
+          {
             "type": "implies_apply",
+            "named": false
+          },
+          {
+            "type": "or_left",
+            "named": false
+          },
+          {
+            "type": "or_right",
             "named": false
           },
           {
@@ -5945,6 +5987,26 @@
         "types": [
           {
             "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "right_body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "right_name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -8766,6 +8828,10 @@
     "named": false
   },
   {
+    "type": "false_elim",
+    "named": false
+  },
+  {
     "type": "for",
     "named": false
   },
@@ -8868,6 +8934,18 @@
   {
     "type": "operator_symbol",
     "named": true
+  },
+  {
+    "type": "or_cases",
+    "named": false
+  },
+  {
+    "type": "or_left",
+    "named": false
+  },
+  {
+    "type": "or_right",
+    "named": false
   },
   {
     "type": "packed",

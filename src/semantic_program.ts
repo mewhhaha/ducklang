@@ -2316,6 +2316,47 @@ function elaborate_prefix_proof(
       ),
     );
   }
+  if (proof.tag === "lambda") {
+    if (goal.tag === "implies") {
+      const body_context = extend_prefix_proof_context(
+        context,
+        proof.name,
+        goal.premise,
+      );
+      return elaborate_prefix_proof(
+        proof.body,
+        goal.conclusion,
+        body_context,
+      ).map((body): ProofTerm => ({
+        tag: "implies_intro",
+        premise: goal.premise,
+        body,
+      }));
+    }
+    if (goal.tag === "not") {
+      const body_context = extend_prefix_proof_context(
+        context,
+        proof.name,
+        goal.proposition,
+      );
+      return elaborate_prefix_proof(
+        proof.body,
+        { tag: "false" },
+        body_context,
+      ).map((body): ProofTerm => ({
+        tag: "not_intro",
+        premise: goal.proposition,
+        body,
+      }));
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "Proof lambda requires an implication or negation goal.",
+        proof.span,
+      ),
+    );
+  }
   if (proof.tag === "refl") {
     if (goal.tag !== "equal") {
       return fail(
@@ -2329,6 +2370,84 @@ function elaborate_prefix_proof(
     return ok({ tag: "refl", type: goal.type, term: goal.left });
   }
   if (proof.tag === "true_intro") return ok({ tag: "true_intro" });
+  if (proof.tag === "or_left" || proof.tag === "or_right") {
+    if (goal.tag !== "or") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "Disjunction introduction requires a disjunction goal.",
+          proof.span,
+        ),
+      );
+    }
+    if (proof.tag === "or_left") {
+      return elaborate_prefix_proof(
+        proof.proof,
+        goal.left,
+        context,
+      ).map((inner): ProofTerm => ({
+        tag: "or_left",
+        proof: inner,
+        other: goal.right,
+      }));
+    }
+    return elaborate_prefix_proof(
+      proof.proof,
+      goal.right,
+      context,
+    ).map((inner): ProofTerm => ({
+      tag: "or_right",
+      other: goal.left,
+      proof: inner,
+    }));
+  }
+  if (proof.tag === "false_elim") {
+    return elaborate_prefix_proof(
+      proof.proof,
+      { tag: "false" },
+      context,
+    ).map((inner): ProofTerm => ({
+      tag: "false_elim",
+      proof: inner,
+      target: goal,
+    }));
+  }
+  if (proof.tag === "or_cases") {
+    const disjunction_check = synthesize_prefix_proof(proof.proof, context);
+    const disjunction = checked_value(disjunction_check);
+    if (disjunction === undefined) {
+      return disjunction_check.map((checked) => checked.term);
+    }
+    if (disjunction.proposition.tag !== "or") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "or_cases requires a disjunction proof.",
+          proof.proof.span,
+        ),
+      );
+    }
+    const left_context = extend_prefix_proof_context(
+      context,
+      proof.left_name,
+      disjunction.proposition.left,
+    );
+    const right_context = extend_prefix_proof_context(
+      context,
+      proof.right_name,
+      disjunction.proposition.right,
+    );
+    return Applicative.lift(
+      (left_body: ProofTerm, right_body: ProofTerm): ProofTerm => ({
+        tag: "or_cases",
+        proof: disjunction.term,
+        left_body,
+        right_body,
+      }),
+      elaborate_prefix_proof(proof.left_body, goal, left_context),
+      elaborate_prefix_proof(proof.right_body, goal, right_context),
+    );
+  }
   if (proof.tag === "and_intro") {
     if (goal.tag !== "and") {
       return fail(
@@ -2522,6 +2641,25 @@ type SynthesizedPrefixProof = {
   proposition: Proposition;
 };
 
+function extend_prefix_proof_context(
+  context: PrefixKernelProofContext,
+  name: string,
+  proposition: Proposition,
+): PrefixKernelProofContext {
+  const proof_indices = new Map<string, number>();
+  for (const [existing_name, index] of context.proof_indices) {
+    proof_indices.set(existing_name, index + 1);
+  }
+  proof_indices.set(name, 0);
+  const proof_propositions = new Map(context.proof_propositions);
+  proof_propositions.set(name, proposition);
+  return {
+    ...context,
+    proof_indices,
+    proof_propositions,
+  };
+}
+
 function synthesize_prefix_proof(
   proof: PrefixProofTerm,
   context: PrefixKernelProofContext,
@@ -2551,6 +2689,42 @@ function synthesize_prefix_proof(
       compiler_diagnostic(
         diagnostic_codes.prefix_proof_invalid,
         "refl requires an expected equality goal.",
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "lambda") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "Proof lambda requires an expected implication or negation goal.",
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "or_left" || proof.tag === "or_right") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "Disjunction introduction requires an expected disjunction goal.",
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "false_elim") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "False elimination requires an expected proposition goal.",
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "or_cases") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "Disjunction elimination requires an expected proposition goal.",
         proof.span,
       ),
     );
@@ -2680,7 +2854,13 @@ function synthesize_prefix_proof(
 }
 
 function prefix_proof_synthesizes(proof: PrefixProofTerm): boolean {
-  if (proof.tag === "refl") return false;
+  if (
+    proof.tag === "refl" || proof.tag === "lambda" ||
+    proof.tag === "or_left" || proof.tag === "or_right" ||
+    proof.tag === "false_elim" || proof.tag === "or_cases"
+  ) {
+    return false;
+  }
   if (proof.tag === "name" || proof.tag === "true_intro") return true;
   if (
     proof.tag === "symm" || proof.tag === "and_left" ||

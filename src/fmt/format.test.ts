@@ -66,6 +66,14 @@ Deno.test("format_text round trips prefix refinement signatures", () => {
       "let keep = value => value;\n",
   );
   assert_equals(format_text(formatted), formatted);
+
+  const wide = "type choose = " +
+    "(choice: Proof True or True) -> Proof True or True\n" +
+    "let choose = choice => " +
+    "by or_cases(choice, left => or_left(left), " +
+    "right => or_right(right));\n";
+  const wide_formatted = format_text(wide);
+  assert_equals(format_text(wide_formatted), wide_formatted);
 });
 
 Deno.test("format_text round trips direct proof declarations", () => {
@@ -78,6 +86,24 @@ Deno.test("format_text round trips direct proof declarations", () => {
     "type keep = " +
       "(value: I32, evidence: Proof value = value) -> Proof value = value\n" +
       "let keep = (actual, proof) => by proof;\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
+Deno.test("format_text round trips propositional proof terms", () => {
+  const source = "type merge=(choice:Proof True or True)->Proof True\n" +
+    "let merge=choice=>by or_cases(choice,left=>left,right=>right);\n" +
+    "type implication=()->Proof True implies True\n" +
+    "let implication=()=>by evidence=>evidence;\n";
+  const formatted = format_text(source);
+
+  assert_equals(
+    formatted,
+    "type merge = (choice: Proof True or True) -> Proof True\n" +
+      "let merge = choice => " +
+      "by or_cases(choice, left => left, right => right);\n" +
+      "type implication = () -> Proof True implies True\n" +
+      "let implication = () => by evidence => evidence;\n",
   );
   assert_equals(format_text(formatted), formatted);
 });

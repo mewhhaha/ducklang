@@ -505,7 +505,27 @@ prefix_fact_parameters = (
 prefix_by_proof_expression = ("by" proof:(prefix_proof_term)) ;
 
 prefix_proof_term = (
-                     name:(identifier)
+                     (
+                       name:(identifier)
+                       "=>"
+                       body:(prefix_proof_term)
+                     )
+                     | (
+                         "or_cases"
+                         "("
+                         proof:(prefix_proof_term)
+                         ","
+                         left_name:(identifier)
+                         "=>"
+                         left_body:(prefix_proof_term)
+                         ","
+                         right_name:(identifier)
+                         "=>"
+                         right_body:(prefix_proof_term)
+                         (",")?
+                         ")"
+                       )
+                     | name:(identifier)
                      | "refl"
                      | "true_intro"
                      | (
@@ -514,6 +534,9 @@ prefix_proof_term = (
                              "symm"
                              | "and_left"
                              | "and_right"
+                             | "or_left"
+                             | "or_right"
+                             | "false_elim"
                            )
                          )
                          "("
@@ -532,6 +555,7 @@ prefix_proof_term = (
                          left:(prefix_proof_term)
                          ","
                          right:(prefix_proof_term)
+                         (",")?
                          ")"
                        )
                      | ("(" proof:(prefix_proof_term) ")")

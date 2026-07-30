@@ -82,8 +82,9 @@ Deno.test("Duck compiler erases checked refinement signatures", async () => {
 
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
-    "type reflexive = (value: I32) -> Proof value = value\n" +
-    "let reflexive = actual => by refl;\n" +
+    "type merge = (choice: Proof True or True) -> Proof True\n" +
+    "let merge = choice => " +
+    "by or_cases(choice, left => left, right => right);\n" +
     "42\n";
   const plain_source = "42\n";
   const proof_module = encode_duck_module(proof_source);

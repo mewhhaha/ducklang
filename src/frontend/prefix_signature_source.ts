@@ -518,13 +518,67 @@ function proof_term_from_node(
   const text = source.slice(node.start, node.end);
   if (text === "refl") return { tag: "refl", span };
   if (text === "true_intro") return { tag: "true_intro", span };
+  const nested = node.children.filter((child) =>
+    child.kind === "prefix_proof_term"
+  );
+  const or_cases_node = node.children.find((child) =>
+    child.kind === '"or_cases"'
+  );
+  if (or_cases_node !== undefined) {
+    const names = node.children.filter((child) => child.kind === "identifier");
+    const proof_node = nested[0];
+    const left_name_node = names[0];
+    const left_body_node = nested[1];
+    const right_name_node = names[1];
+    const right_body_node = nested[2];
+    if (
+      proof_node === undefined || left_name_node === undefined ||
+      left_body_node === undefined || right_name_node === undefined ||
+      right_body_node === undefined
+    ) {
+      return undefined;
+    }
+    const proof = proof_term_from_node(proof_node, source);
+    const left_body = proof_term_from_node(left_body_node, source);
+    const right_body = proof_term_from_node(right_body_node, source);
+    if (
+      proof === undefined || left_body === undefined ||
+      right_body === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      tag: "or_cases",
+      proof,
+      left_name: source.slice(left_name_node.start, left_name_node.end),
+      left_body,
+      right_name: source.slice(right_name_node.start, right_name_node.end),
+      right_body,
+      span,
+    };
+  }
+  const arrow_node = node.children.find((child) => child.kind === '"=>"');
+  if (arrow_node !== undefined) {
+    const name_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    const body_node = nested[0];
+    if (name_node === undefined || body_node === undefined) return undefined;
+    const body = proof_term_from_node(body_node, source);
+    if (body === undefined) return undefined;
+    return {
+      tag: "lambda",
+      name: source.slice(name_node.start, name_node.end),
+      body,
+      span,
+    };
+  }
   const operator_node = node.children.find((child) =>
     child.kind === '"symm"' || child.kind === '"and_left"' ||
     child.kind === '"and_right"' || child.kind === '"trans"' ||
-    child.kind === '"and_intro"' || child.kind === '"implies_apply"'
-  );
-  const nested = node.children.filter((child) =>
-    child.kind === "prefix_proof_term"
+    child.kind === '"and_intro"' || child.kind === '"implies_apply"' ||
+    child.kind === '"or_left"' || child.kind === '"or_right"' ||
+    child.kind === '"false_elim"'
   );
   if (operator_node === undefined) {
     const name_node = node.children.find((child) =>
@@ -544,7 +598,8 @@ function proof_term_from_node(
   const operator = source.slice(operator_node.start, operator_node.end);
   if (
     operator === "symm" || operator === "and_left" ||
-    operator === "and_right"
+    operator === "and_right" || operator === "or_left" ||
+    operator === "or_right" || operator === "false_elim"
   ) {
     const proof_node = nested[0];
     if (proof_node === undefined) return undefined;

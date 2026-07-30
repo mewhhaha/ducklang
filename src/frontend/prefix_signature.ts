@@ -84,7 +84,19 @@ export type PrefixProofTerm =
   | { tag: "name"; name: string; span: PrefixSpan }
   | { tag: "refl" | "true_intro"; span: PrefixSpan }
   | {
-    tag: "symm" | "and_left" | "and_right";
+    tag: "lambda";
+    name: string;
+    body: PrefixProofTerm;
+    span: PrefixSpan;
+  }
+  | {
+    tag:
+      | "symm"
+      | "and_left"
+      | "and_right"
+      | "or_left"
+      | "or_right"
+      | "false_elim";
     proof: PrefixProofTerm;
     span: PrefixSpan;
   }
@@ -92,6 +104,15 @@ export type PrefixProofTerm =
     tag: "trans" | "and_intro" | "implies_apply";
     left: PrefixProofTerm;
     right: PrefixProofTerm;
+    span: PrefixSpan;
+  }
+  | {
+    tag: "or_cases";
+    proof: PrefixProofTerm;
+    left_name: string;
+    left_body: PrefixProofTerm;
+    right_name: string;
+    right_body: PrefixProofTerm;
     span: PrefixSpan;
   };
 
@@ -825,11 +846,62 @@ function snapshot_proof_term(
     if (tag === "refl" || tag === "true_intro") {
       return Object.freeze({ tag, span });
     }
-    if (tag === "symm" || tag === "and_left" || tag === "and_right") {
+    if (tag === "lambda") {
+      return Object.freeze({
+        tag,
+        name: require_text(
+          own_value<string>(proof, "name"),
+          "Prefix proof binder",
+        ),
+        body: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "body"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (
+      tag === "symm" || tag === "and_left" || tag === "and_right" ||
+      tag === "or_left" || tag === "or_right" || tag === "false_elim"
+    ) {
       return Object.freeze({
         tag,
         proof: snapshot_proof_term(
           own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (tag === "or_cases") {
+      return Object.freeze({
+        tag,
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        left_name: require_text(
+          own_value<string>(proof, "left_name"),
+          "Prefix proof left binder",
+        ),
+        left_body: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "left_body"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        right_name: require_text(
+          own_value<string>(proof, "right_name"),
+          "Prefix proof right binder",
+        ),
+        right_body: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "right_body"),
           active,
           depth + 1,
           budget,

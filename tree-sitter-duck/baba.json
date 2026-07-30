@@ -191,6 +191,12 @@
         "value": 1
       }
     },
+    "prefix_proof_term": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    },
     "recursive_call_expression": {
       "wrap": {
         "kind": "prec.left",

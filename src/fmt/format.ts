@@ -66,6 +66,18 @@ const prefix_symbols = new Set(["!", "#", "@"]);
 // `&` and `\` are prefix sigils in value position but binary operators in
 // type expressions such as `(Value :- Text) :& Int`; position decides.
 const positional_symbols = new Set(["&", "\\"]);
+const proof_term_operators = new Set([
+  "and_intro",
+  "and_left",
+  "and_right",
+  "false_elim",
+  "implies_apply",
+  "or_cases",
+  "or_left",
+  "or_right",
+  "symm",
+  "trans",
+]);
 const spaced_symbols = new Set([
   "=",
   "==",
@@ -1371,6 +1383,15 @@ function needs_space(
     // its whitespace separator: `call (left, right)`.
     if (token.text === "(" && is_value_end(previous)) {
       const before_previous = line[index - 2];
+
+      if (
+        previous.kind === "name" && proof_term_operators.has(previous.text) &&
+        line.slice(0, index).some((candidate) =>
+          candidate.kind === "name" && candidate.text === "by"
+        )
+      ) {
+        return false;
+      }
 
       if (before_previous?.kind === "symbol" && before_previous.text === "#") {
         return true;

@@ -235,3 +235,32 @@ Deno.test("prefix source extraction retains proof propositions and bodies", () =
   if (body?.tag !== "name") throw new Error("Expected a named proof body.");
   assert_equals(body.name, "proof");
 });
+
+Deno.test("prefix source extraction retains propositional proof binders", () => {
+  const metadata = extract_prefix_source_metadata(parse_duck_source(
+    "type merge = (choice: Proof True or True) -> Proof True\n" +
+      "let merge = choice => " +
+      "by or_cases(choice, left => left, right => right);\n",
+  ));
+  const body = metadata.definitions[0]?.callable_proof_body;
+
+  assert_equals(body?.tag, "or_cases");
+  if (body?.tag !== "or_cases") {
+    throw new Error("Expected a disjunction elimination proof body.");
+  }
+  assert_equals(body.proof.tag, "name");
+  assert_equals(body.left_name, "left");
+  assert_equals(body.left_body.tag, "name");
+  assert_equals(body.right_name, "right");
+  assert_equals(body.right_body.tag, "name");
+
+  const lambda = extract_prefix_source_metadata(parse_duck_source(
+    "let implication = () => by evidence => evidence;\n",
+  )).definitions[0]?.callable_proof_body;
+  assert_equals(lambda?.tag, "lambda");
+  if (lambda?.tag !== "lambda") {
+    throw new Error("Expected an implication introduction proof body.");
+  }
+  assert_equals(lambda.name, "evidence");
+  assert_equals(lambda.body.tag, "name");
+});

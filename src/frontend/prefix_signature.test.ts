@@ -249,6 +249,72 @@ Deno.test("prefix signature snapshots reject cyclic proof terms", () => {
   );
 });
 
+Deno.test("prefix signature snapshots reject cyclic proof binders", () => {
+  const cyclic: PrefixProofTerm = {
+    tag: "lambda",
+    name: "evidence",
+    body: { tag: "true_intro", span: { start: 20, end: 30 } },
+    span: { start: 15, end: 30 },
+  };
+  cyclic.body = cyclic;
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({ callable_proof_body: cyclic })],
+      ),
+    "Prefix proof term cannot be cyclic",
+  );
+});
+
+Deno.test("prefix signature snapshots seal disjunction case binders", () => {
+  const proof: PrefixProofTerm = {
+    tag: "or_cases",
+    proof: {
+      tag: "name",
+      name: "choice",
+      span: { start: 20, end: 26 },
+    },
+    left_name: "left",
+    left_body: {
+      tag: "name",
+      name: "left",
+      span: { start: 28, end: 32 },
+    },
+    right_name: "right",
+    right_body: {
+      tag: "name",
+      name: "right",
+      span: { start: 34, end: 39 },
+    },
+    span: { start: 15, end: 40 },
+  };
+  const index = checked_value(
+    associate_prefix_signatures(
+      [signature()],
+      [definition({ callable_proof_body: proof })],
+    ),
+  );
+  if (index === undefined) throw new Error("Expected associated signature.");
+  const associated = [...index.values()][0];
+  proof.left_name = "changed";
+  proof.left_body = { tag: "true_intro", span: { start: 0, end: 0 } };
+
+  assert_equals(associated?.definition.callable_proof_body?.tag, "or_cases");
+  if (associated?.definition.callable_proof_body?.tag !== "or_cases") {
+    throw new Error("Expected snapshotted disjunction elimination.");
+  }
+  assert_equals(
+    associated.definition.callable_proof_body.left_name,
+    "left",
+  );
+  assert_equals(
+    associated.definition.callable_proof_body.left_body.tag,
+    "name",
+  );
+});
+
 Deno.test("prefix proof snapshots have one structural node budget", () => {
   let shared: PrefixProofTerm = {
     tag: "true_intro",

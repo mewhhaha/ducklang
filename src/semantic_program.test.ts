@@ -1299,7 +1299,7 @@ Deno.test("direct proof hypotheses alpha rename and compose", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type both = " +
       "(left: Proof True, right: Proof True) -> Proof True and True\n" +
-      "let both = (first, second) => by and_intro(first, second);\n" +
+      "let both = (first, second) => by and_intro(first, second,);\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
@@ -1369,6 +1369,99 @@ Deno.test("direct proof eliminators produce checked kernel terms", () => {
       checked_value(lower_duck_source(analysis)) !== undefined,
       true,
     );
+  }
+});
+
+Deno.test("direct propositional proof terms produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type implication_identity = () -> Proof True implies True\n" +
+      "let implication_identity = () => by evidence => evidence;\n42\n",
+      "type not_false = () -> Proof not False\n" +
+      "let not_false = () => by impossible => impossible;\n42\n",
+      "type choose_left = " +
+      "(evidence: Proof True) -> Proof True or False\n" +
+      "let choose_left = value => by or_left(value);\n42\n",
+      "type choose_right = " +
+      "(evidence: Proof True) -> Proof False or True\n" +
+      "let choose_right = value => by or_right(value);\n42\n",
+      "type explosion = (evidence: Proof False) -> Proof True\n" +
+      "let explosion = impossible => by false_elim(impossible);\n42\n",
+      "type merge = (choice: Proof True or True) -> Proof True\n" +
+      "let merge = choice => " +
+      "by or_cases(choice, left => left, right => right,);\n42\n",
+      "type retain_outer = " +
+      "(outer: Proof True) -> Proof True implies True\n" +
+      "let retain_outer = retained => by inner => retained;\n42\n",
+      "type retain_case_outer = " +
+      "(choice: Proof False or False, outer: Proof True) -> Proof True\n" +
+      "let retain_case_outer = (choice, retained) => " +
+      "by or_cases(choice, left => retained, right => retained);\n42\n",
+      "type nested_implication = " +
+      "() -> Proof True implies True implies True\n" +
+      "let nested_implication = () => by first => second => first;\n42\n",
+      "type shadow_implication = " +
+      "(outer: Proof False) -> Proof True implies True\n" +
+      "let shadow_implication = retained => by retained => retained;\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("invalid direct propositional proof terms fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by evidence => evidence;\n42\n",
+        "Proof lambda requires an implication or negation goal",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => by or_left(evidence);\n42\n",
+        "Disjunction introduction requires a disjunction goal",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => " +
+        "by or_cases(evidence, left => left, right => right);\n42\n",
+        "or_cases requires a disjunction proof",
+      ],
+      [
+        "type bad = (choice: Proof True or False) -> Proof True\n" +
+        "let bad = choice => " +
+        "by or_cases(choice, left => left, right => right);\n42\n",
+        "Proof establishes False, not True",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof False\n" +
+        "let bad = evidence => by false_elim(evidence);\n42\n",
+        "False elimination requires a proof of False",
+      ],
+      [
+        "type bad = (choice: Proof True or True) -> Proof True\n" +
+        "let bad = choice => " +
+        "by or_cases(choice, left => left, right => left);\n42\n",
+        "Unknown proof evidence left",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
   }
 });
 
