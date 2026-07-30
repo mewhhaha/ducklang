@@ -91,6 +91,7 @@ import {
   instantiate_proposition,
   type KernelCertificate,
   lift_proposition,
+  machine_reflection_holds,
   type ProofTerm,
   type Proposition,
   proposition_equal,
@@ -1759,7 +1760,11 @@ function check_prefix_call_obligation(
     break;
   }
   if (proof === undefined) {
-    proof = automatic_prefix_proof(obligation.proposition, goal);
+    proof = automatic_prefix_proof(
+      obligation.proposition,
+      goal,
+      environment,
+    );
   }
   if (proof !== undefined) {
     const certificate = check_proof(proof, certificate_goal, {
@@ -1798,6 +1803,7 @@ function check_prefix_call_obligation(
 function automatic_prefix_proof(
   source: PrefixProposition,
   proposition: Proposition,
+  environment: KernelEnvironment,
 ): ProofTerm | undefined {
   if (
     proposition.tag === "true" &&
@@ -1817,9 +1823,22 @@ function automatic_prefix_proof(
       term: proposition.left,
     };
   }
-  if (source.tag !== "and" || proposition.tag !== "and") return undefined;
-  const left = automatic_prefix_proof(source.left, proposition.left);
-  const right = automatic_prefix_proof(source.right, proposition.right);
+  if (source.tag !== "and" || proposition.tag !== "and") {
+    if (machine_reflection_holds(proposition, environment)) {
+      return { tag: "machine_reflect", proposition };
+    }
+    return undefined;
+  }
+  const left = automatic_prefix_proof(
+    source.left,
+    proposition.left,
+    environment,
+  );
+  const right = automatic_prefix_proof(
+    source.right,
+    proposition.right,
+    environment,
+  );
   if (left === undefined || right === undefined) return undefined;
   return { tag: "and_intro", left, right };
 }

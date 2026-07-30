@@ -26,6 +26,8 @@ const MAP_CONSTRUCTOR = Map;
 const ARRAY_CONSTRUCTOR = Array;
 const ARRAY_IS_ARRAY = Array.isArray;
 const ARRAY_PROTOTYPE = Array.prototype;
+const BIGINT_CONSTRUCTOR = BigInt;
+const NUMBER_CONSTRUCTOR = Number;
 const NUMBER_IS_SAFE_INTEGER = Number.isSafeInteger;
 const OBJECT_DEFINE_PROPERTY = Object.defineProperty;
 const OBJECT_FREEZE = Object.freeze;
@@ -34,17 +36,24 @@ const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
 const OBJECT_PROTOTYPE = Object.prototype;
 const REFLECT_APPLY = Reflect.apply;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
+const REGEXP_EXEC = RegExp.prototype.exec;
 const STRING_CONSTRUCTOR = String;
+const STRING_SLICE = String.prototype.slice;
+const STRING_STARTS_WITH = String.prototype.startsWith;
 const WEAK_MAP_CONSTRUCTOR = WeakMap;
 const WEAK_SET_CONSTRUCTOR = WeakSet;
 const MAP_GET = MAP_CONSTRUCTOR.prototype.get;
 const MAP_HAS = MAP_CONSTRUCTOR.prototype.has;
 const MAP_SET = MAP_CONSTRUCTOR.prototype.set;
+const KERNEL_ENVIRONMENT_IS_DECLARATION =
+  KernelEnvironment.prototype.is_declaration;
 const WEAK_MAP_GET = WEAK_MAP_CONSTRUCTOR.prototype.get;
 const WEAK_MAP_SET = WEAK_MAP_CONSTRUCTOR.prototype.set;
 const WEAK_SET_ADD = WEAK_SET_CONSTRUCTOR.prototype.add;
 const WEAK_SET_DELETE = WEAK_SET_CONSTRUCTOR.prototype.delete;
 const WEAK_SET_HAS = WEAK_SET_CONSTRUCTOR.prototype.has;
+const MACHINE_TYPE_PATTERN = /^([IU])([1-9][0-9]*)$/;
+const DECIMAL_INTEGER_PATTERN = /^-?[0-9]+$/;
 
 export type Proposition =
   | { tag: "true" }
@@ -66,6 +75,7 @@ export type Proposition =
 export type ProofTerm =
   | { tag: "assumption"; index: number }
   | { tag: "true_intro" }
+  | { tag: "machine_reflect"; proposition: Proposition }
   | { tag: "refl"; type: KernelType; term: KernelTerm }
   | { tag: "congr"; function: KernelTerm; proof: ProofTerm }
   | { tag: "symm"; proof: ProofTerm }
@@ -208,6 +218,152 @@ export function check_proposition_formation(
     stable_options.environment,
   );
   return stable;
+}
+
+export function machine_reflection_holds(
+  proposition: Proposition,
+  environment: KernelEnvironment,
+): boolean {
+  const stable = snapshot_proposition(proposition);
+  return evaluate_machine_proposition(stable, environment) === true;
+}
+
+type ReflectedMachineInteger = {
+  type: string;
+  value: bigint;
+};
+
+function evaluate_machine_proposition(
+  proposition: Proposition,
+  environment: KernelEnvironment,
+): boolean | undefined {
+  if (proposition.tag === "true") return true;
+  if (proposition.tag === "false") return false;
+  if (proposition.tag === "equal") {
+    const left = reflected_machine_integer(proposition.left, environment);
+    const right = reflected_machine_integer(proposition.right, environment);
+    if (left === undefined || right === undefined) return undefined;
+    if (left.type !== right.type) return undefined;
+    return left.value === right.value;
+  }
+  if (proposition.tag === "atom") {
+    if (
+      proposition.name !== "builtin:less" &&
+      proposition.name !== "builtin:less_equal"
+    ) {
+      return undefined;
+    }
+    const left = proposition.arguments[0];
+    const right = proposition.arguments[1];
+    if (
+      left === undefined || right === undefined ||
+      proposition.arguments.length !== 2
+    ) {
+      return undefined;
+    }
+    const reflected_left = reflected_machine_integer(left, environment);
+    const reflected_right = reflected_machine_integer(right, environment);
+    if (
+      reflected_left === undefined || reflected_right === undefined ||
+      reflected_left.type !== reflected_right.type
+    ) {
+      return undefined;
+    }
+    if (proposition.name === "builtin:less") {
+      return reflected_left.value < reflected_right.value;
+    }
+    return reflected_left.value <= reflected_right.value;
+  }
+  if (proposition.tag === "not") {
+    const inner = evaluate_machine_proposition(
+      proposition.proposition,
+      environment,
+    );
+    if (inner === undefined) return undefined;
+    return !inner;
+  }
+  if (proposition.tag === "and") {
+    const left = evaluate_machine_proposition(proposition.left, environment);
+    const right = evaluate_machine_proposition(proposition.right, environment);
+    if (left === undefined || right === undefined) return undefined;
+    return left && right;
+  }
+  if (proposition.tag === "or") {
+    const left = evaluate_machine_proposition(proposition.left, environment);
+    const right = evaluate_machine_proposition(proposition.right, environment);
+    if (left === undefined || right === undefined) return undefined;
+    return left || right;
+  }
+  if (proposition.tag === "implies") {
+    const premise = evaluate_machine_proposition(
+      proposition.premise,
+      environment,
+    );
+    const conclusion = evaluate_machine_proposition(
+      proposition.conclusion,
+      environment,
+    );
+    if (premise === undefined || conclusion === undefined) return undefined;
+    return !premise || conclusion;
+  }
+  return undefined;
+}
+
+function reflected_machine_integer(
+  term: KernelTerm,
+  environment: KernelEnvironment,
+): ReflectedMachineInteger | undefined {
+  if (term.tag !== "constant" || term.type.tag !== "constant") {
+    return undefined;
+  }
+  const literal_prefix = "literal:" + term.type.name + ":";
+  if (
+    !REFLECT_APPLY(STRING_STARTS_WITH, term.name, [literal_prefix])
+  ) {
+    return undefined;
+  }
+  if (
+    !REFLECT_APPLY(KERNEL_ENVIRONMENT_IS_DECLARATION, environment, [
+      term.name,
+    ])
+  ) {
+    return undefined;
+  }
+  const type_match = REFLECT_APPLY(
+    REGEXP_EXEC,
+    MACHINE_TYPE_PATTERN,
+    [term.type.name],
+  );
+  const sign = type_match?.[1];
+  const width_text = type_match?.[2];
+  if (sign === undefined || width_text === undefined) return undefined;
+  const width = NUMBER_CONSTRUCTOR(width_text);
+  if (!NUMBER_IS_SAFE_INTEGER(width) || width < 1 || width > 128) {
+    return undefined;
+  }
+  const value_text = REFLECT_APPLY(
+    STRING_SLICE,
+    term.name,
+    [literal_prefix.length],
+  );
+  if (
+    REFLECT_APPLY(REGEXP_EXEC, DECIMAL_INTEGER_PATTERN, [value_text]) === null
+  ) {
+    return undefined;
+  }
+  const value = BIGINT_CONSTRUCTOR(value_text);
+  const width_value = BIGINT_CONSTRUCTOR(width);
+  let minimum = 0n;
+  let maximum = (1n << width_value) - 1n;
+  if (sign === "I") {
+    minimum = -(1n << (width_value - 1n));
+    maximum = (1n << (width_value - 1n)) - 1n;
+  }
+  if (value < minimum || value > maximum) return undefined;
+  return {
+    type: term.type.name,
+    value,
+  };
 }
 
 export function instantiate_proposition(
@@ -641,6 +797,21 @@ function snapshot_proof(
     }
     case "true_intro":
       snapshot = { tag: "true_intro" };
+      break;
+    case "machine_reflect":
+      snapshot = {
+        tag: "machine_reflect",
+        proposition: snapshot_proposition(
+          required_property(
+            properties,
+            "proposition",
+            "Machine reflection proof",
+          ),
+          depth + 1,
+          active,
+          budget,
+        ),
+      };
       break;
     case "refl": {
       const type = snapshot_kernel_type(
@@ -2096,6 +2267,13 @@ function check_proof_term(
     }
     case "true_intro":
       return { proposition: { tag: "true" }, safety: { tag: "safe" } };
+    case "machine_reflect":
+      check_proposition(proof.proposition, term_context, environment);
+      expect(
+        evaluate_machine_proposition(proof.proposition, environment) === true,
+        "Machine reflection certificate does not establish its proposition.",
+      );
+      return { proposition: proof.proposition, safety: { tag: "safe" } };
     case "refl": {
       check_type(proof.type, term_context, environment);
       check_kernel_term(

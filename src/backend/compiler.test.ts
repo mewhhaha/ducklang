@@ -112,6 +112,27 @@ Deno.test("Duck compiler erases runtime proof parameters", async () => {
   }
 });
 
+Deno.test("Duck compiler erases reflected machine proofs", async () => {
+  const proved_source = "type nonzero = " +
+    "(value: I32, evidence: Proof value != 0) -> I32\n" +
+    "let nonzero = (actual, evidence) => actual;\n" +
+    "nonzero 42\n";
+  const plain_source = "let nonzero = actual => actual;\n" +
+    "nonzero 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
     "type merge = (choice: Proof True or True) -> Proof True\n" +

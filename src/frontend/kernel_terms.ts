@@ -247,6 +247,10 @@ export class KernelEnvironment {
   declaration(name: string): KernelType | undefined {
     return REFLECT_APPLY(MAP_GET, this.#definitions, [name])?.type;
   }
+  is_declaration(name: string): boolean {
+    return REFLECT_APPLY(MAP_GET, this.#definitions, [name])?.tag ===
+      "declaration";
+  }
   definition(name: string): KernelType | undefined {
     const definition = REFLECT_APPLY(MAP_GET, this.#definitions, [name]);
     if (definition === undefined || definition.tag === "declaration") {

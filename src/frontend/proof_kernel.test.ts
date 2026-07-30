@@ -7,6 +7,7 @@ import {
   format_proposition,
   instantiate_proposition,
   lift_proposition,
+  machine_reflection_holds,
   type ProofTerm,
   type Proposition,
   proposition_equal,
@@ -310,6 +311,242 @@ Deno.test("kernel rejects equality terms outside their carrier", () => {
 Deno.test("kernel checks True introduction", () => {
   const certificate = check_proof({ tag: "true_intro" }, { tag: "true" });
   assert_equals(certificate.safety, { tag: "safe" });
+});
+
+Deno.test("kernel checks closed machine-integer reflection", () => {
+  const i32: KernelType = { tag: "constant", name: "I32" };
+  const zero: KernelTerm = {
+    tag: "constant",
+    name: "literal:I32:0",
+    type: i32,
+  };
+  const one: KernelTerm = {
+    tag: "constant",
+    name: "literal:I32:1",
+    type: i32,
+  };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "I32", type: type_sort(0) },
+    { tag: "declaration", name: "literal:I32:0", type: i32 },
+    { tag: "declaration", name: "literal:I32:1", type: i32 },
+  ]);
+  const nonzero: Proposition = {
+    tag: "not",
+    proposition: { tag: "equal", type: i32, left: one, right: zero },
+  };
+  const ordered: Proposition = {
+    tag: "atom",
+    name: "builtin:less",
+    arguments: [zero, one],
+  };
+
+  assert_equals(
+    machine_reflection_holds(nonzero, reflection_environment),
+    true,
+  );
+  assert_equals(
+    machine_reflection_holds(ordered, reflection_environment),
+    true,
+  );
+  assert_equals(
+    check_proof(
+      { tag: "machine_reflect", proposition: nonzero },
+      nonzero,
+      { environment: reflection_environment, allow_unsafe: false },
+    ).safety,
+    { tag: "safe" },
+  );
+  assert_equals(
+    check_proof(
+      { tag: "machine_reflect", proposition: ordered },
+      ordered,
+      { environment: reflection_environment, allow_unsafe: false },
+    ).safety,
+    { tag: "safe" },
+  );
+});
+
+Deno.test("kernel rejects false machine-integer reflection", () => {
+  const i32: KernelType = { tag: "constant", name: "I32" };
+  const one: KernelTerm = {
+    tag: "constant",
+    name: "literal:I32:1",
+    type: i32,
+  };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "I32", type: type_sort(0) },
+    { tag: "declaration", name: "literal:I32:1", type: i32 },
+  ]);
+  const unequal: Proposition = {
+    tag: "not",
+    proposition: { tag: "equal", type: i32, left: one, right: one },
+  };
+
+  assert_equals(
+    machine_reflection_holds(unequal, reflection_environment),
+    false,
+  );
+  assert_throws(
+    () =>
+      check_proof(
+        { tag: "machine_reflect", proposition: unequal },
+        unequal,
+        { environment: reflection_environment, allow_unsafe: false },
+      ),
+    "Machine reflection certificate does not establish its proposition.",
+  );
+});
+
+Deno.test("kernel rejects malformed machine-integer reflection literals", () => {
+  for (
+    const [type_name, value] of [
+      ["i32", "1"],
+      ["I032", "1"],
+      ["I8", "128"],
+      ["U8", "-1"],
+    ]
+  ) {
+    const type: KernelType = { tag: "constant", name: type_name };
+    const literal: KernelTerm = {
+      tag: "constant",
+      name: "literal:" + type_name + ":" + value,
+      type,
+    };
+    const reflection_environment = KernelEnvironment.from_definitions([
+      { tag: "declaration", name: type_name, type: type_sort(0) },
+      { tag: "declaration", name: literal.name, type },
+    ]);
+    const proposition: Proposition = {
+      tag: "equal",
+      type,
+      left: literal,
+      right: literal,
+    };
+
+    assert_equals(
+      machine_reflection_holds(proposition, reflection_environment),
+      false,
+    );
+    assert_throws(
+      () =>
+        check_proof(
+          { tag: "machine_reflect", proposition },
+          proposition,
+          { environment: reflection_environment, allow_unsafe: false },
+        ),
+      "Machine reflection certificate does not establish its proposition.",
+    );
+  }
+});
+
+Deno.test("kernel rejects reflection over reducible literal names", () => {
+  const i32: KernelType = { tag: "constant", name: "I32" };
+  const one: KernelTerm = {
+    tag: "constant",
+    name: "literal:I32:1",
+    type: i32,
+  };
+  const two: KernelTerm = {
+    tag: "constant",
+    name: "literal:I32:2",
+    type: i32,
+  };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "I32", type: type_sort(0) },
+    { tag: "declaration", name: "literal:I32:2", type: i32 },
+    {
+      tag: "transparent",
+      name: "literal:I32:1",
+      module: "adversarial",
+      type: i32,
+      value: { tag: "constant", name: "literal:I32:2" },
+      total: true,
+    },
+  ]);
+  const equality: Proposition = {
+    tag: "equal",
+    type: i32,
+    left: one,
+    right: two,
+  };
+  const inequality: Proposition = { tag: "not", proposition: equality };
+
+  assert_equals(
+    check_proof(
+      { tag: "refl", type: i32, term: two },
+      equality,
+      { environment: reflection_environment, allow_unsafe: false },
+    ).safety,
+    { tag: "safe" },
+  );
+  assert_equals(
+    machine_reflection_holds(inequality, reflection_environment),
+    false,
+  );
+  assert_throws(
+    () =>
+      check_proof(
+        { tag: "machine_reflect", proposition: inequality },
+        inequality,
+        { environment: reflection_environment, allow_unsafe: false },
+      ),
+    "Machine reflection certificate does not establish its proposition.",
+  );
+});
+
+Deno.test("machine reflection ignores mutable realm BigInt", () => {
+  const i32: KernelType = { tag: "constant", name: "I32" };
+  const one: KernelTerm = {
+    tag: "constant",
+    name: "literal:I32:1",
+    type: i32,
+  };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "I32", type: type_sort(0) },
+    { tag: "declaration", name: "literal:I32:1", type: i32 },
+  ]);
+  const equality: Proposition = {
+    tag: "equal",
+    type: i32,
+    left: one,
+    right: one,
+  };
+  const inequality: Proposition = { tag: "not", proposition: equality };
+  const original_bigint = BigInt;
+  let parsed_literals = 0;
+  globalThis.BigInt = ((value: string | number | bigint | boolean) => {
+    if (value === "1") {
+      parsed_literals += 1;
+      if (parsed_literals % 2 === 0) return 2n;
+      return 1n;
+    }
+    return Reflect.apply(original_bigint, undefined, [value]);
+  }) as BigIntConstructor;
+  try {
+    assert_equals(
+      machine_reflection_holds(inequality, reflection_environment),
+      false,
+    );
+    assert_throws(
+      () =>
+        check_proof(
+          { tag: "machine_reflect", proposition: inequality },
+          inequality,
+          { environment: reflection_environment, allow_unsafe: false },
+        ),
+      "Machine reflection certificate does not establish its proposition.",
+    );
+    assert_equals(
+      check_proof(
+        { tag: "refl", type: i32, term: one },
+        equality,
+        { environment: reflection_environment, allow_unsafe: false },
+      ).safety,
+      { tag: "safe" },
+    );
+  } finally {
+    globalThis.BigInt = original_bigint;
+  }
 });
 
 Deno.test("kernel checks implication introduction", () => {

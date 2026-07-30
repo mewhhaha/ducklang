@@ -1331,6 +1331,36 @@ Deno.test("runtime callables erase explicit proof parameters from Core", () => {
   );
 });
 
+Deno.test("closed machine literals discharge nonzero call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "consume 1\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements.length,
+    2,
+  );
+});
+
+Deno.test("closed machine literals discharge ordered call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+      "let consume = (actual_left, actual_right, evidence) => actual_left;\n" +
+      "consume (1, 2)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements.length,
+    2,
+  );
+});
+
 Deno.test("proof-only runtime callables erase to zero parameters", () => {
   const constant = analyze_duck_source(parse_duck_source(
     "type constant = (evidence: Proof True) -> I32\n" +
