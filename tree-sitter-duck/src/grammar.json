@@ -132,6 +132,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "prefix_unsafe_proof_statement"
+        },
+        {
+          "type": "SYMBOL",
           "name": "type_declaration_statement"
         },
         {
@@ -210,6 +214,10 @@
         {
           "type": "SYMBOL",
           "name": "prefix_fact_statement"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "prefix_unsafe_proof_statement"
         },
         {
           "type": "SYMBOL",
@@ -472,6 +480,27 @@
         {
           "type": "STRING",
           "value": ";"
+        }
+      ]
+    },
+    "prefix_unsafe_proof_statement": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "unsafe",
+          "content": {
+            "type": "STRING",
+            "value": "unsafe"
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "definition",
+          "content": {
+            "type": "SYMBOL",
+            "name": "binding_statement"
+          }
         }
       ]
     },
@@ -2924,6 +2953,35 @@
                   "type": "SYMBOL",
                   "name": "prefix_proof_term"
                 }
+              }
+            ]
+          },
+          {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "unsafe"
+              },
+              {
+                "type": "STRING",
+                "value": "{"
+              },
+              {
+                "type": "STRING",
+                "value": "assume"
+              },
+              {
+                "type": "FIELD",
+                "name": "proposition",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "prefix_proposition"
+                }
+              },
+              {
+                "type": "STRING",
+                "value": "}"
               }
             ]
           },

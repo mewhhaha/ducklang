@@ -8,6 +8,7 @@ import {
   type PrefixSignatureBinder,
   type PrefixSignatureParameter,
   type PrefixSignatureResult,
+  type PrefixSpan,
   type PrefixTerm,
   type PrefixTypeReference,
 } from "./prefix_signature.ts";
@@ -69,6 +70,10 @@ function visit(
   }
   if (node.kind === "binding_statement") {
     definitions.push(...definitions_from_node(node, source, scope));
+  }
+  if (node.kind === "prefix_unsafe_proof_statement") {
+    definitions.push(...definitions_from_node(node, source, scope));
+    return;
   }
   if (node.kind === "prefix_fact_statement") {
     definitions.push(...definitions_from_node(node, source, scope));
@@ -152,6 +157,17 @@ function definitions_from_node(
   source: string,
   scope: string,
 ): PrefixDefinition[] {
+  let definition_node = node;
+  let unsafe_span: PrefixSpan | undefined;
+  if (node.kind === "prefix_unsafe_proof_statement") {
+    const unsafe = node.children.find((child) => child.kind === '"unsafe"');
+    const nested = node.children.find((child) =>
+      child.kind === "binding_statement"
+    );
+    if (unsafe === undefined || nested === undefined) return [];
+    unsafe_span = { start: unsafe.start, end: unsafe.end };
+    definition_node = nested;
+  }
   let kind: PrefixDefinition["kind"] = "let";
   let recursive = false;
   let fact_parameters: string[] | undefined;
@@ -164,15 +180,15 @@ function definitions_from_node(
     proof_body?: PrefixProofTerm;
   }[] = [];
   let names: string[] = [];
-  if (node.kind === "prefix_fact_statement") {
+  if (definition_node.kind === "prefix_fact_statement") {
     kind = "fact";
-    const name_node = node.children.find((child) =>
+    const name_node = definition_node.children.find((child) =>
       child.kind === "identifier" || child.kind === "lowercase_identifier"
     );
     if (name_node !== undefined) {
       names = [source.slice(name_node.start, name_node.end)];
     }
-    const body_node = node.children.find((child) =>
+    const body_node = definition_node.children.find((child) =>
       child.kind === "prefix_fact_value"
     );
     if (body_node !== undefined) {
@@ -191,23 +207,25 @@ function definitions_from_node(
         fact_body = proposition_from_node(proposition_node, source);
       }
     }
-    if (node.children.some((child) => child.kind === '"opaque"')) {
+    if (definition_node.children.some((child) => child.kind === '"opaque"')) {
       kind = "opaque fact";
     }
   } else {
-    const kind_node = node.children.find((child) =>
+    const kind_node = definition_node.children.find((child) =>
       child.kind === '"let"' || child.kind === '"const"'
     );
     if (kind_node === undefined) return [];
     if (kind_node.kind === '"const"') kind = "const";
-    recursive = node.children.some((child) => child.kind === '"rec"');
-    const equals_node = node.children.find((child) =>
+    recursive = definition_node.children.some((child) =>
+      child.kind === '"rec"'
+    );
+    const equals_node = definition_node.children.find((child) =>
       source.slice(child.start, child.end) === "="
     );
     if (equals_node === undefined) return [];
     const seen = new Set<string>();
     for (
-      const pattern_node of node.children.filter((child) =>
+      const pattern_node of definition_node.children.filter((child) =>
         child.end <= equals_node.start &&
         is_definition_pattern_node(child)
       )
@@ -218,9 +236,13 @@ function definitions_from_node(
         names.push(name);
       }
     }
-    for (let index = 0; index < node.children.length - 1; index += 1) {
-      const separator = node.children[index];
-      const mutual_name = node.children[index + 1];
+    for (
+      let index = 0;
+      index < definition_node.children.length - 1;
+      index += 1
+    ) {
+      const separator = definition_node.children[index];
+      const mutual_name = definition_node.children[index + 1];
       if (
         separator === undefined || mutual_name === undefined ||
         source.slice(separator.start, separator.end) !== "and" ||
@@ -234,7 +256,7 @@ function definitions_from_node(
       names.push(name);
     }
     for (
-      const arrow_node of node.children.filter((child) =>
+      const arrow_node of definition_node.children.filter((child) =>
         child.kind === "arrow_function"
       )
     ) {
@@ -290,7 +312,7 @@ function definitions_from_node(
       });
     }
     if (callable_definitions.length === 0) {
-      for (const child of node.children) {
+      for (const child of definition_node.children) {
         if (child.start < equals_node.end) continue;
         direct_proof_body = proof_body_from_node(child, source);
         if (direct_proof_body !== undefined) break;
@@ -303,9 +325,9 @@ function definitions_from_node(
       kind,
       scope,
       recursive,
-      span: { start: node.start, end: node.end },
+      span: { start: definition_node.start, end: definition_node.end },
     };
-    const attribute = node.children.find((child) =>
+    const attribute = definition_node.children.find((child) =>
       child.kind === "attribute_group"
     );
     if (attribute !== undefined) {
@@ -314,6 +336,7 @@ function definitions_from_node(
         end: attribute.end,
       };
     }
+    if (unsafe_span !== undefined) definition.unsafe_span = unsafe_span;
     const callable = callable_definitions[index];
     if (callable !== undefined) {
       definition.callable_parameters = callable.parameters;
@@ -518,6 +541,16 @@ function proof_term_from_node(
   const text = source.slice(node.start, node.end);
   if (text === "refl") return { tag: "refl", span };
   if (text === "true_intro") return { tag: "true_intro", span };
+  const unsafe_node = node.children.find((child) => child.kind === '"unsafe"');
+  if (unsafe_node !== undefined) {
+    const proposition_node = node.children.find((child) =>
+      child.kind === "prefix_proposition"
+    );
+    if (proposition_node === undefined) return undefined;
+    const proposition = proposition_from_node(proposition_node, source);
+    if (proposition === undefined) return undefined;
+    return { tag: "unsafe_assume", proposition, span };
+  }
   const nested = node.children.filter((child) =>
     child.kind === "prefix_proof_term"
   );

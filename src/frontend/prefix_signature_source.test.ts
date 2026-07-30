@@ -325,3 +325,28 @@ Deno.test("prefix source extraction retains equality transformations", () => {
   assert_equals(substituted.motive.tag, "holds");
   assert_equals(substituted.proof.tag, "name");
 });
+
+Deno.test("prefix source extraction retains unsafe proof provenance", () => {
+  const source = "type admitted = () -> Proof False\n" +
+    "unsafe let admitted = () => by unsafe { assume False };\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  const definition = metadata.definitions[0];
+  const body = definition?.callable_proof_body;
+
+  assert_equals(
+    definition?.unsafe_span,
+    {
+      start: source.indexOf("unsafe let"),
+      end: source.indexOf("unsafe let") + "unsafe".length,
+    },
+  );
+  assert_equals(body?.tag, "unsafe_assume");
+  if (body?.tag !== "unsafe_assume") {
+    throw new Error("Expected an unsafe proof assumption.");
+  }
+  assert_equals(body.proposition.tag, "false");
+  assert_equals(
+    source.slice(body.span.start, body.span.end),
+    "unsafe { assume False }",
+  );
+});

@@ -901,6 +901,29 @@ function validate_prefix_contracts(
     { key: string; proof: CheckedKernelCertificate } | undefined
   >[] = [];
   for (const definition of resolved_definitions) {
+    if (definition.unsafe_span === undefined) continue;
+    const signature = resolved_signatures.find((candidate) =>
+      candidate.name === definition.name &&
+      candidate.scope === definition.scope &&
+      candidate.span.end <= definition.span.start
+    );
+    if (
+      signature !== undefined &&
+      signature.type.result.type.proof !== undefined
+    ) {
+      continue;
+    }
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.unsafe_proof_use,
+          `Unsafe definition ${definition.name} requires a matching prefix signature with a Proof result.`,
+          definition.unsafe_span,
+        ),
+      ),
+    );
+  }
+  for (const definition of resolved_definitions) {
     if (definition.callable_proof_body === undefined) continue;
     const signature = resolved_signatures.find((candidate) =>
       candidate.name === definition.name &&
@@ -1838,6 +1861,7 @@ function prefix_term_has_kernel_representation(term: PrefixTerm): boolean {
 }
 
 type PrefixKernelProofContext = {
+  allow_unsafe: boolean;
   declaration_name: string;
   declarations: Map<string, KernelType>;
   facts: ReadonlyMap<string, PrefixFactSignature>;
@@ -2040,6 +2064,7 @@ function check_prefix_proof_definition(
   );
   const type_names = signature_type_names(signature, declared_type_names);
   const context: PrefixKernelProofContext = {
+    allow_unsafe: definition.unsafe_span !== undefined,
     declaration_name: signature.name,
     declarations,
     facts,
@@ -2126,15 +2151,30 @@ function check_prefix_proof_definition(
   const environment = KernelEnvironment.from(declarations);
   const stable_term_context = snapshot_kernel_context(term_context);
   try {
+    const allow_unsafe = definition.unsafe_span !== undefined;
+    const certificate = check_proof(theorem_proof, theorem_goal, {
+      allow_unsafe,
+      require_safe: !allow_unsafe,
+      environment,
+      term_context: stable_term_context,
+    });
+    if (allow_unsafe && certificate.safety.tag === "safe") {
+      expect(
+        definition.unsafe_span !== undefined,
+        `Unsafe proof declaration ${signature.name} lost its unsafe span.`,
+      );
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          `Unsafe proof declaration ${signature.name} does not depend on unsafe evidence.`,
+          definition.unsafe_span,
+        ),
+      );
+    }
     return ok({
       key: signature.scope + ":" + signature.name + ":proof",
       proof: Object.freeze({
-        certificate: check_proof(theorem_proof, theorem_goal, {
-          allow_unsafe: false,
-          require_safe: true,
-          environment,
-          term_context: stable_term_context,
-        }),
+        certificate,
         environment,
         term_context: stable_term_context,
       }),
@@ -3112,6 +3152,67 @@ function synthesize_prefix_proof(
       proposition: { tag: "true" },
     });
   }
+  if (proof.tag === "unsafe_assume") {
+    if (!context.allow_unsafe) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.unsafe_proof_use,
+          "Unsafe proof assumption requires an unsafe proof declaration.",
+          proof.span,
+        ),
+      );
+    }
+    const unstructured = first_unstructured_quantified_proposition(
+      proof.proposition,
+      context.facts,
+      true,
+    );
+    if (unstructured !== undefined) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "Unsafe proof assumption requires structured kernel terms.",
+          unstructured.span,
+        ),
+      );
+    }
+    const formation = check_prefix_proposition(
+      context.declaration_name,
+      proof.proposition,
+      context.term_types,
+      context.type_names,
+      context.facts,
+      new Set(),
+    );
+    const formation_diagnostics = diagnostics_of(formation);
+    if (formation_diagnostics.length > 0) {
+      return fail(
+        ...formation_diagnostics.map((diagnostic) => ({
+          ...diagnostic,
+          code: diagnostic_codes.prefix_proof_invalid,
+        })),
+      );
+    }
+    const proposition = prefix_kernel_proposition(
+      context.declaration_name,
+      proof.proposition,
+      context,
+      context.facts,
+      context.type_names,
+    );
+    return ok({
+      term: {
+        tag: "unsafe_assume",
+        proposition,
+        origin: {
+          tag: "source",
+          start: proof.span.start,
+          end: proof.span.end,
+        },
+      },
+      proposition,
+    });
+  }
   if (proof.tag === "refl") {
     return fail(
       compiler_diagnostic(
@@ -3489,7 +3590,12 @@ function prefix_proof_synthesizes(proof: PrefixProofTerm): boolean {
   ) {
     return false;
   }
-  if (proof.tag === "name" || proof.tag === "true_intro") return true;
+  if (
+    proof.tag === "name" || proof.tag === "true_intro" ||
+    proof.tag === "unsafe_assume"
+  ) {
+    return true;
+  }
   if (
     proof.tag === "symm" || proof.tag === "and_left" ||
     proof.tag === "and_right"

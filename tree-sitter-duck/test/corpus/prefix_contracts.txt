@@ -296,6 +296,52 @@ let substituted = (equality, evidence) => by transport(equality, value => predic
               (identifier))))))))
 
 ==================
+Unsafe proof assumptions
+==================
+
+type admitted = () -> Proof False
+unsafe let admitted = () => by unsafe { assume False };
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (prefix_unsafe_proof_statement
+    (binding_statement
+      (identifier)
+      (arrow_function
+        (parameter_list)
+        (postfix_expression
+          (prefix_by_proof_expression
+            (prefix_proof_term
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier))))))))))))))))
+
+==================
 Quantified proof terms
 ==================
 

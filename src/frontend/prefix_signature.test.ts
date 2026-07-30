@@ -249,6 +249,38 @@ Deno.test("prefix signature snapshots reject cyclic proof terms", () => {
   );
 });
 
+Deno.test("prefix signature snapshots seal unsafe proof assumptions", () => {
+  const source_signature = signature();
+  const proposition: PrefixProposition = {
+    tag: "false",
+    span: { start: 20, end: 25 },
+  };
+  const source_definition = definition({
+    unsafe_span: { start: 11, end: 17 },
+    callable_proof_body: {
+      tag: "unsafe_assume",
+      proposition,
+      span: { start: 20, end: 43 },
+    },
+  });
+  const result = checked_value(
+    associate_prefix_signatures([source_signature], [source_definition]),
+  );
+  if (result === undefined) throw new Error("Expected associated signature.");
+  (proposition as { tag: "true" | "false" }).tag = "true";
+  source_definition.unsafe_span = { start: 0, end: 1 };
+  const associated = [...result.values()][0];
+  const body = associated?.definition.callable_proof_body;
+
+  assert_equals(associated?.definition.unsafe_span, { start: 11, end: 17 });
+  assert_equals(body?.tag, "unsafe_assume");
+  if (body?.tag !== "unsafe_assume") {
+    throw new Error("Expected a snapshotted unsafe assumption.");
+  }
+  assert_equals(body.proposition.tag, "false");
+  assert_equals(Object.isFrozen(body.proposition), true);
+});
+
 Deno.test("prefix signature snapshots reject cyclic proof binders", () => {
   const cyclic: PrefixProofTerm = {
     tag: "lambda",

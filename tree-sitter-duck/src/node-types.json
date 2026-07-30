@@ -1414,6 +1414,10 @@
           "named": true
         },
         {
+          "type": "prefix_unsafe_proof_statement",
+          "named": true
+        },
+        {
           "type": "resume_dup_statement",
           "named": true
         },
@@ -2252,6 +2256,10 @@
         },
         {
           "type": "prefix_signature_statement",
+          "named": true
+        },
+        {
+          "type": "prefix_unsafe_proof_statement",
           "named": true
         },
         {
@@ -6051,6 +6059,16 @@
           }
         ]
       },
+      "proposition": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proposition",
+            "named": true
+          }
+        ]
+      },
       "right": {
         "multiple": false,
         "required": false,
@@ -6811,6 +6829,32 @@
     }
   },
   {
+    "type": "prefix_unsafe_proof_statement",
+    "named": true,
+    "fields": {
+      "definition": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "binding_statement",
+            "named": true
+          }
+        ]
+      },
+      "unsafe": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "unsafe",
+            "named": false
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "product_field",
     "named": true,
     "fields": {
@@ -7428,6 +7472,10 @@
         },
         {
           "type": "prefix_signature_statement",
+          "named": true
+        },
+        {
+          "type": "prefix_unsafe_proof_statement",
           "named": true
         },
         {
@@ -8837,6 +8885,10 @@
     "named": true
   },
   {
+    "type": "assume",
+    "named": false
+  },
+  {
     "type": "break",
     "named": false
   },
@@ -9191,6 +9243,10 @@
   },
   {
     "type": "union",
+    "named": false
+  },
+  {
+    "type": "unsafe",
     "named": false
   },
   {

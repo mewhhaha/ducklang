@@ -149,7 +149,10 @@ Deno.test("contract compatibility rejects unsafe actual functions", () => {
   const actual = function_contract({
     summary: {
       ...function_contract().summary,
-      safety: { tag: "unsafe", origins: ["test"] },
+      safety: {
+        tag: "unsafe",
+        origins: [{ tag: "description", description: "test" }],
+      },
     },
   });
   assert_throws(

@@ -1899,6 +1899,80 @@ Deno.test("invalid direct proof declarations fail before Core", () => {
   }
 });
 
+Deno.test("unsafe proof assumptions retain provenance and erase before Core", () => {
+  const source = "type admitted = () -> Proof False\n" +
+    "unsafe let admitted = () => by unsafe { assume False };\n" +
+    "42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+
+  assert_equals(analysis.diagnostics, []);
+  const checked = analysis.proofs.get("root:admitted:proof");
+  if (checked === undefined) {
+    throw new Error("Expected an unsafe proof certificate.");
+  }
+  assert_equals(checked.certificate.safety, {
+    tag: "unsafe",
+    origins: [{
+      tag: "source",
+      start: source.indexOf("unsafe {"),
+      end: source.indexOf("unsafe {") + "unsafe { assume False }".length,
+    }],
+  });
+  assert_equals(checked_value(lower_duck_source(analysis))?.core, {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: { tag: "num", type: "i32", value: 42 },
+    }],
+  });
+});
+
+Deno.test("unsafe proof assumptions require explicit unsafe declarations", () => {
+  for (
+    const [source, code, message] of [
+      [
+        "type bad = () -> Proof False\n" +
+        "let bad = () => by unsafe { assume False };\n42\n",
+        "DUCK2606",
+        "requires an unsafe proof declaration",
+      ],
+      [
+        "unsafe let runtime = () => 42;\nruntime()\n",
+        "DUCK2606",
+        "requires a matching prefix signature with a Proof result",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "unsafe let bad = () => by true_intro;\n42\n",
+        "DUCK2605",
+        "does not depend on unsafe evidence",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "unsafe let bad = () => by unsafe { assume False };\n42\n",
+        "DUCK2605",
+        "Proof establishes False, not True",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "unsafe let bad = () => by unsafe { assume missing };\n42\n",
+        "DUCK2605",
+        "unbound logical value missing",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === code &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
 Deno.test("proof declarations reject conflicting inline annotations", () => {
   for (
     const [source, message] of [

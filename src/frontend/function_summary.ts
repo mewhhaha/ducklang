@@ -3,6 +3,7 @@ import {
   check_proposition_formation,
   type KernelCertificate,
   proposition_equal,
+  type ProofOrigin,
   type Proposition,
   type ProofSafety,
 } from "./proof_kernel.ts";
@@ -290,11 +291,40 @@ function snapshot_safety(safety: ProofSafety): ProofSafety {
   expect(safety.tag === "unsafe", "Invalid function summary safety tag.");
   require_own_data(safety, "origins");
   assert_plain_array(safety.origins, "Unsafe origins");
-  const origins: string[] = [];
+  const origins: ProofOrigin[] = [];
   for (let index = 0; index < safety.origins.length; index += 1) {
     const origin = safety.origins[index];
-    expect(typeof origin === "string" && origin.length > 0, "Unsafe origin must not be empty.");
-    origins.push(origin);
+    assert_plain_record(origin, "Unsafe origin");
+    require_own_data(origin, "tag");
+    if (origin.tag === "source") {
+      require_own_data(origin, "start");
+      require_own_data(origin, "end");
+      expect(
+        Number.isSafeInteger(origin.start) && origin.start >= 0,
+        "Unsafe origin start must be a non-negative safe integer.",
+      );
+      expect(
+        Number.isSafeInteger(origin.end) && origin.end >= origin.start,
+        "Unsafe origin end must be a safe integer after its start.",
+      );
+      origins.push(Object.freeze({
+        tag: "source",
+        start: origin.start,
+        end: origin.end,
+      }));
+      continue;
+    }
+    expect(origin.tag === "description", "Invalid unsafe origin tag.");
+    require_own_data(origin, "description");
+    expect(
+      typeof origin.description === "string" &&
+        origin.description.length > 0,
+      "Unsafe origin description must not be empty.",
+    );
+    origins.push(Object.freeze({
+      tag: "description",
+      description: origin.description,
+    }));
   }
   return { tag: "unsafe", origins: Object.freeze(origins) };
 }

@@ -256,6 +256,27 @@ Deno.test("Baba parses direct quantified proof terms", () => {
   }
 });
 
+Deno.test("Baba parses explicit unsafe proof assumptions", () => {
+  const parsed = parse_duck_source(
+    "type admitted = () -> Proof False\n" +
+      "unsafe let admitted = () => by unsafe { assume False };\n",
+  );
+
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(
+    parsed.cst.tree.includes(
+      '(prefix_unsafe_proof_statement "unsafe" (binding_statement "let"',
+    ),
+    true,
+  );
+  assert_equals(
+    parsed.cst.tree.includes(
+      '(prefix_proof_term "unsafe" "{" "assume"',
+    ),
+    true,
+  );
+});
+
 Deno.test("Baba parses direct equality transformation proof terms", () => {
   const parsed = parse_duck_source(
     "let mapped = equality => by congr(value => value, equality);\n" +

@@ -84,6 +84,11 @@ export type PrefixProofTerm =
   | { tag: "name"; name: string; span: PrefixSpan }
   | { tag: "refl" | "true_intro"; span: PrefixSpan }
   | {
+    tag: "unsafe_assume";
+    proposition: PrefixProposition;
+    span: PrefixSpan;
+  }
+  | {
     tag: "lambda";
     name: string;
     body: PrefixProofTerm;
@@ -194,6 +199,7 @@ export type PrefixSignature = {
 
 export type PrefixDefinition = {
   attribute_span?: PrefixSpan;
+  unsafe_span?: PrefixSpan;
   name: string;
   kind: PrefixSignatureKind;
   scope: string;
@@ -455,6 +461,13 @@ function snapshot_definition(definition: PrefixDefinition): PrefixDefinition {
       "attribute_span",
     );
   }
+  let unsafe_span: PrefixSpan | undefined;
+  if (Object.prototype.hasOwnProperty.call(definition, "unsafe_span")) {
+    unsafe_span = own_value<PrefixSpan | undefined>(
+      definition,
+      "unsafe_span",
+    );
+  }
   let fact_parameters: readonly string[] | undefined;
   if (Object.prototype.hasOwnProperty.call(definition, "fact_parameters")) {
     fact_parameters = own_value<readonly string[] | undefined>(
@@ -529,6 +542,9 @@ function snapshot_definition(definition: PrefixDefinition): PrefixDefinition {
   };
   if (attribute_span !== undefined) {
     snapshot.attribute_span = snapshot_span(attribute_span);
+  }
+  if (unsafe_span !== undefined) {
+    snapshot.unsafe_span = snapshot_span(unsafe_span);
   }
   if (recursive !== undefined) snapshot.recursive = recursive;
   if (callable_parameters !== undefined) {
@@ -880,6 +896,18 @@ function snapshot_proof_term(
     }
     if (tag === "refl" || tag === "true_intro") {
       return Object.freeze({ tag, span });
+    }
+    if (tag === "unsafe_assume") {
+      return Object.freeze({
+        tag,
+        proposition: snapshot_proposition(
+          own_value<PrefixProposition>(proof, "proposition"),
+          new WeakSet<object>(),
+          0,
+          budget,
+        ),
+        span,
+      });
     }
     if (tag === "lambda") {
       return Object.freeze({

@@ -51,6 +51,7 @@ _module_statement = (
                       | declare_record_statement
                       | prefix_signature_statement
                       | prefix_fact_statement
+                      | prefix_unsafe_proof_statement
                       | type_declaration_statement
                       | duck_declaration_statement
                       | extension_declaration_statement
@@ -73,6 +74,7 @@ _statement = (
                | resume_dup_statement
                | prefix_signature_statement
                | prefix_fact_statement
+               | prefix_unsafe_proof_statement
                | binding_statement
                | type_pattern_statement
                | return_statement
@@ -104,6 +106,11 @@ binding_statement = (
                       (("else" alternative:(block)))?
                       ";"
                     ) ;
+
+prefix_unsafe_proof_statement = (
+                                 unsafe:("unsafe")
+                                 definition:(binding_statement)
+                               ) ;
 
 effect_row = _effect_row_expression ;
 
@@ -510,6 +517,13 @@ prefix_proof_term = (
                        "=>"
                        body:(prefix_proof_term)
                      )
+                     | (
+                         "unsafe"
+                         "{"
+                         "assume"
+                         proposition:(prefix_proposition)
+                         "}"
+                       )
                      | (
                          "or_cases"
                          "("

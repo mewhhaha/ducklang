@@ -144,6 +144,19 @@ Deno.test("format_text round trips quantified proof terms", () => {
   assert_equals(format_text(wide_formatted), wide_formatted);
 });
 
+Deno.test("format_text round trips unsafe proof assumptions", () => {
+  const source = "type admitted=()->Proof False\n" +
+    "unsafe let admitted=()=>by unsafe{assume False};\n";
+  const formatted = format_text(source);
+
+  assert_equals(
+    formatted,
+    "type admitted = () -> Proof False\n" +
+      "unsafe let admitted = () => by unsafe { assume False };\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
 Deno.test("format_text round trips equality transformation proofs", () => {
   const source = "type mapped=(left:I32,right:I32,equality:Proof left=right)" +
     "->Proof left=right\n" +

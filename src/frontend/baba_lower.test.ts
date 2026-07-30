@@ -42,6 +42,21 @@ Deno.test("Baba lowers bindings and expressions without the handwritten parser",
   });
 });
 
+Deno.test("Baba lowering rejects unsafe runtime declarations", () => {
+  const lowered = lower_baba_source(
+    parse_duck_source("unsafe let runtime = () => 42;\nruntime()\n"),
+  );
+
+  assert_equals(checked_value(lowered), undefined);
+  assert_equals(diagnostics_of(lowered)[0]?.code, "DUCK2606");
+  assert_equals(
+    diagnostics_of(lowered)[0]?.message.includes(
+      "matching prefix signature with a Proof result",
+    ),
+    true,
+  );
+});
+
 Deno.test("Baba distinguishes logical not calls from linear calls", () => {
   for (
     const source of [

@@ -3003,6 +3003,28 @@ function lower_statement(
     return ok(undefined);
   }
 
+  if (node.kind === "prefix_unsafe_proof_statement") {
+    const unsafe_node = node.children.find((child) =>
+      child.kind === '"unsafe"'
+    );
+    const definition_node = node.children.find((child) =>
+      child.kind === "binding_statement"
+    );
+    expect(
+      unsafe_node !== undefined && definition_node !== undefined,
+      "Unsafe proof declaration lost its binding.",
+    );
+    const proof_body = binding_direct_proof_body(definition_node);
+    if (proof_body !== undefined) return ok(undefined);
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.unsafe_proof_use,
+        "Unsafe declarations require a matching prefix signature with a Proof result.",
+        { start: unsafe_node.start, end: unsafe_node.end },
+      ),
+    );
+  }
+
   if (node.kind === "binding_statement") {
     const proof_body = binding_direct_proof_body(node);
     if (

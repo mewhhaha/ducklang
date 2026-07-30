@@ -37,6 +37,7 @@ import { source_with_import_meta } from "../../src/frontend/import_meta.ts";
 import { extract_prefix_source_metadata } from "../../src/frontend/prefix_signature_source.ts";
 import {
   load_source_fragment_file_with_dependencies,
+  type LoadedSourceFragment,
   source_file_url,
   type SourceDependency,
 } from "../../src/frontend/load.ts";
@@ -615,7 +616,17 @@ function lower_duck_text(source_text: string): LoweredDuckGpufuckModule {
     );
   }
   const source_metadata = extract_prefix_source_metadata(parsed);
-  if (source_metadata.signatures.length === 0) {
+  const has_unsafe_definition = source_metadata.definitions.some(
+    (definition) => definition.unsafe_span !== undefined,
+  );
+  const has_proof_definition = source_metadata.definitions.some(
+    (definition) => definition.callable_proof_body !== undefined,
+  );
+  if (
+    source_metadata.signatures.length === 0 &&
+    !has_unsafe_definition &&
+    !has_proof_definition
+  ) {
     const lowered = lower_baba_source(parsed);
     const diagnostic = diagnostics_of(lowered)[0];
     if (diagnostic !== undefined) {
@@ -667,12 +678,49 @@ function load_duck_file(
 ): LoadedDuckFile {
   const loaded = load_source_fragment_file_with_dependencies(path);
   const root_uri = source_file_url(path).href;
+  const dependencies = new Map(
+    loaded.dependencies.map((dependency) => [dependency.uri, dependency.text]),
+  );
+  let host_fragment: LoadedSourceFragment | undefined;
+  if (options.host_interface !== undefined) {
+    host_fragment = load_source_fragment_file_with_dependencies(
+      options.host_interface,
+    );
+    merge_source_dependencies(dependencies, host_fragment.dependencies);
+  }
   let semantic_program: LoadedDuckFile["semantic_program"];
-  for (const dependency of loaded.dependencies) {
+  for (
+    const [uri, text] of dependencies
+  ) {
+    const dependency: SourceDependency = { uri, text };
     const parsed = parse_duck_source(dependency.text);
     const metadata = extract_prefix_source_metadata(parsed);
     const signature = metadata.signatures[0];
-    if (signature === undefined) continue;
+    const proof_definition = metadata.definitions.find((definition) =>
+      definition.callable_proof_body !== undefined
+    );
+    const unsafe_definition = metadata.definitions.find((definition) =>
+      definition.unsafe_span !== undefined
+    );
+    if (
+      signature === undefined &&
+      proof_definition === undefined &&
+      unsafe_definition === undefined
+    ) {
+      continue;
+    }
+    if (signature === undefined) {
+      const analysis = analyze_duck_source(parsed);
+      const checked_program = lower_duck_source(analysis);
+      const diagnostic = diagnostics_of(checked_program)[0];
+      if (diagnostic !== undefined) {
+        throw new CompilerDiagnosticError(diagnostic);
+      }
+      expect(
+        false,
+        `Proof metadata from ${dependency.uri} passed semantic checking without a prefix signature.`,
+      );
+    }
     if (
       dependency.uri !== root_uri || loaded.dependencies.length !== 1 ||
       options.host_interface !== undefined ||
@@ -703,21 +751,14 @@ function load_duck_file(
       source_byte_length: new TextEncoder().encode(dependency.text).byteLength,
     };
   }
-  const dependencies = new Map(
-    loaded.dependencies.map((dependency) => [dependency.uri, dependency.text]),
-  );
   let source = loaded.source;
   if (options.import_meta !== undefined) {
     source = source_with_import_meta(source, options.import_meta);
   }
-  if (options.host_interface !== undefined) {
-    const host = load_source_fragment_file_with_dependencies(
-      options.host_interface,
-    );
-    merge_source_dependencies(dependencies, host.dependencies);
+  if (host_fragment !== undefined) {
     source = source_with_host_interface(
       source,
-      host.source,
+      host_fragment.source,
     );
   }
   const linked_source = format_source(source);

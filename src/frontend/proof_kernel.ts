@@ -106,11 +106,19 @@ export type ProofTerm =
     proof: ProofTerm;
   }
   | { tag: "false_elim"; proof: ProofTerm; target: Proposition }
-  | { tag: "unsafe_assume"; proposition: Proposition };
+  | {
+    tag: "unsafe_assume";
+    proposition: Proposition;
+    origin?: ProofOrigin;
+  };
+
+export type ProofOrigin =
+  | { tag: "description"; description: string }
+  | { tag: "source"; start: number; end: number };
 
 export type ProofSafety =
   | { tag: "safe" }
-  | { tag: "unsafe"; origins: readonly string[] };
+  | { tag: "unsafe"; origins: readonly ProofOrigin[] };
 
 type KernelResult = {
   proposition: Proposition;
@@ -985,6 +993,11 @@ function snapshot_proof(
           budget,
         ),
       };
+      if (REFLECT_APPLY(MAP_HAS, properties, ["origin"])) {
+        snapshot.origin = snapshot_proof_origin(
+          REFLECT_APPLY(MAP_GET, properties, ["origin"]),
+        );
+      }
       break;
     default:
       throw new Error(`Invalid proof term tag ${STRING_CONSTRUCTOR(tag)}.`);
@@ -1208,6 +1221,55 @@ function valid_text(value: string, label: string): string {
     `${label} must not be empty.`,
   );
   return value;
+}
+
+function snapshot_proof_origin(value: unknown): ProofOrigin {
+  expect(
+    value !== null && typeof value === "object",
+    "Unsafe proof origin must be a record.",
+  );
+  const properties = own_data_properties(
+    value as object,
+    "Unsafe proof origin",
+  );
+  const tag = required_property<string>(
+    properties,
+    "tag",
+    "Unsafe proof origin",
+  );
+  if (tag === "description") {
+    return {
+      tag,
+      description: valid_text(
+        required_property<string>(
+          properties,
+          "description",
+          "Unsafe proof origin",
+        ),
+        "Unsafe proof origin description",
+      ),
+    };
+  }
+  expect(tag === "source", `Invalid unsafe proof origin tag ${tag}.`);
+  const start = required_property<number>(
+    properties,
+    "start",
+    "Unsafe proof origin",
+  );
+  const end = required_property<number>(
+    properties,
+    "end",
+    "Unsafe proof origin",
+  );
+  expect(
+    NUMBER_IS_SAFE_INTEGER(start) && start >= 0,
+    "Unsafe proof origin start must be a non-negative safe integer.",
+  );
+  expect(
+    NUMBER_IS_SAFE_INTEGER(end) && end >= start,
+    "Unsafe proof origin end must be a safe integer after its start.",
+  );
+  return { tag, start, end };
 }
 
 function snapshot_predicate_arguments(
@@ -1689,12 +1751,25 @@ function freeze_proposition(proposition: Proposition): Proposition {
 
 function freeze_safety(safety: ProofSafety): ProofSafety {
   if (safety.tag === "safe") return OBJECT_FREEZE({ tag: "safe" });
-  const origins: string[] = [];
+  const origins: ProofOrigin[] = [];
   for (let index = 0; index < safety.origins.length; index += 1) {
     const origin = safety.origins[index];
     expect(origin !== undefined, `Unsafe origin ${index} is missing.`);
+    let stable_origin: ProofOrigin;
+    if (origin.tag === "source") {
+      stable_origin = OBJECT_FREEZE({
+        tag: "source",
+        start: origin.start,
+        end: origin.end,
+      });
+    } else {
+      stable_origin = OBJECT_FREEZE({
+        tag: "description",
+        description: origin.description,
+      });
+    }
     OBJECT_DEFINE_PROPERTY(origins, index, {
-      value: origin,
+      value: stable_origin,
       writable: true,
       enumerable: true,
       configurable: true,
@@ -2522,22 +2597,28 @@ function check_proof_term(
       check_proposition(proof.target, term_context, environment);
       return { proposition: proof.target, safety: checked.safety };
     }
-    case "unsafe_assume":
+    case "unsafe_assume": {
       expect(
         options.allow_unsafe === true,
         "Unsafe proof assumption requires an unsafe context.",
       );
       check_proposition(proof.proposition, term_context, environment);
+      let origin: ProofOrigin = {
+        tag: "description",
+        description: "unsafe assumption",
+      };
+      if (proof.origin !== undefined) origin = proof.origin;
       return {
         proposition: proof.proposition,
-        safety: { tag: "unsafe", origins: ["unsafe assumption"] },
+        safety: { tag: "unsafe", origins: [origin] },
       };
+    }
   }
 }
 
 function merge_safety(left: ProofSafety, right: ProofSafety): ProofSafety {
   if (left.tag === "safe" && right.tag === "safe") return { tag: "safe" };
-  const origins: string[] = [];
+  const origins: ProofOrigin[] = [];
   let index = 0;
   if (left.tag === "unsafe") {
     for (

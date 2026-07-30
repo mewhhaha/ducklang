@@ -100,6 +100,7 @@ export type {
   KernelCertificate,
   KernelCertificateCheckOptions,
   KernelCheckOptions,
+  ProofOrigin,
   ProofSafety,
   ProofTerm,
   Proposition,

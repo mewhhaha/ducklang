@@ -106,6 +106,8 @@ Deno.test("Duck compiler erases checked proof declarations", async () => {
     "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
     "let substitute = (left, right, equality, evidence) => " +
     "by transport(equality, value => predicate(value), evidence);\n" +
+    "type admitted = () -> Proof False\n" +
+    "unsafe let admitted = () => by unsafe { assume False };\n" +
     "42\n";
   const plain_source = "42\n";
   const proof_module = encode_duck_module(proof_source);
@@ -121,6 +123,20 @@ Deno.test("Duck compiler erases checked proof declarations", async () => {
   } finally {
     compiler.destroy();
   }
+});
+
+Deno.test("Duck compiler rejects unsafe runtime declarations", () => {
+  assert_throws(
+    () => encode_duck_module("unsafe let runtime = () => 42;\nruntime()\n"),
+    "require a matching prefix signature with a Proof result",
+  );
+});
+
+Deno.test("Duck compiler rejects proof bodies without signatures", () => {
+  assert_throws(
+    () => encode_duck_module("let orphan = () => by true_intro;\n42\n"),
+    "requires a matching prefix signature with a Proof result",
+  );
 });
 
 Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
@@ -197,6 +213,71 @@ Deno.test("Duck file compilation checks prefix contracts", () => {
   } finally {
     Deno.removeSync(directory, { recursive: true });
   }
+});
+
+Deno.test("Duck file compilation rejects orphan unsafe proofs", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-unsafe-proof-check-",
+  });
+  const orphan_source =
+    "unsafe let orphan = () => by unsafe { assume False };\n";
+  const direct_path = directory + "/direct.duck";
+  Deno.writeTextFileSync(direct_path, orphan_source + "42\n");
+  const dependency_path = directory + "/dependency.duck";
+  Deno.writeTextFileSync(
+    dependency_path,
+    "module () where\n" +
+      orphan_source +
+      "let answer = 42;\n" +
+      "return { .answer };\n",
+  );
+  const entry_path = directory + "/entry.duck";
+  Deno.writeTextFileSync(
+    entry_path,
+    'const { .answer } = import "./dependency.duck" ();\nanswer\n',
+  );
+  try {
+    for (const path of [direct_path, entry_path]) {
+      assert_throws(
+        () => encode_duck_file(path),
+        "requires a matching prefix signature with a Proof result",
+      );
+    }
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation rejects orphan proofs in host interfaces", async () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-host-proof-check-",
+  });
+  const root_path = directory + "/root.duck";
+  Deno.writeTextFileSync(root_path, "42\n");
+  const host_path = directory + "/host.duck";
+  Deno.writeTextFileSync(
+    host_path,
+    "unsafe let orphan = () => by unsafe { assume False };\n",
+  );
+  const compiler = await DuckCompiler.create();
+  let failure_message = "";
+  try {
+    await compiler.compile_file(root_path, { host_interface: host_path });
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw new Error("Host proof validation threw a non-Error value");
+    }
+    failure_message = error.message;
+  } finally {
+    compiler.destroy();
+    Deno.removeSync(directory, { recursive: true });
+  }
+  assert_equals(
+    failure_message.includes(
+      "requires a matching prefix signature with a Proof result",
+    ),
+    true,
+  );
 });
 
 Deno.test("gpufuck lowering rejects a semantic program from another source", () => {

@@ -507,8 +507,54 @@ Deno.test("kernel keeps unsafe assumptions explicit", () => {
   );
   assert_equals(certificate.safety, {
     tag: "unsafe",
-    origins: ["unsafe assumption"],
+    origins: [{
+      tag: "description",
+      description: "unsafe assumption",
+    }],
   });
+  const located = check_proof(
+    {
+      tag: "unsafe_assume",
+      proposition: atom,
+      origin: { tag: "source", start: 10, end: 20 },
+    },
+    atom,
+    { allow_unsafe: true },
+  );
+  assert_equals(located.safety, {
+    tag: "unsafe",
+    origins: [{ tag: "source", start: 10, end: 20 }],
+  });
+  if (located.safety.tag !== "unsafe") {
+    throw new Error("Expected unsafe proof provenance.");
+  }
+  assert_equals(Object.isFrozen(located.safety.origins[0]), true);
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "unsafe_assume",
+          proposition: atom,
+          origin: { tag: "description", description: "" },
+        },
+        atom,
+        { allow_unsafe: true },
+      ),
+    "Unsafe proof origin description must not be empty.",
+  );
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "unsafe_assume",
+          proposition: atom,
+          origin: { tag: "source", start: 20, end: 10 },
+        },
+        atom,
+        { allow_unsafe: true },
+      ),
+    "Unsafe proof origin end must be a safe integer after its start.",
+  );
 });
 
 Deno.test("kernel eliminates False only into the requested proposition", () => {
