@@ -1,5 +1,6 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import {
+  semantic_cfg_is_well_formed,
   SemanticCfgBuilder,
   unique_semantic_call_at_span,
 } from "./semantic_cfg.ts";
@@ -95,6 +96,37 @@ Deno.test("semantic CFG preserves typed operations and stable value identities",
     start: 0,
     end: 1,
   });
+  assert_equals(semantic_cfg_is_well_formed(cfg), true);
+  assert_equals(
+    semantic_cfg_is_well_formed({
+      ...cfg,
+      blocks: cfg.blocks.map((block) => {
+        if (block.id !== entry) return block;
+        return { ...block, successors: [] };
+      }),
+    }),
+    false,
+  );
+  assert_equals(
+    semantic_cfg_is_well_formed({
+      ...cfg,
+      blocks: cfg.blocks.map((block) => {
+        if (block.id !== joined) return block;
+        return { ...block, predecessors: [when_true] };
+      }),
+    }),
+    false,
+  );
+  assert_equals(
+    semantic_cfg_is_well_formed({
+      ...cfg,
+      blocks: cfg.blocks.map((block) => {
+        if (block.id !== joined) return block;
+        return { ...block, nodes: [...block.nodes].reverse() };
+      }),
+    }),
+    false,
+  );
 });
 
 Deno.test("semantic CFG call lookup rejects reused source spans", () => {

@@ -10,6 +10,7 @@ import {
   machine_excludes_equal,
   machine_fact_domain,
   type MachineFactDomain,
+  transfer_machine_offset,
 } from "./fact_graph.ts";
 import { proof_limits } from "./proof_limits.ts";
 import {
@@ -20,10 +21,13 @@ import {
   unique_semantic_call_at_span,
 } from "./semantic_cfg.ts";
 import {
+  semantic_bounded_offset_certificate,
   semantic_machine_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
   semantic_unreachable_certificate,
+  type SemanticBoundedOffsetCertificate,
+  type SemanticBoundedOffsetRequirement,
   type SemanticMachineCertificate,
   type SemanticMachineRequirement,
   type SemanticRemainderCertificate,
@@ -61,6 +65,24 @@ export function infer_semantic_machine_certificate(
     return undefined;
   }
   return semantic_machine_certificate(call_span, requirement);
+}
+
+export function infer_semantic_bounded_offset_certificate(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticBoundedOffsetRequirement,
+): SemanticBoundedOffsetCertificate | undefined {
+  if (
+    semantic_cfg_machine_path_result(
+      control_flow,
+      call_span,
+      requirement.goal,
+      requirement,
+    ) !== "proved"
+  ) {
+    return undefined;
+  }
+  return semantic_bounded_offset_certificate(call_span, requirement);
 }
 
 export function infer_semantic_remainder_certificate(
@@ -131,13 +153,21 @@ function semantic_cfg_machine_path_result(
   control_flow: SemanticCfg,
   call_span: SourceSpan,
   requirement: SemanticMachineRequirement | undefined,
+  bounded_offset?: SemanticBoundedOffsetRequirement,
 ): SemanticMachinePathResult {
   const target = unique_semantic_call_at_span(control_flow, call_span);
   if (target === undefined) return "unknown";
   const ranges = new Map<ValueId, { signed: boolean; width: number }>();
   for (const value of control_flow.values) {
-    if (value.type.tag !== "scalar") continue;
-    const range = integer_type_from_name(value.type.name);
+    let range: { signed: boolean; width: number } | undefined;
+    if (value.type.tag === "scalar") {
+      range = integer_type_from_name(value.type.name);
+    } else if (value.type.tag === "integer") {
+      range = {
+        signed: value.type.signed,
+        width: value.type.width,
+      };
+    }
     if (range === undefined || range.width > 128) continue;
     ranges.set(value.value, range);
   }
@@ -152,6 +182,7 @@ function semantic_cfg_machine_path_result(
   );
   const producers = semantic_value_producers(control_flow);
   if (target_block_can_repeat(target.block.id, blocks)) {
+    if (bounded_offset !== undefined) return "unknown";
     if (
       requirement !== undefined &&
       repeating_call_requirement_holds(
@@ -218,6 +249,7 @@ function semantic_cfg_machine_path_result(
         domain,
         booleans,
         aliases,
+        bounded_offset,
       );
       domain = transferred.domain;
       booleans = transferred.booleans;
@@ -465,6 +497,7 @@ function transfer_semantic_node(
   domain: MachineFactDomain,
   booleans: ReadonlyMap<ValueId, boolean>,
   aliases: ReadonlyMap<ValueId, ValueId>,
+  bounded_offset: SemanticBoundedOffsetRequirement | undefined,
 ): {
   domain: MachineFactDomain;
   booleans: Map<ValueId, boolean>;
@@ -496,6 +529,52 @@ function transfer_semantic_node(
       aliases: next_aliases,
     };
   }
+  if (
+    bounded_offset !== undefined &&
+    node.outputs[0] === bounded_offset.result &&
+    semantic_bounded_offset_operation_matches(
+      node,
+      bounded_offset,
+      domain,
+    )
+  ) {
+    return {
+      domain: transfer_machine_offset(
+        domain,
+        bounded_offset.operation,
+        bounded_offset.input,
+        bounded_offset.offset,
+        bounded_offset.result,
+      ),
+      booleans: next_booleans,
+      aliases: next_aliases,
+    };
+  }
+  if (
+    bounded_offset !== undefined &&
+    node.operation.tag === "primitive" &&
+    node.operation.name.startsWith("bind:") &&
+    node.inputs.length === 1 &&
+    node.outputs.length === 1
+  ) {
+    const input = node.inputs[0];
+    const output = node.outputs[0];
+    if (input === undefined || output === undefined) {
+      return { domain, booleans: next_booleans, aliases: next_aliases };
+    }
+    const input_range = domain.ranges.get(input);
+    const output_range = domain.ranges.get(output);
+    if (
+      input_range === undefined || output_range === undefined ||
+      input_range.width !== output_range.width ||
+      input_range.signed !== output_range.signed
+    ) {
+      return { domain, booleans: next_booleans, aliases: next_aliases };
+    }
+    const resolved = resolved_alias(input, next_aliases);
+    if (resolved !== undefined) next_aliases.set(output, resolved);
+    return { domain, booleans: next_booleans, aliases: next_aliases };
+  }
   if (node.operation.tag !== "phi" || predecessor === undefined) {
     return { domain, booleans: next_booleans, aliases: next_aliases };
   }
@@ -519,6 +598,42 @@ function transfer_semantic_node(
     booleans: next_booleans,
     aliases: next_aliases,
   };
+}
+
+function semantic_bounded_offset_operation_matches(
+  node: SemanticNode,
+  requirement: SemanticBoundedOffsetRequirement,
+  domain: MachineFactDomain,
+): boolean {
+  if (
+    node.operation.tag !== "primitive" ||
+    node.inputs.length !== 2 ||
+    node.inputs[0] !== requirement.input ||
+    node.inputs[1] !== requirement.offset ||
+    node.outputs.length !== 1 ||
+    node.outputs[0] !== requirement.result
+  ) {
+    return false;
+  }
+  const input_range = domain.ranges.get(requirement.input);
+  const offset_range = domain.ranges.get(requirement.offset);
+  const result_range = domain.ranges.get(requirement.result);
+  if (
+    input_range === undefined || offset_range === undefined ||
+    result_range === undefined ||
+    input_range.width !== offset_range.width ||
+    input_range.signed !== offset_range.signed ||
+    input_range.width !== result_range.width ||
+    input_range.signed !== result_range.signed ||
+    (input_range.width !== 32 && input_range.width !== 64)
+  ) {
+    return false;
+  }
+  const val_type = integer_val_type(input_range);
+  if (val_type === undefined) return false;
+  let primitive = val_type + ".add";
+  if (requirement.operation === "subtract") primitive = val_type + ".sub";
+  return node.operation.name === primitive;
 }
 
 function aliased_machine_requirement(

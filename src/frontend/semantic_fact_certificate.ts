@@ -10,6 +10,7 @@ import {
 import type { FactProposition } from "./fact_graph.ts";
 import { proof_limits } from "./proof_limits.ts";
 import {
+  semantic_cfg_is_well_formed,
   type SemanticBlock,
   type SemanticBlockId,
   type SemanticCfg,
@@ -31,6 +32,26 @@ export type SemanticMachineCertificate = {
   tag: "machine_fact";
   call_span: SourceSpan;
   requirement: SemanticMachineRequirement;
+};
+
+export type SemanticBoundedOffsetGoal = {
+  tag: "fact";
+  proposition: Exclude<FactProposition, { tag: "equal" }>;
+};
+
+export type SemanticBoundedOffsetRequirement = {
+  operation: "add" | "subtract";
+  input: ValueId;
+  offset: ValueId;
+  result: ValueId;
+  logical_result: ValueId;
+  goal: SemanticBoundedOffsetGoal;
+};
+
+export type SemanticBoundedOffsetCertificate = {
+  tag: "bounded_offset";
+  call_span: SourceSpan;
+  requirement: SemanticBoundedOffsetRequirement;
 };
 
 export type SemanticPredicateAtom = {
@@ -75,6 +96,7 @@ export type SemanticUnreachableCertificate = {
 };
 
 export type SemanticControlFlowCertificate =
+  | SemanticBoundedOffsetCertificate
   | SemanticMachineCertificate
   | SemanticPredicateCertificate
   | SemanticRemainderDivisibilityCertificate
@@ -108,6 +130,30 @@ export function semantic_machine_certificate(
       end: call_span.end,
     }),
     requirement: snapshot_machine_requirement(requirement),
+  });
+}
+
+export function semantic_bounded_offset_certificate(
+  call_span: SourceSpan,
+  requirement: SemanticBoundedOffsetRequirement,
+): SemanticBoundedOffsetCertificate {
+  return Object.freeze({
+    tag: "bounded_offset",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    requirement: Object.freeze({
+      operation: requirement.operation,
+      input: requirement.input,
+      offset: requirement.offset,
+      result: requirement.result,
+      logical_result: requirement.logical_result,
+      goal: Object.freeze({
+        tag: "fact",
+        proposition: Object.freeze({ ...requirement.goal.proposition }),
+      }),
+    }),
   });
 }
 
@@ -332,6 +378,7 @@ export function verify_semantic_remainder_certificate(
   let primitive = val_type + ".rem_u";
   if (dividend_range.signed) primitive = val_type + ".rem_s";
   const producers = semantic_value_producers(control_flow);
+  if (producers === undefined) return false;
   const operation = producers.get(requirement.remainder);
   if (
     operation?.operation.tag !== "primitive" ||
@@ -447,6 +494,7 @@ export function verify_semantic_remainder_divisibility_certificate(
     return false;
   }
   const producers = semantic_value_producers(control_flow);
+  if (producers === undefined) return false;
   const premise_divisor = verified_integer_constant(
     requirement.premise.divisor,
     producers,
@@ -473,6 +521,135 @@ export function verify_semantic_remainder_divisibility_certificate(
     call_span,
     requirement.premise,
   );
+}
+
+export function verify_semantic_bounded_offset_certificate(
+  certificate: SemanticBoundedOffsetCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticBoundedOffsetRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic bounded offset certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "bounded_offset",
+    "Semantic bounded offset certificate has an invalid tag.",
+  );
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    !same_bounded_offset_requirement(certificate.requirement, requirement)
+  ) {
+    return false;
+  }
+  if (
+    requirement.operation !== "add" &&
+    requirement.operation !== "subtract"
+  ) {
+    return false;
+  }
+  const goal_tag = (requirement.goal.proposition as FactProposition).tag;
+  if (
+    requirement.goal.tag !== "fact" ||
+    (goal_tag !== "less_than" &&
+      goal_tag !== "less_equal" &&
+      goal_tag !== "greater_than" &&
+      goal_tag !== "greater_equal") ||
+    requirement.goal.proposition.value !== requirement.logical_result
+  ) {
+    return false;
+  }
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (
+    target === undefined ||
+    !target.node.inputs.includes(requirement.logical_result)
+  ) {
+    return false;
+  }
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  if (target_block_can_repeat(target.block.id, blocks)) return false;
+  const ranges = machine_ranges(control_flow);
+  const input_range = ranges.get(requirement.input);
+  const offset_range = ranges.get(requirement.offset);
+  const result_range = ranges.get(requirement.result);
+  const logical_result_range = ranges.get(requirement.logical_result);
+  if (
+    input_range === undefined || offset_range === undefined ||
+    result_range === undefined || logical_result_range === undefined ||
+    !same_integer_type(input_range, offset_range) ||
+    !same_integer_type(input_range, result_range) ||
+    !same_integer_type(input_range, logical_result_range) ||
+    (input_range.width !== 32 && input_range.width !== 64)
+  ) {
+    return false;
+  }
+  const val_type = integer_val_type(input_range);
+  if (val_type === undefined) return false;
+  let primitive = val_type + ".add";
+  if (requirement.operation === "subtract") primitive = val_type + ".sub";
+  const producers = semantic_value_producers(control_flow);
+  if (producers === undefined) return false;
+  if (
+    producers.has(requirement.input) ||
+    !control_flow.parameters.includes(requirement.input)
+  ) {
+    return false;
+  }
+  const operation = producers.get(requirement.result);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.operation.name !== primitive ||
+    operation.inputs.length !== 2 ||
+    operation.inputs[0] !== requirement.input ||
+    operation.inputs[1] !== requirement.offset ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== requirement.result
+  ) {
+    return false;
+  }
+  const binding = producers.get(requirement.logical_result);
+  if (
+    binding?.operation.tag !== "primitive" ||
+    !binding.operation.name.startsWith("bind:") ||
+    binding.inputs.length !== 1 ||
+    binding.inputs[0] !== requirement.result ||
+    binding.outputs.length !== 1 ||
+    binding.outputs[0] !== requirement.logical_result
+  ) {
+    return false;
+  }
+  const offset_node = producers.get(requirement.offset);
+  if (offset_node?.operation.tag !== "constant") return false;
+  const offset_index = target.block.nodes.indexOf(offset_node);
+  const operation_index = target.block.nodes.indexOf(operation);
+  const binding_index = target.block.nodes.indexOf(binding);
+  const call_index = target.block.nodes.indexOf(target.node);
+  if (
+    offset_index < 0 ||
+    operation_index <= offset_index ||
+    binding_index <= operation_index ||
+    call_index <= binding_index
+  ) {
+    return false;
+  }
+  const offset = verified_integer_constant(requirement.offset, producers);
+  if (
+    offset === undefined ||
+    normalize_integer(offset_range, offset) !== offset
+  ) {
+    return false;
+  }
+  return verify_semantic_paths(
+    control_flow,
+    call_span,
+    requirement.goal,
+    requirement,
+  ) === "proved";
 }
 
 export function verify_semantic_machine_certificate(
@@ -535,6 +712,7 @@ function verify_semantic_paths(
   control_flow: SemanticCfg,
   call_span: SourceSpan,
   requirement: SemanticMachineRequirement | undefined,
+  bounded_offset?: SemanticBoundedOffsetRequirement,
 ): VerifiedSemanticPaths {
   const target = unique_semantic_call_at_span(control_flow, call_span);
   if (target === undefined) return "rejected";
@@ -550,10 +728,12 @@ function verify_semantic_paths(
     control_flow.blocks.map((block) => [block.id, block]),
   );
   const producers = semantic_value_producers(control_flow);
+  if (producers === undefined) return "rejected";
   const value_types = new Map(
     control_flow.values.map((value) => [value.value, value.type]),
   );
   if (target_block_can_repeat(target.block.id, blocks)) {
+    if (bounded_offset !== undefined) return "rejected";
     if (
       requirement !== undefined &&
       verified_repeating_call_requirement(
@@ -602,6 +782,7 @@ function verify_semantic_paths(
       producers,
       value_types,
       target.node,
+      bounded_offset,
     );
     const booleans = transferred.booleans;
     const aliases = transferred.aliases;
@@ -697,7 +878,11 @@ function verify_semantic_paths(
           producers,
         );
         if (premise !== undefined) {
-          premises.push(aliased_machine_requirement(premise, aliases));
+          if (bounded_offset !== undefined) {
+            premises.push(premise);
+          } else {
+            premises.push(aliased_machine_requirement(premise, aliases));
+          }
         }
       }
       if (
@@ -769,13 +954,32 @@ function same_machine_requirement(
   return left.proposition.bound === right.proposition.bound;
 }
 
+function same_bounded_offset_requirement(
+  left: SemanticBoundedOffsetRequirement,
+  right: SemanticBoundedOffsetRequirement,
+): boolean {
+  return left.operation === right.operation &&
+    left.input === right.input &&
+    left.offset === right.offset &&
+    left.result === right.result &&
+    left.logical_result === right.logical_result &&
+    same_machine_requirement(left.goal, right.goal);
+}
+
 function machine_ranges(
   control_flow: SemanticCfg,
 ): ReadonlyMap<ValueId, IntegerType> {
   const ranges = new Map<ValueId, IntegerType>();
   for (const value of control_flow.values) {
-    if (value.type.tag !== "scalar") continue;
-    const range = integer_type_from_name(value.type.name);
+    let range: IntegerType | undefined;
+    if (value.type.tag === "scalar") {
+      range = integer_type_from_name(value.type.name);
+    } else if (value.type.tag === "integer") {
+      range = {
+        signed: value.type.signed,
+        width: value.type.width,
+      };
+    }
     if (range === undefined || range.width > 128) continue;
     ranges.set(value.value, range);
   }
@@ -789,11 +993,14 @@ function requirement_value(requirement: SemanticMachineRequirement): ValueId {
 
 function semantic_value_producers(
   control_flow: SemanticCfg,
-): ReadonlyMap<ValueId, SemanticNode> {
+): ReadonlyMap<ValueId, SemanticNode> | undefined {
   const producers = new Map<ValueId, SemanticNode>();
   for (const block of control_flow.blocks) {
     for (const node of block.nodes) {
-      for (const output of node.outputs) producers.set(output, node);
+      for (const output of node.outputs) {
+        if (producers.has(output)) return undefined;
+        producers.set(output, node);
+      }
     }
   }
   return producers;
@@ -962,6 +1169,7 @@ function transfer_semantic_values(
   producers: ReadonlyMap<ValueId, SemanticNode>,
   value_types: ReadonlyMap<ValueId, RepresentationType>,
   target: SemanticNode,
+  bounded_offset: SemanticBoundedOffsetRequirement | undefined,
 ): {
   booleans: ReadonlyMap<ValueId, boolean>;
   aliases: ReadonlyMap<ValueId, ValueId>;
@@ -997,6 +1205,22 @@ function transfer_semantic_values(
       continue;
     }
     if (
+      bounded_offset !== undefined &&
+      node === producers.get(bounded_offset.result)
+    ) {
+      const offset_premises = verified_bounded_offset_premises(
+        bounded_offset,
+        premises,
+        aliases,
+        ranges,
+        producers,
+      );
+      if (offset_premises !== undefined) {
+        premises.push(...offset_premises);
+      }
+      continue;
+    }
+    if (
       node.operation.tag === "primitive" &&
       node.operation.name.startsWith("bind:") &&
       record_value_alias(node, predecessor, aliases, value_types)
@@ -1014,6 +1238,84 @@ function transfer_semantic_values(
     if (incoming_value !== undefined) aliases.set(output, incoming_value);
   }
   return { booleans, aliases, premises };
+}
+
+function verified_bounded_offset_premises(
+  requirement: SemanticBoundedOffsetRequirement,
+  premises: readonly SemanticMachineRequirement[],
+  aliases: ReadonlyMap<ValueId, ValueId>,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): readonly SemanticMachineRequirement[] | undefined {
+  if (
+    resolved_alias(requirement.input, aliases) !== requirement.input ||
+    !premises.some((premise) =>
+      requirement_value(premise) === requirement.input
+    )
+  ) {
+    return undefined;
+  }
+  const input_range = ranges.get(requirement.input);
+  const result_range = ranges.get(requirement.result);
+  const offset_range = ranges.get(requirement.offset);
+  if (
+    input_range === undefined || result_range === undefined ||
+    offset_range === undefined ||
+    !same_integer_type(input_range, result_range) ||
+    !same_integer_type(input_range, offset_range)
+  ) {
+    return undefined;
+  }
+  const interval = interval_from_premises(
+    premises,
+    requirement.input,
+    input_range,
+  );
+  if (interval.contradiction) return undefined;
+  const offset = verified_integer_constant(requirement.offset, producers);
+  if (
+    offset === undefined ||
+    normalize_integer(offset_range, offset) !== offset
+  ) {
+    return undefined;
+  }
+  let minimum = interval.minimum + offset;
+  let maximum = interval.maximum + offset;
+  if (requirement.operation === "subtract") {
+    minimum = interval.minimum - offset;
+    maximum = interval.maximum - offset;
+  }
+  const range_minimum = integer_minimum(result_range);
+  const range_maximum = integer_maximum(result_range);
+  if (minimum < range_minimum || maximum > range_maximum) return undefined;
+  if (minimum === maximum) {
+    return [{
+      tag: "fact",
+      proposition: {
+        tag: "equal",
+        value: requirement.result,
+        expected: minimum,
+      },
+    }];
+  }
+  return [
+    {
+      tag: "fact",
+      proposition: {
+        tag: "greater_equal",
+        value: requirement.result,
+        bound: minimum,
+      },
+    },
+    {
+      tag: "fact",
+      proposition: {
+        tag: "less_equal",
+        value: requirement.result,
+        bound: maximum,
+      },
+    },
+  ];
 }
 
 function record_value_alias(

@@ -74,6 +74,7 @@ export type FactProposition =
   | { tag: "greater_equal"; value: ValueId; bound: bigint };
 
 export type MachineInteger = IntegerType;
+export type MachineOffsetOperation = "add" | "subtract";
 
 const MACHINE_DOMAIN_TOKEN = Symbol("duck.machine_fact_domain");
 const TRUSTED_MACHINE_DOMAINS = new WeakSet<object>();
@@ -127,6 +128,66 @@ export function normalize_machine_integer(
   return normalize_integer(type, value);
 }
 
+export function transfer_machine_offset(
+  domain: MachineFactDomain,
+  operation: MachineOffsetOperation,
+  input: ValueId,
+  offset: ValueId,
+  result: ValueId,
+): MachineFactDomain {
+  assert_machine_domain(domain);
+  if (operation !== "add" && operation !== "subtract") {
+    throw new Error(`Unknown machine offset operation ${String(operation)}.`);
+  }
+  if (!domain.reachable) return domain;
+  const input_range = domain.ranges.get(input);
+  const offset_range = domain.ranges.get(offset);
+  const result_range = domain.ranges.get(result);
+  if (
+    input_range === undefined || offset_range === undefined ||
+    result_range === undefined
+  ) {
+    throw new Error(
+      `Machine offset ${input}, ${offset}, ${result} is missing a range.`,
+    );
+  }
+  if (
+    input_range.width !== offset_range.width ||
+    input_range.signed !== offset_range.signed ||
+    input_range.width !== result_range.width ||
+    input_range.signed !== result_range.signed
+  ) {
+    throw new Error(
+      `Machine offset ${input}, ${offset}, ${result} has incompatible ranges.`,
+    );
+  }
+  const input_fact = domain.facts.get(input);
+  const offset_fact = domain.facts.get(offset);
+  if (
+    input_fact === undefined || input_fact.tag === "unknown" ||
+    input_fact.tag === "bottom" || offset_fact === undefined ||
+    offset_fact.tag !== "exact"
+  ) {
+    return replace_machine_fact(domain, result, undefined);
+  }
+  const input_bounds = fact_bounds(input_fact);
+  let minimum = input_bounds.minimum + offset_fact.value;
+  let maximum = input_bounds.maximum + offset_fact.value;
+  if (operation === "subtract") {
+    minimum = input_bounds.minimum - offset_fact.value;
+    maximum = input_bounds.maximum - offset_fact.value;
+  }
+  const range = machine_range(result_range);
+  if (minimum < range.minimum || maximum > range.maximum) {
+    return replace_machine_fact(domain, result, undefined);
+  }
+  return replace_machine_fact(
+    domain,
+    result,
+    bounded_interval(minimum, maximum),
+  );
+}
+
 export function machine_fact_domain(
   ranges: ReadonlyMap<ValueId, MachineInteger>,
 ): MachineFactDomain {
@@ -148,6 +209,28 @@ export function machine_fact_domain(
     snapshots,
     immutable_map<ValueId, readonly FactEvidence[]>([]),
     immutable_map<ValueId, readonly bigint[]>([]),
+  );
+}
+
+function replace_machine_fact(
+  domain: MachineFactDomain,
+  value: ValueId,
+  fact: ScalarFact | undefined,
+): MachineFactDomain {
+  const facts = new Map(domain.facts);
+  const evidence = new Map(domain.evidence);
+  const exclusions = new Map(domain.exclusions);
+  facts.delete(value);
+  evidence.delete(value);
+  exclusions.delete(value);
+  if (fact !== undefined) facts.set(value, fact);
+  return new MachineFactDomain(
+    MACHINE_DOMAIN_TOKEN,
+    domain.reachable,
+    facts,
+    domain.ranges,
+    evidence,
+    exclusions,
   );
 }
 

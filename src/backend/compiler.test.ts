@@ -215,6 +215,73 @@ Deno.test("Duck compiler erases remainder divisibility proofs", async () => {
   }
 });
 
+Deno.test("Duck compiler erases bounded offset proofs", async () => {
+  const signed_proved = "type consume = " +
+    "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => if actual < 10i32 then do\n" +
+    "  let next = actual + 1i32;\n" +
+    "  consume next\n" +
+    "end else 0 end;\n" +
+    "guarded 9i32\n";
+  const signed_plain = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => if actual < 10i32 then do\n" +
+    "  let next = actual + 1i32;\n" +
+    "  consume next\n" +
+    "end else 0 end;\n" +
+    "guarded 9i32\n";
+  const unsigned_proved = "type consume = " +
+    "(value: U32, evidence: Proof value <= 10u32) -> U32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: U32) -> U32\n" +
+    "let guarded = actual => if actual >= 10u32 then 0u32 else do\n" +
+    "  let next = actual + 1u32;\n" +
+    "  consume next\n" +
+    "end end;\n" +
+    "guarded 9u32\n";
+  const unsigned_plain = "type consume = (value: U32) -> U32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: U32) -> U32\n" +
+    "let guarded = actual => if actual >= 10u32 then 0u32 else do\n" +
+    "  let next = actual + 1u32;\n" +
+    "  consume next\n" +
+    "end end;\n" +
+    "guarded 9u32\n";
+  const signed_proved_module = encode_duck_module(signed_proved);
+  const signed_plain_module = encode_duck_module(signed_plain);
+  assert_equals(
+    signed_proved_module.nodeWords,
+    signed_plain_module.nodeWords,
+  );
+  assert_equals(
+    signed_proved_module.definitionWords,
+    signed_plain_module.definitionWords,
+  );
+  const unsigned_proved_module = encode_duck_module(unsigned_proved);
+  const unsigned_plain_module = encode_duck_module(unsigned_plain);
+  assert_equals(
+    unsigned_proved_module.nodeWords,
+    unsigned_plain_module.nodeWords,
+  );
+  assert_equals(
+    unsigned_proved_module.definitionWords,
+    unsigned_plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const signed = await compiler.run(signed_proved);
+    assert_equals(signed.value, { kind: "integer", value: 10 });
+    const unsigned = await compiler.run(unsigned_proved);
+    assert_equals(unsigned.value, { kind: "integer", value: 10 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases transparent fact proofs", async () => {
   const proved_source = "type nonzero = (value: I32) -> Prop\n" +
     "fact nonzero = candidate => candidate != 0;\n" +

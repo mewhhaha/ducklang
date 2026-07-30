@@ -20,6 +20,7 @@ import {
   meet_facts,
   normalize_machine_integer,
   reachable_state,
+  transfer_machine_offset,
   unreachable_state,
   widen_facts,
   widen_machine_facts,
@@ -200,6 +201,183 @@ Deno.test("machine integer facts normalize signed and unsigned wrapping", () => 
     normalize_machine_integer(-1n, { width: 3, signed: false }),
     7n,
   );
+});
+
+Deno.test("machine offset transfer retains only non-wrapping intervals", () => {
+  const input = "offset-input" as ValueId;
+  const offset = "offset-constant" as ValueId;
+  const result = "offset-result" as ValueId;
+  const ranges = new Map([
+    [input, { width: 3, signed: true }],
+    [offset, { width: 3, signed: true }],
+    [result, { width: 3, signed: true }],
+  ]);
+  let domain = machine_fact_domain(ranges);
+  domain = assume_machine_fact(domain, {
+    tag: "greater_equal",
+    value: input,
+    bound: -2n,
+  });
+  domain = assume_machine_fact(domain, {
+    tag: "less_equal",
+    value: input,
+    bound: 1n,
+  });
+  domain = assume_machine_fact(domain, {
+    tag: "equal",
+    value: offset,
+    expected: 2n,
+  });
+  const added = transfer_machine_offset(
+    domain,
+    "add",
+    input,
+    offset,
+    result,
+  );
+  assert_equals(added.facts.get(result), {
+    tag: "interval",
+    minimum: 0n,
+    maximum: 3n,
+  });
+  const subtracted = transfer_machine_offset(
+    domain,
+    "subtract",
+    input,
+    offset,
+    result,
+  );
+  assert_equals(subtracted.facts.get(result), {
+    tag: "interval",
+    minimum: -4n,
+    maximum: -1n,
+  });
+
+  const overflowing = assume_machine_fact(domain, {
+    tag: "greater_equal",
+    value: input,
+    bound: 2n,
+  });
+  assert_equals(
+    transfer_machine_offset(
+      overflowing,
+      "add",
+      input,
+      offset,
+      result,
+    ).facts.has(result),
+    false,
+  );
+  assert_equals(
+    transfer_machine_offset(
+      machine_fact_domain(ranges),
+      "add",
+      input,
+      offset,
+      result,
+    ).facts.has(result),
+    false,
+  );
+});
+
+Deno.test("machine offset transfer is exhaustive for three-bit intervals", () => {
+  const input = "exhaustive-offset-input" as ValueId;
+  const offset = "exhaustive-offset-constant" as ValueId;
+  const result = "exhaustive-offset-result" as ValueId;
+  for (const signed of [false, true]) {
+    const type = { width: 3 as const, signed };
+    const range = machine_range(type);
+    for (
+      let minimum = range.minimum;
+      minimum <= range.maximum;
+      minimum += 1n
+    ) {
+      for (
+        let maximum = minimum;
+        maximum <= range.maximum;
+        maximum += 1n
+      ) {
+        for (
+          let constant = range.minimum;
+          constant <= range.maximum;
+          constant += 1n
+        ) {
+          for (const operation of ["add", "subtract"] as const) {
+            const ranges = new Map([
+              [input, type],
+              [offset, type],
+              [result, type],
+            ]);
+            let domain = machine_fact_domain(ranges);
+            domain = assume_machine_fact(domain, {
+              tag: "greater_equal",
+              value: input,
+              bound: minimum,
+            });
+            domain = assume_machine_fact(domain, {
+              tag: "less_equal",
+              value: input,
+              bound: maximum,
+            });
+            domain = assume_machine_fact(domain, {
+              tag: "equal",
+              value: offset,
+              expected: constant,
+            });
+            const transferred = transfer_machine_offset(
+              domain,
+              operation,
+              input,
+              offset,
+              result,
+            );
+            const fact = transferred.facts.get(result);
+            let raw_minimum = minimum + constant;
+            let raw_maximum = maximum + constant;
+            if (operation === "subtract") {
+              raw_minimum = minimum - constant;
+              raw_maximum = maximum - constant;
+            }
+            const wraps = raw_minimum < range.minimum ||
+              raw_maximum > range.maximum;
+            assert_equals(fact === undefined, wraps);
+            if (fact === undefined) continue;
+            if (fact.tag !== "exact" && fact.tag !== "interval") {
+              throw new Error("Expected a retained offset interval.");
+            }
+            let fact_minimum: bigint;
+            let fact_maximum: bigint;
+            if (fact.tag === "exact") {
+              fact_minimum = fact.value;
+              fact_maximum = fact.value;
+            } else {
+              fact_minimum = fact.minimum;
+              fact_maximum = fact.maximum;
+            }
+            for (
+              let concrete = minimum;
+              concrete <= maximum;
+              concrete += 1n
+            ) {
+              let raw_result = concrete + constant;
+              if (operation === "subtract") {
+                raw_result = concrete - constant;
+              }
+              const runtime_result = normalize_machine_integer(
+                raw_result,
+                type,
+              );
+              assert_equals(
+                runtime_result >= fact_minimum &&
+                  runtime_result <= fact_maximum,
+                true,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
 });
 
 Deno.test("machine fact domains honor signed extrema", () => {
@@ -474,6 +652,26 @@ Deno.test("machine transitions reject forged structural domains", () => {
   assert_throws(
     () => assume_machine_fact(forged, { tag: "equal", value, expected: 2n }),
     "MachineFactDomain was not created by FactGraph.",
+  );
+  const offset = "forged-offset" as ValueId;
+  const result = "forged-result" as ValueId;
+  const domain = machine_fact_domain(
+    new Map([
+      [value, { width: 3, signed: true }],
+      [offset, { width: 3, signed: true }],
+      [result, { width: 3, signed: true }],
+    ]),
+  );
+  assert_throws(
+    () =>
+      transfer_machine_offset(
+        domain,
+        "multiply" as never,
+        value,
+        offset,
+        result,
+      ),
+    "Unknown machine offset operation multiply.",
   );
 });
 

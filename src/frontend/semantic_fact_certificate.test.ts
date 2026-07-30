@@ -1,14 +1,17 @@
 import { assert_equals } from "../assert.ts";
 import { normalize_machine_integer } from "./fact_graph.ts";
 import {
+  semantic_bounded_offset_certificate,
   semantic_machine_certificate,
   semantic_predicate_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
   semantic_unreachable_certificate,
+  type SemanticBoundedOffsetRequirement,
   type SemanticMachineRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  verify_semantic_bounded_offset_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
@@ -25,7 +28,457 @@ import type { ValueId } from "./semantic_identity.ts";
 const origin = "fact-certificate:0:1:0" as never;
 const i32_type = { tag: "scalar", name: "I32" } as const;
 const u32_type = { tag: "scalar", name: "U32" } as const;
+const u64_type = { tag: "integer", signed: false, width: 64 } as const;
 const bool_type = { tag: "scalar", name: "Bool" } as const;
+
+Deno.test("semantic bounded offset certificates verify non-wrapping arithmetic", () => {
+  const builder = new SemanticCfgBuilder("bounded-offset-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("bounded-offset-true:1:2:0" as never);
+  const when_false = builder.add_block("bounded-offset-false:2:3:0" as never);
+  const input = "bounded-offset-parameter" as ValueId;
+  builder.add_parameter(input, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const ten = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 4 },
+    { tag: "constant", value: 10 },
+    [],
+    [i32_type],
+  )[0];
+  if (ten === undefined) throw new Error("Expected offset guard bound.");
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 4 },
+    { tag: "primitive", name: "i32.lt_s" },
+    [input, ten],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected offset guard.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const offset = builder.add_node(
+    when_true,
+    "bounded-offset-true:1:2:0" as never,
+    { start: 5, end: 6 },
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (offset === undefined) throw new Error("Expected offset constant.");
+  const result = builder.add_node(
+    when_true,
+    "bounded-offset-true:1:2:0" as never,
+    { start: 0, end: 6 },
+    { tag: "primitive", name: "i32.add" },
+    [input, offset],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected offset result.");
+  const logical_result = builder.add_node(
+    when_true,
+    "bounded-offset-true:1:2:0" as never,
+    { start: 7, end: 11 },
+    { tag: "primitive", name: "bind:next" },
+    [result],
+    [i32_type],
+  )[0];
+  if (logical_result === undefined) {
+    throw new Error("Expected bound offset result.");
+  }
+  const call_span = { start: 12, end: 24 };
+  const call_result = builder.add_node(
+    when_true,
+    "bounded-offset-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [logical_result],
+    [i32_type],
+  )[0];
+  if (call_result === undefined) throw new Error("Expected offset call.");
+  builder.terminate(when_true, { tag: "return", value: call_result });
+  const zero = builder.add_node(
+    when_false,
+    "bounded-offset-false:2:3:0" as never,
+    { start: 25, end: 26 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (zero === undefined) throw new Error("Expected offset fallback.");
+  builder.terminate(when_false, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const requirement: SemanticBoundedOffsetRequirement = {
+    operation: "add",
+    input,
+    offset,
+    result,
+    logical_result,
+    goal: {
+      tag: "fact",
+      proposition: {
+        tag: "less_equal",
+        value: logical_result,
+        bound: 10n,
+      },
+    },
+  };
+  const certificate = semantic_bounded_offset_certificate(
+    call_span,
+    requirement,
+  );
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(certificate), true);
+  assert_equals(Object.isFrozen(certificate.requirement), true);
+  assert_equals(Object.isFrozen(certificate.requirement.goal), true);
+  assert_equals(
+    Object.isFrozen(certificate.requirement.goal.proposition),
+    true,
+  );
+  const unsigned_control_flow = {
+    ...control_flow,
+    values: control_flow.values.map((entry) => {
+      if (entry.type.tag !== "scalar" || entry.type.name !== "I32") {
+        return entry;
+      }
+      return { ...entry, type: u64_type };
+    }),
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (node.operation.tag !== "primitive") return node;
+        if (node.operation.name === "i32.lt_s") {
+          return {
+            ...node,
+            operation: { tag: "primitive" as const, name: "i64.lt_u" },
+          };
+        }
+        if (node.operation.name === "i32.add") {
+          return {
+            ...node,
+            operation: { tag: "primitive" as const, name: "i64.add" },
+          };
+        }
+        return node;
+      }),
+    })),
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      unsigned_control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      { ...control_flow, parameters: [] },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+
+  for (
+    const invalid_requirement of [
+      { ...requirement, operation: "subtract" as const },
+      {
+        ...requirement,
+        input: "different-offset-input" as ValueId,
+      },
+      {
+        ...requirement,
+        logical_result: "different-logical-result" as ValueId,
+      },
+    ]
+  ) {
+    const invalid_certificate = semantic_bounded_offset_certificate(
+      call_span,
+      invalid_requirement,
+    );
+    assert_equals(
+      verify_semantic_bounded_offset_certificate(
+        invalid_certificate,
+        control_flow,
+        call_span,
+        invalid_requirement,
+      ),
+      false,
+    );
+  }
+  const forged_operation = {
+    ...requirement,
+    operation: "multiply",
+  } as unknown as SemanticBoundedOffsetRequirement;
+  const forged_operation_certificate = semantic_bounded_offset_certificate(
+    call_span,
+    forged_operation,
+  );
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      forged_operation_certificate,
+      control_flow,
+      call_span,
+      forged_operation,
+    ),
+    false,
+  );
+  const forged_equality = {
+    ...requirement,
+    goal: {
+      tag: "fact",
+      proposition: {
+        tag: "equal",
+        value: logical_result,
+        expected: 10n,
+      },
+    },
+  } as unknown as SemanticBoundedOffsetRequirement;
+  const forged_equality_certificate = semantic_bounded_offset_certificate(
+    call_span,
+    forged_equality,
+  );
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      forged_equality_certificate,
+      control_flow,
+      call_span,
+      forged_equality,
+    ),
+    false,
+  );
+  const forged_unknown_goal = {
+    ...requirement,
+    goal: {
+      tag: "fact",
+      proposition: {
+        tag: "unknown-ordered-goal",
+        value: logical_result,
+        bound: 10n,
+      },
+    },
+  } as unknown as SemanticBoundedOffsetRequirement;
+  const forged_unknown_goal_certificate = semantic_bounded_offset_certificate(
+    call_span,
+    forged_unknown_goal,
+  );
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      forged_unknown_goal_certificate,
+      control_flow,
+      call_span,
+      forged_unknown_goal,
+    ),
+    false,
+  );
+  const original_operation = control_flow.blocks.flatMap((block) => block.nodes)
+    .find((node) => node.outputs.includes(result));
+  if (original_operation === undefined) {
+    throw new Error("Expected the bounded offset operation.");
+  }
+  const duplicate_producer_control_flow = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => {
+      const nodes = block.nodes.map((node) => {
+        if (node !== original_operation) return node;
+        return {
+          ...node,
+          operation: { tag: "primitive" as const, name: "i32.mul" },
+        };
+      });
+      if (block.id !== when_false) return { ...block, nodes };
+      return { ...block, nodes: [...nodes, original_operation] };
+    }),
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      duplicate_producer_control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  const reordered_control_flow = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => {
+      const operation_index = block.nodes.indexOf(original_operation);
+      const binding_index = block.nodes.findIndex((node) =>
+        node.outputs.includes(logical_result)
+      );
+      if (operation_index < 0 || binding_index < 0) return block;
+      const nodes = [...block.nodes];
+      nodes[operation_index] = block.nodes[binding_index];
+      nodes[binding_index] = original_operation;
+      return { ...block, nodes };
+    }),
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      reordered_control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  const original_offset = control_flow.blocks.flatMap((block) => block.nodes)
+    .find((node) => node.outputs.includes(offset));
+  if (original_offset === undefined) {
+    throw new Error("Expected the bounded offset constant.");
+  }
+  const late_offset_control_flow = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => {
+      const offset_index = block.nodes.indexOf(original_offset);
+      const operation_index = block.nodes.indexOf(original_operation);
+      if (offset_index < 0 || operation_index < 0) return block;
+      const nodes = [...block.nodes];
+      nodes[offset_index] = original_operation;
+      nodes[operation_index] = original_offset;
+      return { ...block, nodes };
+    }),
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      late_offset_control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  const original_comparison = control_flow.blocks.flatMap((block) =>
+    block.nodes
+  ).find((node) => node.outputs.includes(condition));
+  if (original_comparison === undefined) {
+    throw new Error("Expected the bounded offset comparison.");
+  }
+  const late_comparison_control_flow = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => {
+      const nodes = block.nodes.filter((node) => node !== original_comparison);
+      const operation_index = nodes.indexOf(original_operation);
+      if (operation_index < 0) return { ...block, nodes };
+      nodes.splice(operation_index + 1, 0, original_comparison);
+      return { ...block, nodes };
+    }),
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      late_comparison_control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  const hidden_loop_control_flow = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => {
+      if (block.id !== when_true) return block;
+      return {
+        ...block,
+        successors: [],
+        terminator: { tag: "jump" as const, target: when_true },
+      };
+    }),
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      certificate,
+      hidden_loop_control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  for (const ambiguous of ["offset", "operation", "comparison"]) {
+    const ambiguous_control_flow = {
+      ...control_flow,
+      blocks: control_flow.blocks.map((block) => ({
+        ...block,
+        nodes: block.nodes.map((node) => {
+          let selected = false;
+          if (ambiguous === "offset" && node.outputs[0] === offset) {
+            selected = true;
+          }
+          if (ambiguous === "operation" && node.outputs[0] === result) {
+            selected = true;
+          }
+          if (ambiguous === "comparison" && node.outputs[0] === condition) {
+            selected = true;
+          }
+          if (!selected) return node;
+          return {
+            ...node,
+            outputs: [
+              ...node.outputs,
+              ("ambiguous-bounded-offset-" + ambiguous) as ValueId,
+            ],
+          };
+        }),
+      })),
+    };
+    assert_equals(
+      verify_semantic_bounded_offset_certificate(
+        certificate,
+        ambiguous_control_flow,
+        call_span,
+        requirement,
+      ),
+      false,
+    );
+  }
+  for (
+    const [changed_output, changed_operation] of [
+      [offset, { tag: "constant" as const, value: 4_294_967_297 }],
+      [result, { tag: "primitive" as const, name: "i32.sub" }],
+    ] as const
+  ) {
+    const forged_control_flow = {
+      ...control_flow,
+      blocks: control_flow.blocks.map((block) => ({
+        ...block,
+        nodes: block.nodes.map((node) => {
+          if (node.outputs[0] !== changed_output) return node;
+          return { ...node, operation: changed_operation };
+        }),
+      })),
+    };
+    assert_equals(
+      verify_semantic_bounded_offset_certificate(
+        certificate,
+        forged_control_flow,
+        call_span,
+        requirement,
+      ),
+      false,
+    );
+  }
+});
 
 Deno.test("semantic predicate certificates verify only value-preserving aliases", () => {
   const builder = new SemanticCfgBuilder("predicate-certificate");

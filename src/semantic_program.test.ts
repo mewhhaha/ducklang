@@ -1869,6 +1869,239 @@ Deno.test("remainder certificates reject calls repeated by loops", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
+Deno.test("bounded offsets establish ordered result evidence", () => {
+  for (
+    const [value_type, requirement, body, argument] of [
+      [
+        "I32",
+        "value <= 10i32",
+        "if actual < 10i32 then do " +
+        "let next = actual + 1i32; consume next end else 0 end",
+        "9i32",
+      ],
+      [
+        "U32",
+        "value <= 10u32",
+        "if actual >= 10u32 then 0u32 else do " +
+        "let next = actual + 1u32; consume next end end",
+        "9u32",
+      ],
+      [
+        "I64",
+        "value < 10i64",
+        "if actual < 9i64 then do " +
+        "let next = actual - (-1i64); consume next end else 0i64 end",
+        "8i64",
+      ],
+      [
+        "I32",
+        "9i32 < value",
+        "if 10i32 < actual then do " +
+        "let next = actual - 1i32; consume next end else 0 end",
+        "11i32",
+      ],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ${requirement}) -> ` +
+        `${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        `let guarded = actual => ${body};\n` +
+        `guarded ${argument}\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "bounded_offset",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("bounded offsets establish transparent ordered facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type at_most_ten = (value: I32) -> Prop\n" +
+      "fact at_most_ten = value => value <= 10i32;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof at_most_ten(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => if actual < 10i32 then do\n" +
+      "  let next = actual + 1i32;\n" +
+      "  consume next\n" +
+      "end else 0 end;\n" +
+      "guarded 9i32\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "bounded_offset",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("bounded offsets reject operations outside the one-hop boundary", () => {
+  for (
+    const body of [
+      "do let next = actual + 1i32; " +
+      "if actual < 10i32 then consume next else 0 end end",
+      "if choose then do let next = actual + 1i32; " +
+      "consume next end else 0 end",
+      "if actual < 10i32 then do let next = 1i32 + actual; " +
+      "consume next end else 0 end",
+      "if actual < 9i32 then do let next = actual + 1i32 + 1i32; " +
+      "consume next end else 0 end",
+      "if actual < 10i32 then do let next = actual + 1i32; " +
+      "let alias = next; consume alias end else 0 end",
+      "if actual < 10i32 then do " +
+      "let next = if choose then actual + 1i32 else actual + 1i32 end; " +
+      "consume next end else 0 end",
+      "do let alias = actual; if alias < 10i32 then do " +
+      "let next = actual + 1i32; consume next end else 0 end end",
+      "do let alias = if choose then actual else actual end; " +
+      "if alias < 10i32 then do let next = actual + 1i32; " +
+      "consume next end else 0 end end",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32, choose: Bool) -> I32\n" +
+        `let guarded = (actual, choose) => ${body};\n` +
+        "guarded (9i32, true)\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("bounded offsets drop facts when arithmetic may wrap", () => {
+  for (
+    const [value_type, requirement, condition, expression, zero, argument] of [
+      [
+        "I32",
+        "value <= 2147483647i32",
+        "actual <= 2147483647i32",
+        "actual + 1i32",
+        "0i32",
+        "2147483647i32",
+      ],
+      [
+        "U32",
+        "0u32 <= value",
+        "0u32 <= actual",
+        "actual - 1u32",
+        "0u32",
+        "0u32",
+      ],
+      [
+        "I64",
+        "value <= 9223372036854775807i64",
+        "actual <= 9223372036854775807i64",
+        "actual + 1i64",
+        "0i64",
+        "9223372036854775807i64",
+      ],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ${requirement}) -> ` +
+        `${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        `let guarded = actual => if ${condition} then do ` +
+        `let next = ${expression}; consume next end else ${zero} end;\n` +
+        `guarded ${argument}\n`,
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("bounded offset certificates reject calls repeated by loops", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    if actual < 10i32 then do\n" +
+      "      let next = actual + 1i32;\n" +
+      "      consume next\n" +
+      "    end else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "guarded 9i32\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("bounded offset inference returns unknown after its path budget", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = " +
+      "(value: I32, a: Bool, b: Bool, c: Bool, d: Bool, e: Bool) -> I32\n" +
+      "let guarded = (actual, a, b, c, d, e) => " +
+      "if actual >= 10i32 then 0 else do\n" +
+      "  let one = if a then 1 else 2 end;\n" +
+      "  let two = if b then 1 else 2 end;\n" +
+      "  let three = if c then 1 else 2 end;\n" +
+      "  let four = if d then 1 else 2 end;\n" +
+      "  let five = if e then 1 else 2 end;\n" +
+      "  let next = actual + 1i32;\n" +
+      "  consume next + one - one + two - two + three - three + " +
+      "four - four + five - five\n" +
+      "end end;\n" +
+      "guarded (9, true, true, true, true, true)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("ordered comparison branches establish call evidence", () => {
   for (
     const [requirement, condition, then_branch, else_branch] of [

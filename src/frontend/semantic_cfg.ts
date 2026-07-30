@@ -80,6 +80,293 @@ export type SemanticCfg = {
   blocks: readonly SemanticBlock[];
 };
 
+export function semantic_cfg_is_well_formed(
+  control_flow: SemanticCfg,
+): boolean {
+  if (
+    typeof control_flow.entry !== "number" ||
+    !Number.isSafeInteger(control_flow.entry) ||
+    control_flow.entry < 0
+  ) {
+    return false;
+  }
+  const blocks = new Map<SemanticBlockId, SemanticBlock>();
+  for (const block of control_flow.blocks) {
+    if (
+      typeof block.id !== "number" ||
+      !Number.isSafeInteger(block.id) ||
+      block.id < 0 ||
+      blocks.has(block.id)
+    ) {
+      return false;
+    }
+    blocks.set(block.id, block);
+  }
+  if (!blocks.has(control_flow.entry)) return false;
+
+  const values = new Map<ValueId, SemanticValue>();
+  for (const value of control_flow.values) {
+    if (values.has(value.value)) return false;
+    values.set(value.value, value);
+  }
+  const parameters = new Set<ValueId>();
+  for (const parameter of control_flow.parameters) {
+    if (!values.has(parameter) || parameters.has(parameter)) return false;
+    parameters.add(parameter);
+  }
+
+  type ProducerLocation = {
+    block: SemanticBlockId;
+    index: number;
+    node: SemanticNode;
+  };
+  const producers = new Map<ValueId, ProducerLocation>();
+  const node_ids = new Set<SemanticNodeId>();
+  for (const block of control_flow.blocks) {
+    for (let index = 0; index < block.nodes.length; index += 1) {
+      const node = block.nodes[index];
+      if (node === undefined) return false;
+      if (
+        typeof node.id !== "number" ||
+        !Number.isSafeInteger(node.id) ||
+        node.id < 0 ||
+        node_ids.has(node.id)
+      ) {
+        return false;
+      }
+      node_ids.add(node.id);
+      for (const input of node.inputs) {
+        if (!values.has(input)) return false;
+      }
+      for (const output of node.outputs) {
+        if (
+          !values.has(output) ||
+          parameters.has(output) ||
+          producers.has(output)
+        ) {
+          return false;
+        }
+        producers.set(output, { block: block.id, index, node });
+      }
+    }
+  }
+  if (values.size !== parameters.size + producers.size) return false;
+
+  const expected_predecessors = new Map<
+    SemanticBlockId,
+    Set<SemanticBlockId>
+  >();
+  for (const block of control_flow.blocks) {
+    expected_predecessors.set(block.id, new Set());
+  }
+  for (const block of control_flow.blocks) {
+    const expected_successors: SemanticBlockId[] = [];
+    switch (block.terminator.tag) {
+      case "jump":
+        expected_successors.push(block.terminator.target);
+        break;
+      case "branch": {
+        if (
+          block.terminator.when_true === block.terminator.when_false
+        ) {
+          return false;
+        }
+        const condition = values.get(block.terminator.condition);
+        if (
+          condition === undefined ||
+          !same_representation_type(condition.type, {
+            tag: "scalar",
+            name: "Bool",
+          })
+        ) {
+          return false;
+        }
+        expected_successors.push(
+          block.terminator.when_true,
+          block.terminator.when_false,
+        );
+        break;
+      }
+      case "return":
+        if (
+          block.terminator.value !== undefined &&
+          !values.has(block.terminator.value)
+        ) {
+          return false;
+        }
+        break;
+      case "trap":
+        break;
+      default:
+        return false;
+    }
+    const declared_successors = new Set(block.successors);
+    if (
+      declared_successors.size !== block.successors.length ||
+      declared_successors.size !== expected_successors.length
+    ) {
+      return false;
+    }
+    for (const successor of expected_successors) {
+      if (
+        !blocks.has(successor) ||
+        !declared_successors.has(successor)
+      ) {
+        return false;
+      }
+      const predecessors = expected_predecessors.get(successor);
+      if (predecessors === undefined) return false;
+      predecessors.add(block.id);
+    }
+  }
+  for (const block of control_flow.blocks) {
+    const declared_predecessors = new Set(block.predecessors);
+    const expected = expected_predecessors.get(block.id);
+    if (
+      expected === undefined ||
+      declared_predecessors.size !== block.predecessors.length ||
+      declared_predecessors.size !== expected.size
+    ) {
+      return false;
+    }
+    for (const predecessor of expected) {
+      if (!declared_predecessors.has(predecessor)) return false;
+    }
+  }
+
+  const block_ids = new Set(blocks.keys());
+  const dominators = new Map<SemanticBlockId, Set<SemanticBlockId>>();
+  for (const block of control_flow.blocks) {
+    if (block.id === control_flow.entry) {
+      dominators.set(block.id, new Set([block.id]));
+    } else {
+      dominators.set(block.id, new Set(block_ids));
+    }
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const block of control_flow.blocks) {
+      if (block.id === control_flow.entry) continue;
+      let intersection = new Set(block_ids);
+      if (block.predecessors.length === 0) intersection = new Set();
+      for (const predecessor of block.predecessors) {
+        const predecessor_dominators = dominators.get(predecessor);
+        if (predecessor_dominators === undefined) return false;
+        intersection = new Set(
+          [...intersection].filter((candidate) =>
+            predecessor_dominators.has(candidate)
+          ),
+        );
+      }
+      intersection.add(block.id);
+      const previous = dominators.get(block.id);
+      if (previous === undefined) return false;
+      if (same_values(previous, intersection)) continue;
+      dominators.set(block.id, intersection);
+      changed = true;
+    }
+  }
+
+  const value_is_available = (
+    value: ValueId,
+    block: SemanticBlock,
+    index: number,
+  ): boolean => {
+    const block_dominators = dominators.get(block.id);
+    if (block_dominators === undefined) return false;
+    if (parameters.has(value)) {
+      return block_dominators.has(control_flow.entry);
+    }
+    const producer = producers.get(value);
+    if (producer === undefined) return false;
+    if (producer.block === block.id) return producer.index < index;
+    return block_dominators.has(producer.block);
+  };
+
+  for (const block of control_flow.blocks) {
+    for (let index = 0; index < block.nodes.length; index += 1) {
+      const node = block.nodes[index];
+      if (node === undefined) return false;
+      if (node.operation.tag === "phi") {
+        if (
+          node.outputs.length !== 1 ||
+          node.inputs.length !== node.operation.incoming.length ||
+          node.operation.incoming.length !== block.predecessors.length
+        ) {
+          return false;
+        }
+        const output_value = node.outputs[0];
+        if (output_value === undefined) return false;
+        const incoming_predecessors = new Set<SemanticBlockId>();
+        for (
+          let incoming_index = 0;
+          incoming_index < node.operation.incoming.length;
+          incoming_index += 1
+        ) {
+          const incoming = node.operation.incoming[incoming_index];
+          if (
+            incoming === undefined ||
+            node.inputs[incoming_index] !== incoming.value ||
+            !block.predecessors.includes(incoming.predecessor) ||
+            incoming_predecessors.has(incoming.predecessor)
+          ) {
+            return false;
+          }
+          incoming_predecessors.add(incoming.predecessor);
+          const predecessor = blocks.get(incoming.predecessor);
+          if (
+            predecessor === undefined ||
+            !value_is_available(
+              incoming.value,
+              predecessor,
+              predecessor.nodes.length,
+            )
+          ) {
+            return false;
+          }
+          const input = values.get(incoming.value);
+          const output = values.get(output_value);
+          if (
+            input === undefined ||
+            output === undefined ||
+            !same_representation_type(input.type, output.type)
+          ) {
+            return false;
+          }
+        }
+        continue;
+      }
+      for (const input of node.inputs) {
+        if (!value_is_available(input, block, index)) return false;
+      }
+    }
+    if (block.terminator.tag === "branch") {
+      if (
+        !value_is_available(
+          block.terminator.condition,
+          block,
+          block.nodes.length,
+        )
+      ) {
+        return false;
+      }
+    }
+    if (
+      block.terminator.tag === "return" &&
+      block.terminator.value !== undefined &&
+      !value_is_available(
+        block.terminator.value,
+        block,
+        block.nodes.length,
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function unique_semantic_call_at_span(
   control_flow: SemanticCfg,
   span: SourceSpan,
@@ -682,9 +969,9 @@ export class SemanticCfgBuilder {
   }
 }
 
-function same_values(
-  left: ReadonlySet<ValueId>,
-  right: ReadonlySet<ValueId>,
+function same_values<value>(
+  left: ReadonlySet<value>,
+  right: ReadonlySet<value>,
 ): boolean {
   if (left.size !== right.size) return false;
   for (const value of left) if (!right.has(value)) return false;

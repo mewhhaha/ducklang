@@ -93,6 +93,7 @@ import {
 } from "./frontend/representation_type.ts";
 import type { FactState } from "./frontend/fact_graph.ts";
 import {
+  infer_semantic_bounded_offset_certificate,
   infer_semantic_machine_certificate,
   infer_semantic_remainder_certificate,
   infer_semantic_remainder_divisibility_certificate,
@@ -101,10 +102,12 @@ import {
 } from "./frontend/semantic_fact_graph.ts";
 import {
   semantic_predicate_certificate,
+  type SemanticBoundedOffsetRequirement,
   type SemanticControlFlowCertificate,
   type SemanticPredicateAtom,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  verify_semantic_bounded_offset_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
@@ -1699,6 +1702,31 @@ function verified_branch_hypotheses(
         certificate,
       };
     }
+    const bounded_offset = prefix_bounded_offset_requirement(
+      machine_requirement,
+      candidate,
+    );
+    if (bounded_offset !== undefined) {
+      const certificate = infer_semantic_bounded_offset_certificate(
+        candidate,
+        call_span,
+        bounded_offset,
+      );
+      if (
+        certificate !== undefined &&
+        verify_semantic_bounded_offset_certificate(
+          certificate,
+          candidate,
+          call_span,
+          bounded_offset,
+        )
+      ) {
+        return {
+          propositions: [proposition],
+          certificate,
+        };
+      }
+    }
   }
   for (
     const remainder_requirement of prefix_remainder_requirements(
@@ -2283,6 +2311,76 @@ function prefix_remainder_requirements(
     }
   }
   return requirements;
+}
+
+function prefix_bounded_offset_requirement(
+  goal: SemanticMachineRequirement,
+  control_flow: SemanticCfg,
+): SemanticBoundedOffsetRequirement | undefined {
+  if (goal.tag !== "fact" || goal.proposition.tag === "equal") {
+    return undefined;
+  }
+  const logical_result = goal.proposition.value;
+  const producers = new Map<ValueId, SemanticNode>();
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      for (const output of node.outputs) producers.set(output, node);
+    }
+  }
+  const binding = producers.get(logical_result);
+  if (
+    binding?.operation.tag !== "primitive" ||
+    !binding.operation.name.startsWith("bind:") ||
+    binding.inputs.length !== 1 ||
+    binding.outputs.length !== 1 ||
+    binding.outputs[0] !== logical_result
+  ) {
+    return undefined;
+  }
+  const result = binding.inputs[0];
+  if (result === undefined) return undefined;
+  const operation = producers.get(result);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.inputs.length !== 2 ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== result
+  ) {
+    return undefined;
+  }
+  let offset_operation: "add" | "subtract";
+  if (
+    operation.operation.name === "i32.add" ||
+    operation.operation.name === "i64.add"
+  ) {
+    offset_operation = "add";
+  } else if (
+    operation.operation.name === "i32.sub" ||
+    operation.operation.name === "i64.sub"
+  ) {
+    offset_operation = "subtract";
+  } else {
+    return undefined;
+  }
+  const input = operation.inputs[0];
+  const offset = operation.inputs[1];
+  if (
+    input === undefined || offset === undefined ||
+    producers.get(offset)?.operation.tag !== "constant"
+  ) {
+    return undefined;
+  }
+  return {
+    operation: offset_operation,
+    input,
+    offset,
+    result,
+    logical_result,
+    goal: {
+      tag: "fact",
+      proposition: { ...goal.proposition },
+    },
+  };
 }
 
 function prefix_remainder_divisibility_requirements(
