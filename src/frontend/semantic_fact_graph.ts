@@ -21,9 +21,12 @@ import {
 } from "./semantic_cfg.ts";
 import {
   semantic_machine_certificate,
+  semantic_remainder_certificate,
   semantic_unreachable_certificate,
   type SemanticMachineCertificate,
   type SemanticMachineRequirement,
+  type SemanticRemainderCertificate,
+  type SemanticRemainderRequirement,
   type SemanticUnreachableCertificate,
 } from "./semantic_fact_certificate.ts";
 import type { ValueId } from "./semantic_identity.ts";
@@ -55,6 +58,31 @@ export function infer_semantic_machine_certificate(
     return undefined;
   }
   return semantic_machine_certificate(call_span, requirement);
+}
+
+export function infer_semantic_remainder_certificate(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticRemainderRequirement,
+): SemanticRemainderCertificate | undefined {
+  const machine_requirement: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "equal",
+      value: requirement.remainder,
+      expected: requirement.expected,
+    },
+  };
+  if (
+    semantic_cfg_machine_path_result(
+      control_flow,
+      call_span,
+      machine_requirement,
+    ) !== "proved"
+  ) {
+    return undefined;
+  }
+  return semantic_remainder_certificate(call_span, requirement);
 }
 
 export function infer_semantic_unreachable_certificate(

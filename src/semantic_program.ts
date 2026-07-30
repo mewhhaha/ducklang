@@ -94,6 +94,7 @@ import {
 import type { FactState } from "./frontend/fact_graph.ts";
 import {
   infer_semantic_machine_certificate,
+  infer_semantic_remainder_certificate,
   infer_semantic_unreachable_certificate,
   type SemanticMachineRequirement,
 } from "./frontend/semantic_fact_graph.ts";
@@ -101,8 +102,10 @@ import {
   semantic_predicate_certificate,
   type SemanticControlFlowCertificate,
   type SemanticPredicateAtom,
+  type SemanticRemainderRequirement,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
+  verify_semantic_remainder_certificate,
   verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
 import {
@@ -1694,6 +1697,34 @@ function verified_branch_hypotheses(
       };
     }
   }
+  for (
+    const remainder_requirement of prefix_remainder_requirements(
+      normalized,
+      binding_values,
+      candidate,
+    )
+  ) {
+    const certificate = infer_semantic_remainder_certificate(
+      candidate,
+      call_span,
+      remainder_requirement,
+    );
+    if (certificate === undefined) continue;
+    if (
+      !verify_semantic_remainder_certificate(
+        certificate,
+        candidate,
+        call_span,
+        remainder_requirement,
+      )
+    ) {
+      continue;
+    }
+    return {
+      propositions: [proposition],
+      certificate,
+    };
+  }
   const goal_atom = prefix_opaque_predicate_atom(
     declaration_name,
     proposition,
@@ -2146,6 +2177,80 @@ function prefix_opaque_predicate_atom(
     body_facts,
     nested_active,
   );
+}
+
+function prefix_remainder_requirements(
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg,
+): readonly SemanticRemainderRequirement[] {
+  if (proposition.tag !== "equal") return [];
+  let expression = proposition.left;
+  let expected_term = proposition.right;
+  if (
+    expression.shape.tag !== "binary" ||
+    expression.shape.operator !== "%"
+  ) {
+    expression = proposition.right;
+    expected_term = proposition.left;
+  }
+  if (
+    expression.shape.tag !== "binary" ||
+    expression.shape.operator !== "%"
+  ) {
+    return [];
+  }
+  const dividend = prefix_semantic_value(
+    expression.shape.left,
+    binding_values,
+  );
+  const expected = prefix_integer_constant(expected_term);
+  if (dividend === undefined || expected === undefined) return [];
+  const producers = new Map<ValueId, SemanticNode>();
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      for (const output of node.outputs) producers.set(output, node);
+    }
+  }
+  const requirements: SemanticRemainderRequirement[] = [];
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "primitive" ||
+        (!node.operation.name.endsWith(".rem_s") &&
+          !node.operation.name.endsWith(".rem_u")) ||
+        node.inputs.length !== 2
+      ) {
+        continue;
+      }
+      const left = node.inputs[0];
+      const divisor = node.inputs[1];
+      const remainder = node.outputs[0];
+      if (
+        left !== dividend || divisor === undefined ||
+        remainder === undefined
+      ) {
+        continue;
+      }
+      const divisor_producer = producers.get(divisor);
+      if (
+        divisor_producer?.operation.tag !== "constant" ||
+        !prefix_constant_matches(
+          expression.shape.right,
+          divisor_producer.operation.value,
+        )
+      ) {
+        continue;
+      }
+      requirements.push({
+        dividend,
+        divisor,
+        remainder,
+        expected,
+      });
+    }
+  }
+  return requirements;
 }
 
 function prefix_integer_constant(term: PrefixTerm): bigint | undefined {

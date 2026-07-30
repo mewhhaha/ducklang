@@ -2,10 +2,13 @@ import { assert_equals } from "../assert.ts";
 import {
   semantic_machine_certificate,
   semantic_predicate_certificate,
+  semantic_remainder_certificate,
   semantic_unreachable_certificate,
   type SemanticMachineRequirement,
+  type SemanticRemainderRequirement,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
+  verify_semantic_remainder_certificate,
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
 import {
@@ -190,6 +193,349 @@ Deno.test("semantic predicate certificates reject representation-changing aliase
     ),
     false,
   );
+});
+
+Deno.test("semantic remainder certificates verify exact machine operations", () => {
+  const builder = new SemanticCfgBuilder("remainder-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("remainder-true:1:2:0" as never);
+  const when_false = builder.add_block("remainder-false:2:3:0" as never);
+  const value = "remainder-parameter" as ValueId;
+  builder.add_parameter(value, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const divisor = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 4 },
+    [],
+    [i32_type],
+  )[0];
+  if (divisor === undefined) throw new Error("Expected remainder divisor.");
+  const remainder = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 3 },
+    { tag: "primitive", name: "i32.rem_s" },
+    [value, divisor],
+    [i32_type],
+  )[0];
+  if (remainder === undefined) throw new Error("Expected remainder.");
+  const zero = builder.add_node(
+    entry,
+    origin,
+    { start: 4, end: 5 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (zero === undefined) throw new Error("Expected remainder comparison.");
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 5 },
+    { tag: "primitive", name: "i32.eq" },
+    [remainder, zero],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected remainder branch.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const call_span = { start: 6, end: 19 };
+  const result = builder.add_node(
+    when_true,
+    "remainder-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [value],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected remainder call.");
+  builder.terminate(when_true, { tag: "return", value: result });
+  builder.terminate(when_false, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const requirement: SemanticRemainderRequirement = {
+    dividend: value,
+    divisor,
+    remainder,
+    expected: 0n,
+  };
+  const certificate = semantic_remainder_certificate(
+    call_span,
+    requirement,
+  );
+  assert_equals(
+    verify_semantic_remainder_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(certificate), true);
+  assert_equals(Object.isFrozen(certificate.requirement), true);
+
+  const wrong_expected = { ...requirement, expected: 1n };
+  const invalid = semantic_remainder_certificate(
+    call_span,
+    wrong_expected,
+  );
+  assert_equals(
+    verify_semantic_remainder_certificate(
+      invalid,
+      control_flow,
+      call_span,
+      wrong_expected,
+    ),
+    false,
+  );
+
+  const wrapping_expected = {
+    ...requirement,
+    expected: 4_294_967_296n,
+  };
+  const wrapping = semantic_remainder_certificate(
+    call_span,
+    wrapping_expected,
+  );
+  assert_equals(
+    verify_semantic_remainder_certificate(
+      wrapping,
+      control_flow,
+      call_span,
+      wrapping_expected,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic remainder certificates reject traps and primitive mismatches", () => {
+  for (
+    const [primitive, divisor_value] of [
+      ["i32.rem_s", 0],
+      ["i32.rem_u", 4],
+    ] as const
+  ) {
+    const builder = new SemanticCfgBuilder(
+      "invalid-remainder-" + primitive + "-" + divisor_value.toString(),
+    );
+    const entry = builder.add_block(origin);
+    const when_true = builder.add_block(
+      "invalid-remainder-true:1:2:0" as never,
+    );
+    const when_false = builder.add_block(
+      "invalid-remainder-false:2:3:0" as never,
+    );
+    const value = (
+      "invalid-remainder-parameter-" + primitive
+    ) as ValueId;
+    builder.add_parameter(value, i32_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+    const divisor = builder.add_node(
+      entry,
+      origin,
+      { start: 2, end: 3 },
+      { tag: "constant", value: divisor_value },
+      [],
+      [i32_type],
+    )[0];
+    if (divisor === undefined) throw new Error("Expected invalid divisor.");
+    const remainder = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 3 },
+      { tag: "primitive", name: primitive },
+      [value, divisor],
+      [i32_type],
+    )[0];
+    if (remainder === undefined) throw new Error("Expected invalid remainder.");
+    const zero = builder.add_node(
+      entry,
+      origin,
+      { start: 4, end: 5 },
+      { tag: "constant", value: 0 },
+      [],
+      [i32_type],
+    )[0];
+    if (zero === undefined) throw new Error("Expected invalid comparison.");
+    const condition = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 5 },
+      { tag: "primitive", name: "i32.eq" },
+      [remainder, zero],
+      [bool_type],
+    )[0];
+    if (condition === undefined) throw new Error("Expected invalid branch.");
+    builder.connect(entry, when_true);
+    builder.connect(entry, when_false);
+    builder.terminate(entry, {
+      tag: "branch",
+      condition,
+      when_true,
+      when_false,
+    });
+    const call_span = { start: 6, end: 19 };
+    const result = builder.add_node(
+      when_true,
+      "invalid-remainder-true:1:2:0" as never,
+      call_span,
+      { tag: "call", function_name: "consume" },
+      [value],
+      [i32_type],
+    )[0];
+    if (result === undefined) throw new Error("Expected invalid call.");
+    builder.terminate(when_true, { tag: "return", value: result });
+    builder.terminate(when_false, { tag: "return", value: zero });
+    const control_flow = builder.finish();
+    const requirement: SemanticRemainderRequirement = {
+      dividend: value,
+      divisor,
+      remainder,
+      expected: 0n,
+    };
+    const certificate = semantic_remainder_certificate(
+      call_span,
+      requirement,
+    );
+    assert_equals(
+      verify_semantic_remainder_certificate(
+        certificate,
+        control_flow,
+        call_span,
+        requirement,
+      ),
+      false,
+    );
+  }
+});
+
+Deno.test("semantic remainder certificates reject ambiguous producer outputs", () => {
+  for (const ambiguous of ["divisor", "remainder", "comparison"]) {
+    const builder = new SemanticCfgBuilder(
+      "ambiguous-remainder-" + ambiguous,
+    );
+    const entry = builder.add_block(origin);
+    const when_true = builder.add_block(
+      "ambiguous-remainder-true:1:2:0" as never,
+    );
+    const when_false = builder.add_block(
+      "ambiguous-remainder-false:2:3:0" as never,
+    );
+    const value = ("ambiguous-remainder-" + ambiguous) as ValueId;
+    builder.add_parameter(value, i32_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+    let divisor_types = [i32_type];
+    if (ambiguous === "divisor") divisor_types = [i32_type, i32_type];
+    const divisor_outputs = builder.add_node(
+      entry,
+      origin,
+      { start: 2, end: 3 },
+      { tag: "constant", value: 4 },
+      [],
+      divisor_types,
+    );
+    let divisor = divisor_outputs[0];
+    if (ambiguous === "divisor") divisor = divisor_outputs[1];
+    if (divisor === undefined) throw new Error("Expected ambiguous divisor.");
+    let remainder_types = [i32_type];
+    if (ambiguous === "remainder") {
+      remainder_types = [i32_type, i32_type];
+    }
+    const remainder_outputs = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 3 },
+      { tag: "primitive", name: "i32.rem_s" },
+      [value, divisor],
+      remainder_types,
+    );
+    let remainder = remainder_outputs[0];
+    if (ambiguous === "remainder") remainder = remainder_outputs[1];
+    if (remainder === undefined) {
+      throw new Error("Expected ambiguous remainder.");
+    }
+    const zero = builder.add_node(
+      entry,
+      origin,
+      { start: 4, end: 5 },
+      { tag: "constant", value: 0 },
+      [],
+      [i32_type],
+    )[0];
+    if (zero === undefined) throw new Error("Expected ambiguous comparison.");
+    let comparison_types = [bool_type];
+    if (ambiguous === "comparison") {
+      comparison_types = [bool_type, bool_type];
+    }
+    const comparison_outputs = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 5 },
+      { tag: "primitive", name: "i32.eq" },
+      [remainder, zero],
+      comparison_types,
+    );
+    let condition = comparison_outputs[0];
+    if (ambiguous === "comparison") condition = comparison_outputs[1];
+    if (condition === undefined) throw new Error("Expected ambiguous branch.");
+    builder.connect(entry, when_true);
+    builder.connect(entry, when_false);
+    builder.terminate(entry, {
+      tag: "branch",
+      condition,
+      when_true,
+      when_false,
+    });
+    const call_span = { start: 6, end: 19 };
+    const result = builder.add_node(
+      when_true,
+      "ambiguous-remainder-true:1:2:0" as never,
+      call_span,
+      { tag: "call", function_name: "consume" },
+      [value],
+      [i32_type],
+    )[0];
+    if (result === undefined) throw new Error("Expected ambiguous call.");
+    builder.terminate(when_true, { tag: "return", value: result });
+    builder.terminate(when_false, { tag: "return", value: zero });
+    const control_flow = builder.finish();
+    const requirement: SemanticRemainderRequirement = {
+      dividend: value,
+      divisor,
+      remainder,
+      expected: 0n,
+    };
+    const certificate = semantic_remainder_certificate(
+      call_span,
+      requirement,
+    );
+    assert_equals(
+      verify_semantic_remainder_certificate(
+        certificate,
+        control_flow,
+        call_span,
+        requirement,
+      ),
+      false,
+    );
+  }
 });
 
 Deno.test("semantic machine certificates independently verify CFG bounds", () => {

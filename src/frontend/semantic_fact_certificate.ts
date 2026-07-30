@@ -45,6 +45,19 @@ export type SemanticPredicateCertificate = {
   conclusion: SemanticPredicateAtom;
 };
 
+export type SemanticRemainderRequirement = {
+  dividend: ValueId;
+  divisor: ValueId;
+  remainder: ValueId;
+  expected: bigint;
+};
+
+export type SemanticRemainderCertificate = {
+  tag: "remainder_fact";
+  call_span: SourceSpan;
+  requirement: SemanticRemainderRequirement;
+};
+
 export type SemanticUnreachableCertificate = {
   tag: "machine_unreachable";
   call_span: SourceSpan;
@@ -53,6 +66,7 @@ export type SemanticUnreachableCertificate = {
 export type SemanticControlFlowCertificate =
   | SemanticMachineCertificate
   | SemanticPredicateCertificate
+  | SemanticRemainderCertificate
   | SemanticUnreachableCertificate;
 
 type VerificationState = {
@@ -252,6 +266,115 @@ function same_predicate_atom(
   );
 }
 
+export function semantic_remainder_certificate(
+  call_span: SourceSpan,
+  requirement: SemanticRemainderRequirement,
+): SemanticRemainderCertificate {
+  return Object.freeze({
+    tag: "remainder_fact",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    requirement: Object.freeze({ ...requirement }),
+  });
+}
+
+export function verify_semantic_remainder_certificate(
+  certificate: SemanticRemainderCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticRemainderRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic remainder certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "remainder_fact",
+    "Semantic remainder certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    !same_remainder_requirement(certificate.requirement, requirement)
+  ) {
+    return false;
+  }
+  const ranges = machine_ranges(control_flow);
+  const dividend_range = ranges.get(requirement.dividend);
+  const divisor_range = ranges.get(requirement.divisor);
+  const remainder_range = ranges.get(requirement.remainder);
+  if (
+    dividend_range === undefined || divisor_range === undefined ||
+    remainder_range === undefined ||
+    dividend_range.signed !== divisor_range.signed ||
+    dividend_range.width !== divisor_range.width ||
+    dividend_range.signed !== remainder_range.signed ||
+    dividend_range.width !== remainder_range.width
+  ) {
+    return false;
+  }
+  const val_type = integer_val_type(dividend_range);
+  if (val_type === undefined) return false;
+  let primitive = val_type + ".rem_u";
+  if (dividend_range.signed) primitive = val_type + ".rem_s";
+  const producers = semantic_value_producers(control_flow);
+  const operation = producers.get(requirement.remainder);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.operation.name !== primitive ||
+    operation.inputs.length !== 2 ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== requirement.remainder ||
+    operation.inputs[0] !== requirement.dividend ||
+    operation.inputs[1] !== requirement.divisor
+  ) {
+    return false;
+  }
+  const divisor = verified_integer_constant(
+    requirement.divisor,
+    producers,
+  );
+  if (
+    divisor === undefined ||
+    normalize_integer(divisor_range, divisor) === 0n ||
+    normalize_integer(remainder_range, requirement.expected) !==
+      requirement.expected
+  ) {
+    return false;
+  }
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (target === undefined) return false;
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  if (target_block_can_repeat(target.block.id, blocks)) return false;
+  const machine_requirement: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "equal",
+      value: requirement.remainder,
+      expected: requirement.expected,
+    },
+  };
+  return verify_semantic_paths(
+    control_flow,
+    call_span,
+    machine_requirement,
+  ) === "proved";
+}
+
+function same_remainder_requirement(
+  left: SemanticRemainderRequirement,
+  right: SemanticRemainderRequirement,
+): boolean {
+  return left.dividend === right.dividend &&
+    left.divisor === right.divisor &&
+    left.remainder === right.remainder &&
+    left.expected === right.expected;
+}
+
 export function verify_semantic_machine_certificate(
   certificate: SemanticMachineCertificate,
   control_flow: SemanticCfg,
@@ -437,7 +560,14 @@ function verify_semantic_paths(
       }
       continue;
     }
-    const comparison = producers.get(block.terminator.condition);
+    let comparison = producers.get(block.terminator.condition);
+    if (
+      comparison !== undefined &&
+      (comparison.outputs.length !== 1 ||
+        comparison.outputs[0] !== block.terminator.condition)
+    ) {
+      comparison = undefined;
+    }
     let known_condition = booleans.get(block.terminator.condition);
     if (known_condition === undefined && comparison !== undefined) {
       known_condition = verified_comparison_truth(
@@ -634,7 +764,14 @@ function verified_repeating_call_requirement(
       branch_value = false;
     }
     if (branch_value === undefined) continue;
-    const comparison = producers.get(block.terminator.condition);
+    let comparison = producers.get(block.terminator.condition);
+    if (
+      comparison !== undefined &&
+      (comparison.outputs.length !== 1 ||
+        comparison.outputs[0] !== block.terminator.condition)
+    ) {
+      comparison = undefined;
+    }
     if (comparison === undefined) continue;
     const premise = verified_comparison_requirement(
       comparison,
@@ -1161,7 +1298,13 @@ function verified_integer_constant(
   producers: ReadonlyMap<ValueId, SemanticNode>,
 ): bigint | undefined {
   const producer = producers.get(value);
-  if (producer?.operation.tag !== "constant") return undefined;
+  if (
+    producer?.operation.tag !== "constant" ||
+    producer.outputs.length !== 1 ||
+    producer.outputs[0] !== value
+  ) {
+    return undefined;
+  }
   const constant = producer.operation.value;
   if (typeof constant === "bigint") return constant;
   if (typeof constant !== "number" || !Number.isSafeInteger(constant)) {
