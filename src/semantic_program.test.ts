@@ -1396,6 +1396,84 @@ Deno.test("explicit proof parameters propagate exact contextual evidence", () =>
   );
 });
 
+Deno.test("true comparison branches establish call evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual != 0 then consume actual else 0 end;\n" +
+      "guarded 1\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("false comparison branches establish call evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual == 0 then 0 else consume actual end;\n" +
+      "guarded 1\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("comparison evidence does not cross branch joins", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type unguarded = (value: I32) -> I32\n" +
+      "let unguarded = actual => do\n" +
+      "if actual != 0 then actual else 1 end;\n" +
+      "consume actual\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("comparison evidence stays bound to its ValueId", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type changed = (value: I32) -> I32\n" +
+      "let changed = actual => if actual != 0 then do\n" +
+      "actual = 0;\n" +
+      "consume actual\n" +
+      "end else 0 end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("shadowed values cannot reuse contextual proof evidence", () => {
   const shadowed = analyze_duck_source(parse_duck_source(
     "type consume = " +

@@ -58,8 +58,10 @@ import {
 } from "./frontend/source_facts.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import type {
+  SemanticBlockId,
   SemanticCallableControlFlow,
   SemanticCfg,
+  SemanticNode,
 } from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
@@ -353,18 +355,7 @@ export function analyze_duck_source(
     types,
     origins,
   );
-  const contract_validation = validate_prefix_contracts(
-    prefix_signatures,
-    prefix_definitions,
-    source_analysis.source,
-    stable_input.cst.root,
-    stable_input.cst.text,
-    binding_index,
-    symbols,
-    types,
-    origins,
-  );
-  const diagnostics = diagnostic_sequence([
+  const precontract_diagnostics = diagnostic_sequence([
     ...stable_input.diagnostics.map((diagnostic) =>
       compiler_diagnostic(
         diagnostic_codes.syntax_error,
@@ -376,11 +367,13 @@ export function analyze_duck_source(
     ...lowering_diagnostics,
     ...prefix_type_diagnostics,
     ...signature_diagnostics,
-    ...contract_validation.diagnostics,
   ], options.uri);
-  let control_flow: SemanticCfg | undefined;
-  let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
-  if (!has_error_diagnostics(diagnostics)) {
+  let inferred_control_flow: SemanticCfg | undefined;
+  let inferred_callable_control_flow = new Map<
+    ValueId,
+    SemanticCallableControlFlow
+  >();
+  if (!has_error_diagnostics(precontract_diagnostics)) {
     const control_flows = semantic_cfgs_from_source(
       source_analysis.source,
       stable_input.cst.root,
@@ -388,8 +381,32 @@ export function analyze_duck_source(
       binding_values,
       origins,
     );
-    control_flow = control_flows.root;
-    callable_control_flow = new FrozenMap(control_flows.callables);
+    inferred_control_flow = control_flows.root;
+    inferred_callable_control_flow = new Map(control_flows.callables);
+  }
+  const contract_validation = validate_prefix_contracts(
+    prefix_signatures,
+    prefix_definitions,
+    source_analysis.source,
+    stable_input.cst.root,
+    stable_input.cst.text,
+    binding_index,
+    binding_values,
+    inferred_control_flow,
+    inferred_callable_control_flow,
+    symbols,
+    types,
+    origins,
+  );
+  const diagnostics = diagnostic_sequence([
+    ...precontract_diagnostics,
+    ...contract_validation.diagnostics,
+  ], options.uri);
+  let control_flow: SemanticCfg | undefined;
+  let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
+  if (!has_error_diagnostics(diagnostics)) {
+    control_flow = inferred_control_flow;
+    callable_control_flow = new FrozenMap(inferred_callable_control_flow);
   }
   freeze_semantic_graph(source_analysis.syntax_diagnostics);
   freeze_semantic_graph(source_analysis.diagnostics);
@@ -897,6 +914,9 @@ function validate_prefix_contracts(
   cst_root: BabaCstNode | undefined,
   source_text: string,
   binding_index: BindingIndex,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
   symbols: ReadonlyMap<string, readonly ValueId[]>,
   types: ReadonlyMap<ValueId, RepresentationType>,
   origins: ReadonlyMap<ValueId, SemanticOrigin>,
@@ -1216,6 +1236,9 @@ function validate_prefix_contracts(
       resolved_definitions,
       declared_type_names,
       binding_index,
+      binding_values,
+      control_flow,
+      callable_control_flow,
     ),
   );
   const proofs = new Map<string, CheckedKernelCertificate>();
@@ -1250,6 +1273,9 @@ function check_prefix_call_obligations(
   definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
   binding_index: BindingIndex,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
 ): Checked<
   { key: string; proof: CheckedKernelCertificate } | undefined
 >[] {
@@ -1515,12 +1541,19 @@ function check_prefix_call_obligations(
         obligation !== undefined,
         `Call to ${contract.signature.name} lost obligation ${index}.`,
       );
+      const branch_hypotheses = verified_branch_hypotheses(
+        obligation.proposition,
+        source_span(call),
+        binding_values,
+        control_flow,
+        callable_control_flow,
+      );
       checks.push(
         check_prefix_call_obligation(
           contract.signature,
           obligation,
           call_span,
-          hypotheses,
+          [...hypotheses, ...branch_hypotheses],
           term_types,
           signatures,
           declared_type_names,
@@ -1530,6 +1563,245 @@ function check_prefix_call_obligations(
     }
   }
   return checks;
+}
+
+function verified_branch_hypotheses(
+  proposition: PrefixProposition,
+  call_span: SourceSpan,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): readonly PrefixProposition[] {
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (const candidate of control_flows) {
+    if (
+      branch_control_flow_establishes(
+        candidate,
+        proposition,
+        call_span,
+        binding_values,
+      )
+    ) {
+      return [proposition];
+    }
+  }
+  return [];
+}
+
+function branch_control_flow_establishes(
+  control_flow: SemanticCfg,
+  proposition: PrefixProposition,
+  call_span: SourceSpan,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+): boolean {
+  const call_block = control_flow.blocks.find((block) =>
+    block.nodes.some((node) =>
+      node.operation.tag === "call" &&
+      node.span.start === call_span.start &&
+      node.span.end === call_span.end
+    )
+  );
+  if (call_block === undefined) return false;
+  const dominators = semantic_block_dominators(control_flow);
+  const call_dominators = dominators.get(call_block.id);
+  expect(
+    call_dominators !== undefined,
+    `Call block ${String(call_block.id)} lost its dominators.`,
+  );
+  const producers = new Map<ValueId, SemanticNode>();
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      for (const output of node.outputs) producers.set(output, node);
+    }
+  }
+  for (const block of control_flow.blocks) {
+    const terminator = block.terminator;
+    if (terminator.tag !== "branch") continue;
+    if (!call_dominators.has(block.id)) continue;
+    let branch_value: boolean | undefined;
+    if (call_dominators.has(terminator.when_true)) branch_value = true;
+    if (call_dominators.has(terminator.when_false)) {
+      if (branch_value !== undefined) continue;
+      branch_value = false;
+    }
+    if (branch_value === undefined) continue;
+    const condition = producers.get(terminator.condition);
+    if (
+      condition === undefined || condition.operation.tag !== "primitive" ||
+      condition.inputs.length !== 2
+    ) {
+      continue;
+    }
+    const left = condition.inputs[0];
+    const right = condition.inputs[1];
+    expect(
+      left !== undefined && right !== undefined,
+      "Binary branch condition lost an operand.",
+    );
+    if (
+      semantic_comparison_establishes(
+        condition.operation.name,
+        left,
+        right,
+        branch_value,
+        proposition,
+        binding_values,
+        producers,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function semantic_block_dominators(
+  control_flow: SemanticCfg,
+): ReadonlyMap<SemanticBlockId, ReadonlySet<SemanticBlockId>> {
+  const block_ids = new Set(control_flow.blocks.map((block) => block.id));
+  const dominators = new Map<SemanticBlockId, Set<SemanticBlockId>>();
+  for (const block of control_flow.blocks) {
+    if (block.id === control_flow.entry) {
+      dominators.set(block.id, new Set([block.id]));
+    } else {
+      dominators.set(block.id, new Set(block_ids));
+    }
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const block of control_flow.blocks) {
+      if (block.id === control_flow.entry) continue;
+      let intersection = new Set(block_ids);
+      if (block.predecessors.length === 0) intersection = new Set();
+      for (const predecessor of block.predecessors) {
+        const predecessor_dominators = dominators.get(predecessor);
+        expect(
+          predecessor_dominators !== undefined,
+          `CFG predecessor ${String(predecessor)} lost its dominators.`,
+        );
+        intersection = new Set(
+          [...intersection].filter((candidate) =>
+            predecessor_dominators.has(candidate)
+          ),
+        );
+      }
+      intersection.add(block.id);
+      const previous = dominators.get(block.id);
+      expect(
+        previous !== undefined,
+        `CFG block ${String(block.id)} lost its dominators.`,
+      );
+      if (
+        previous.size === intersection.size &&
+        [...previous].every((candidate) => intersection.has(candidate))
+      ) {
+        continue;
+      }
+      dominators.set(block.id, intersection);
+      changed = true;
+    }
+  }
+  return dominators;
+}
+
+function semantic_comparison_establishes(
+  primitive: string,
+  left: ValueId,
+  right: ValueId,
+  branch_value: boolean,
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): boolean {
+  let comparison: "equal" | "not_equal";
+  if (primitive.endsWith(".eq")) {
+    comparison = "not_equal";
+    if (branch_value) comparison = "equal";
+  } else if (primitive.endsWith(".ne")) {
+    comparison = "equal";
+    if (branch_value) comparison = "not_equal";
+  } else {
+    return false;
+  }
+  if (proposition.tag !== comparison) return false;
+  const left_constant = producers.get(left);
+  const right_constant = producers.get(right);
+  if (left_constant?.operation.tag === "constant") {
+    if (
+      prefix_comparison_operand_matches(
+        proposition.right,
+        right,
+        binding_values,
+      ) &&
+      prefix_constant_matches(
+        proposition.left,
+        left_constant.operation.value,
+      )
+    ) {
+      return true;
+    }
+    return prefix_comparison_operand_matches(
+      proposition.left,
+      right,
+      binding_values,
+    ) &&
+      prefix_constant_matches(
+        proposition.right,
+        left_constant.operation.value,
+      );
+  }
+  if (right_constant?.operation.tag === "constant") {
+    if (
+      prefix_comparison_operand_matches(
+        proposition.left,
+        left,
+        binding_values,
+      ) &&
+      prefix_constant_matches(
+        proposition.right,
+        right_constant.operation.value,
+      )
+    ) {
+      return true;
+    }
+    return prefix_comparison_operand_matches(
+      proposition.right,
+      left,
+      binding_values,
+    ) &&
+      prefix_constant_matches(
+        proposition.left,
+        right_constant.operation.value,
+      );
+  }
+  return false;
+}
+
+function prefix_comparison_operand_matches(
+  term: PrefixTerm,
+  value: ValueId,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+): boolean {
+  if (term.shape.tag !== "name") return false;
+  const prefix = "semantic:";
+  if (!term.shape.name.startsWith(prefix)) return false;
+  const entity = term.shape.name.slice(prefix.length) as EntityId;
+  return binding_values.get(entity) === value;
+}
+
+function prefix_constant_matches(
+  term: PrefixTerm,
+  value: string | number | bigint | boolean,
+): boolean {
+  if (term.shape.tag !== "number") return false;
+  const literal = parse_number_expr(term.text);
+  if (literal.tag !== "num") return false;
+  return literal.value === value;
 }
 
 function enclosing_prefix_runtime_contract(
