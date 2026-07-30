@@ -1,10 +1,15 @@
 import { assert_equals } from "../assert.ts";
 import {
   semantic_machine_certificate,
+  semantic_unreachable_certificate,
   type SemanticMachineRequirement,
   verify_semantic_machine_certificate,
+  verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
-import { infer_semantic_machine_certificate } from "./semantic_fact_graph.ts";
+import {
+  infer_semantic_machine_certificate,
+  infer_semantic_unreachable_certificate,
+} from "./semantic_fact_graph.ts";
 import { SemanticCfgBuilder } from "./semantic_cfg.ts";
 import type { ValueId } from "./semantic_identity.ts";
 
@@ -277,6 +282,116 @@ Deno.test("semantic machine certificates reject ambiguous call spans", () => {
       control_flow,
       call_span,
       requirement,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic unreachable certificates distinguish dead and live calls", () => {
+  for (const condition_value of [false, true]) {
+    const builder = new SemanticCfgBuilder(
+      "unreachable-certificate-" + condition_value.toString(),
+    );
+    const entry = builder.add_block(origin);
+    const when_true = builder.add_block("fact-true:1:2:0" as never);
+    const when_false = builder.add_block("fact-false:2:3:0" as never);
+    const condition = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 1 },
+      { tag: "constant", value: condition_value },
+      [],
+      [bool_type],
+    )[0];
+    if (condition === undefined) throw new Error("Expected condition.");
+    builder.connect(entry, when_true);
+    builder.connect(entry, when_false);
+    builder.terminate(entry, {
+      tag: "branch",
+      condition,
+      when_true,
+      when_false,
+    });
+    const call_span = { start: 2, end: 9 };
+    const call = builder.add_node(
+      when_true,
+      "fact-true:1:2:0" as never,
+      call_span,
+      { tag: "call", function_name: "consume" },
+      [],
+      [i32_type],
+    )[0];
+    if (call === undefined) throw new Error("Expected call result.");
+    builder.terminate(when_true, { tag: "return", value: call });
+    const fallback = builder.add_node(
+      when_false,
+      "fact-false:2:3:0" as never,
+      { start: 10, end: 11 },
+      { tag: "constant", value: 0 },
+      [],
+      [i32_type],
+    )[0];
+    builder.terminate(when_false, { tag: "return", value: fallback });
+    const control_flow = builder.finish();
+    const inferred = infer_semantic_unreachable_certificate(
+      control_flow,
+      call_span,
+    );
+    assert_equals(inferred !== undefined, !condition_value);
+    const certificate = semantic_unreachable_certificate(call_span);
+    assert_equals(
+      verify_semantic_unreachable_certificate(
+        certificate,
+        control_flow,
+        call_span,
+      ),
+      !condition_value,
+    );
+  }
+});
+
+Deno.test("semantic unreachable certificates fail closed on cycles", () => {
+  const builder = new SemanticCfgBuilder("cyclic-unreachable-certificate");
+  const loop = builder.add_block(origin);
+  const target = builder.add_block("fact-target:1:2:0" as never);
+  const condition = builder.add_node(
+    loop,
+    origin,
+    { start: 0, end: 1 },
+    { tag: "constant", value: true },
+    [],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected loop condition.");
+  builder.connect(loop, loop);
+  builder.connect(loop, target);
+  builder.terminate(loop, {
+    tag: "branch",
+    condition,
+    when_true: loop,
+    when_false: target,
+  });
+  const call_span = { start: 2, end: 9 };
+  const call = builder.add_node(
+    target,
+    "fact-target:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected call result.");
+  builder.terminate(target, { tag: "return", value: call });
+  const control_flow = builder.finish();
+  assert_equals(
+    infer_semantic_unreachable_certificate(control_flow, call_span),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_unreachable_certificate(
+      semantic_unreachable_certificate(call_span),
+      control_flow,
+      call_span,
     ),
     false,
   );

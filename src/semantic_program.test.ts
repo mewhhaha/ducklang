@@ -1769,6 +1769,30 @@ Deno.test("false conjunction branches do not choose one failed fact", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
+Deno.test("statically unreachable calls do not require proof evidence", () => {
+  for (
+    const body of [
+      "if false then consume actual else 0 end",
+      "if 1 < 0 && actual < 10 then consume actual else 0 end",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value != 0) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type unreachable = (value: I32) -> I32\n" +
+        `let unreachable = actual => ${body};\n` +
+        "unreachable 0\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
 Deno.test("short-circuit facts stay bound to their original ValueId", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +

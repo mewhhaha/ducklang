@@ -84,7 +84,16 @@ export function unique_semantic_call_at_span(
   control_flow: SemanticCfg,
   span: SourceSpan,
 ): { block: SemanticBlock; node: SemanticNode } | undefined {
-  let found: { block: SemanticBlock; node: SemanticNode } | undefined;
+  const calls = semantic_calls_at_span(control_flow, span);
+  if (calls.length !== 1) return undefined;
+  return calls[0];
+}
+
+export function semantic_calls_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): readonly { block: SemanticBlock; node: SemanticNode }[] {
+  const calls: { block: SemanticBlock; node: SemanticNode }[] = [];
   for (const block of control_flow.blocks) {
     for (const node of block.nodes) {
       if (
@@ -94,11 +103,10 @@ export function unique_semantic_call_at_span(
       ) {
         continue;
       }
-      if (found !== undefined) return undefined;
-      found = { block, node };
+      calls.push({ block, node });
     }
   }
-  return found;
+  return calls;
 }
 
 export type SemanticCallableControlFlow = {

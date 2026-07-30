@@ -63,7 +63,10 @@ import type {
   SemanticCfg,
   SemanticNode,
 } from "./frontend/semantic_cfg.ts";
-import { unique_semantic_call_at_span } from "./frontend/semantic_cfg.ts";
+import {
+  semantic_calls_at_span,
+  unique_semantic_call_at_span,
+} from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
   has_source_span,
@@ -91,11 +94,13 @@ import {
 import type { FactState } from "./frontend/fact_graph.ts";
 import {
   infer_semantic_machine_certificate,
+  infer_semantic_unreachable_certificate,
   type SemanticMachineRequirement,
 } from "./frontend/semantic_fact_graph.ts";
 import {
   type SemanticMachineCertificate,
   verify_semantic_machine_certificate,
+  verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
 import {
   check_proof,
@@ -1545,6 +1550,15 @@ function check_prefix_call_obligations(
       substitutions,
     );
     const call_span = source_span(call);
+    if (
+      call_is_verified_unreachable(
+        call_span,
+        control_flow,
+        callable_control_flow,
+      )
+    ) {
+      continue;
+    }
     for (let index = 0; index < obligations.length; index += 1) {
       const obligation = obligations[index];
       expect(
@@ -1588,58 +1602,110 @@ function verified_branch_hypotheses(
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
 ): VerifiedBranchHypotheses {
-  const control_flows: SemanticCfg[] = [];
-  if (control_flow !== undefined) control_flows.push(control_flow);
-  for (const callable of callable_control_flow.values()) {
-    control_flows.push(callable.control_flow);
+  const candidate = unique_control_flow_for_call(
+    call_span,
+    control_flow,
+    callable_control_flow,
+  );
+  if (candidate === undefined) {
+    return {
+      propositions: [],
+      certificate: undefined,
+    };
   }
   const machine_requirement = prefix_machine_requirement(
     proposition,
     binding_values,
   );
-  for (const candidate of control_flows) {
-    if (
-      branch_control_flow_establishes(
-        candidate,
-        proposition,
-        call_span,
-        binding_values,
-      )
-    ) {
+  if (
+    branch_control_flow_establishes(
+      candidate,
+      proposition,
+      call_span,
+      binding_values,
+    )
+  ) {
+    return {
+      propositions: [proposition],
+      certificate: undefined,
+    };
+  }
+  if (
+    machine_requirement !== undefined
+  ) {
+    const certificate = infer_semantic_machine_certificate(
+      candidate,
+      call_span,
+      machine_requirement,
+    );
+    if (certificate !== undefined) {
+      expect(
+        verify_semantic_machine_certificate(
+          certificate,
+          candidate,
+          call_span,
+          machine_requirement,
+        ),
+        "FactGraph produced an invalid semantic machine certificate.",
+      );
       return {
         propositions: [proposition],
-        certificate: undefined,
+        certificate,
       };
-    }
-    if (
-      machine_requirement !== undefined
-    ) {
-      const certificate = infer_semantic_machine_certificate(
-        candidate,
-        call_span,
-        machine_requirement,
-      );
-      if (certificate !== undefined) {
-        expect(
-          verify_semantic_machine_certificate(
-            certificate,
-            candidate,
-            call_span,
-            machine_requirement,
-          ),
-          "FactGraph produced an invalid semantic machine certificate.",
-        );
-        return {
-          propositions: [proposition],
-          certificate,
-        };
-      }
     }
   }
   return {
     propositions: [],
     certificate: undefined,
   };
+}
+
+function call_is_verified_unreachable(
+  call_span: SourceSpan,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): boolean {
+  const candidate = unique_control_flow_for_call(
+    call_span,
+    control_flow,
+    callable_control_flow,
+  );
+  if (candidate === undefined) return false;
+  const certificate = infer_semantic_unreachable_certificate(
+    candidate,
+    call_span,
+  );
+  if (certificate === undefined) return false;
+  expect(
+    verify_semantic_unreachable_certificate(
+      certificate,
+      candidate,
+      call_span,
+    ),
+    "FactGraph produced an invalid unreachable-path certificate.",
+  );
+  return true;
+}
+
+function unique_control_flow_for_call(
+  call_span: SourceSpan,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): SemanticCfg | undefined {
+  const candidates: SemanticCfg[] = [];
+  if (control_flow !== undefined) candidates.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    candidates.push(callable.control_flow);
+  }
+  let found: SemanticCfg | undefined;
+  for (const candidate of candidates) {
+    const calls = semantic_calls_at_span(candidate, call_span);
+    for (const _call of calls) {
+      if (found !== undefined) return undefined;
+      found = candidate;
+    }
+  }
+  return found;
 }
 
 function branch_control_flow_establishes(

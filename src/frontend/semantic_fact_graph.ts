@@ -17,8 +17,10 @@ import {
 } from "./semantic_cfg.ts";
 import {
   semantic_machine_certificate,
+  semantic_unreachable_certificate,
   type SemanticMachineCertificate,
   type SemanticMachineRequirement,
+  type SemanticUnreachableCertificate,
 } from "./semantic_fact_certificate.ts";
 import type { ValueId } from "./semantic_identity.ts";
 import type { SourceSpan } from "./syntax.ts";
@@ -39,24 +41,46 @@ export function infer_semantic_machine_certificate(
   requirement: SemanticMachineRequirement,
 ): SemanticMachineCertificate | undefined {
   if (
-    !semantic_cfg_implies_machine_requirement(
+    semantic_cfg_machine_path_result(
       control_flow,
       call_span,
       requirement,
-    )
+    ) !== "proved"
   ) {
     return undefined;
   }
   return semantic_machine_certificate(call_span, requirement);
 }
 
-function semantic_cfg_implies_machine_requirement(
+export function infer_semantic_unreachable_certificate(
   control_flow: SemanticCfg,
   call_span: SourceSpan,
-  requirement: SemanticMachineRequirement,
-): boolean {
+): SemanticUnreachableCertificate | undefined {
+  if (
+    semantic_cfg_machine_path_result(
+      control_flow,
+      call_span,
+      undefined,
+    ) !== "unreachable"
+  ) {
+    return undefined;
+  }
+  return semantic_unreachable_certificate(call_span);
+}
+
+type SemanticMachinePathResult =
+  | "proved"
+  | "unproved"
+  | "unreachable"
+  | "unknown";
+
+function semantic_cfg_machine_path_result(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticMachineRequirement | undefined,
+): SemanticMachinePathResult {
   const target = unique_semantic_call_at_span(control_flow, call_span);
-  if (target === undefined) return false;
+  if (target === undefined) return "unknown";
   const ranges = new Map<ValueId, { signed: boolean; width: number }>();
   for (const value of control_flow.values) {
     if (value.type.tag !== "scalar") continue;
@@ -64,7 +88,12 @@ function semantic_cfg_implies_machine_requirement(
     if (range === undefined || range.width > 128) continue;
     ranges.set(value.value, range);
   }
-  if (!requirement_has_range(requirement, ranges)) return false;
+  if (
+    requirement !== undefined &&
+    !requirement_has_range(requirement, ranges)
+  ) {
+    return "unknown";
+  }
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
   );
@@ -86,23 +115,28 @@ function semantic_cfg_implies_machine_requirement(
   let steps = 0;
   while (pending.length > 0) {
     steps += 1;
-    if (steps > proof_limits.compiler_search_steps) return false;
+    if (steps > proof_limits.compiler_search_steps) return "unknown";
     const state = pending.pop();
-    if (state === undefined) return false;
-    if (state.visited.has(state.block)) return false;
+    if (state === undefined) return "unknown";
+    if (state.visited.has(state.block)) return "unknown";
     const visited = new Set(state.visited);
     visited.add(state.block);
-    if (visited.size > proof_limits.compiler_search_depth) return false;
+    if (visited.size > proof_limits.compiler_search_depth) return "unknown";
     const block = blocks.get(state.block);
-    if (block === undefined) return false;
+    if (block === undefined) return "unknown";
     let domain = state.domain;
     let booleans = new Map(state.booleans);
     for (const node of block.nodes) {
       steps += 1;
-      if (steps > proof_limits.compiler_search_steps) return false;
+      if (steps > proof_limits.compiler_search_steps) return "unknown";
       if (node === target.node) {
         paths += 1;
-        if (!machine_requirement_holds(domain, requirement)) return false;
+        if (
+          requirement !== undefined &&
+          !machine_requirement_holds(domain, requirement)
+        ) {
+          return "unproved";
+        }
         break;
       }
       const transferred = transfer_semantic_node(
@@ -132,7 +166,7 @@ function semantic_cfg_implies_machine_requirement(
             },
           )
         ) {
-          return false;
+          return "unknown";
         }
       }
       continue;
@@ -180,11 +214,13 @@ function semantic_cfg_implies_machine_requirement(
           },
         )
       ) {
-        return false;
+        return "unknown";
       }
     }
   }
-  return paths > 0;
+  if (paths === 0) return "unreachable";
+  if (requirement === undefined) return "unproved";
+  return "proved";
 }
 
 function requirement_has_range(

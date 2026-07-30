@@ -28,6 +28,15 @@ export type SemanticMachineCertificate = {
   requirement: SemanticMachineRequirement;
 };
 
+export type SemanticUnreachableCertificate = {
+  tag: "machine_unreachable";
+  call_span: SourceSpan;
+};
+
+export type SemanticControlFlowCertificate =
+  | SemanticMachineCertificate
+  | SemanticUnreachableCertificate;
+
 type VerificationState = {
   block: SemanticBlockId;
   predecessor: SemanticBlockId | undefined;
@@ -57,6 +66,18 @@ export function semantic_machine_certificate(
   });
 }
 
+export function semantic_unreachable_certificate(
+  call_span: SourceSpan,
+): SemanticUnreachableCertificate {
+  return Object.freeze({
+    tag: "machine_unreachable",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+  });
+}
+
 export function verify_semantic_machine_certificate(
   certificate: SemanticMachineCertificate,
   control_flow: SemanticCfg,
@@ -78,12 +99,56 @@ export function verify_semantic_machine_certificate(
   ) {
     return false;
   }
+  return verify_semantic_paths(
+    control_flow,
+    call_span,
+    requirement,
+  ) === "proved";
+}
+
+export function verify_semantic_unreachable_certificate(
+  certificate: SemanticUnreachableCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic unreachable certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "machine_unreachable",
+    "Semantic unreachable certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end
+  ) {
+    return false;
+  }
+  return verify_semantic_paths(
+    control_flow,
+    call_span,
+    undefined,
+  ) === "unreachable";
+}
+
+type VerifiedSemanticPaths = "proved" | "unreachable" | "rejected";
+
+function verify_semantic_paths(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticMachineRequirement | undefined,
+): VerifiedSemanticPaths {
   const target = unique_semantic_call_at_span(control_flow, call_span);
-  if (target === undefined) return false;
+  if (target === undefined) return "rejected";
   const ranges = machine_ranges(control_flow);
-  const goal_value = requirement_value(requirement);
-  const goal_range = ranges.get(goal_value);
-  if (goal_range === undefined) return false;
+  let goal_value: ValueId | undefined;
+  let goal_range: IntegerType | undefined;
+  if (requirement !== undefined) {
+    goal_value = requirement_value(requirement);
+    goal_range = ranges.get(goal_value);
+    if (goal_range === undefined) return "rejected";
+  }
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
   );
@@ -102,15 +167,15 @@ export function verify_semantic_machine_certificate(
   let steps = 0;
   while (pending.length > 0) {
     steps += 1;
-    if (steps > proof_limits.compiler_search_steps) return false;
+    if (steps > proof_limits.compiler_search_steps) return "rejected";
     const state = pending.pop();
     expect(state !== undefined, "Semantic certificate worklist disappeared.");
-    if (state.visited.has(state.block)) return false;
+    if (state.visited.has(state.block)) return "rejected";
     const visited = new Set(state.visited);
     visited.add(state.block);
-    if (visited.size > proof_limits.compiler_search_depth) return false;
+    if (visited.size > proof_limits.compiler_search_depth) return "rejected";
     const block = blocks.get(state.block);
-    if (block === undefined) return false;
+    if (block === undefined) return "rejected";
     const booleans = transfer_boolean_values(
       block,
       state.predecessor,
@@ -120,10 +185,18 @@ export function verify_semantic_machine_certificate(
     let reached_call = false;
     for (const node of block.nodes) {
       steps += 1;
-      if (steps > proof_limits.compiler_search_steps) return false;
+      if (steps > proof_limits.compiler_search_steps) return "rejected";
       if (node !== target.node) continue;
       reached_call = true;
       if (premises_are_contradictory(state.premises, ranges)) break;
+      if (requirement === undefined) {
+        feasible_paths += 1;
+        break;
+      }
+      expect(
+        goal_value !== undefined && goal_range !== undefined,
+        "Semantic fact goal lost its machine range.",
+      );
       const interval = interval_from_premises(
         state.premises,
         goal_value,
@@ -131,7 +204,9 @@ export function verify_semantic_machine_certificate(
       );
       if (interval.contradiction) break;
       feasible_paths += 1;
-      if (!interval_implies_requirement(interval, requirement)) return false;
+      if (!interval_implies_requirement(interval, requirement)) {
+        return "rejected";
+      }
       break;
     }
     if (reached_call || block.id === target.block.id) continue;
@@ -151,7 +226,7 @@ export function verify_semantic_machine_certificate(
             },
           )
         ) {
-          return false;
+          return "rejected";
         }
       }
       continue;
@@ -200,11 +275,13 @@ export function verify_semantic_machine_certificate(
           },
         )
       ) {
-        return false;
+        return "rejected";
       }
     }
   }
-  return feasible_paths > 0;
+  if (feasible_paths === 0) return "unreachable";
+  if (requirement === undefined) return "rejected";
+  return "proved";
 }
 
 function snapshot_machine_requirement(
