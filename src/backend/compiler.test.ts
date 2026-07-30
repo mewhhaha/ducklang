@@ -257,6 +257,25 @@ Deno.test("Duck compiler erases facts retained across live branch joins", async 
   }
 });
 
+Deno.test("Duck compiler erases bounds proved on every range-loop visit", async () => {
+  const source = "type consume = " +
+    "(value: I32, evidence: Proof 0 <= value) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type run = () -> I32\n" +
+    "let run = () => do\n" +
+    "for index in 3..=0 by -1 do consume index; end;\n" +
+    "7\n" +
+    "end;\n" +
+    "run ()\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 7 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
     "type merge = (choice: Proof True or True) -> Proof True\n" +

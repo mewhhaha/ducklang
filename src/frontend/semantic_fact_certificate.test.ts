@@ -656,3 +656,95 @@ Deno.test("semantic machine certificates reject calls repeated by a loop", () =>
     false,
   );
 });
+
+Deno.test("semantic machine certificates ignore guards after a repeated call", () => {
+  const builder = new SemanticCfgBuilder("post-call-loop-guard");
+  const entry = builder.add_block(origin);
+  const body = builder.add_block("loop-body:1:2:0" as never);
+  const exit = builder.add_block("loop-exit:2:3:0" as never);
+  const current = "post-call-loop-current" as ValueId;
+  builder.add_parameter(current, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const end = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 3 },
+    [],
+    [i32_type],
+  )[0];
+  const step = builder.add_node(
+    entry,
+    origin,
+    { start: 4, end: 5 },
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (end === undefined || step === undefined) {
+    throw new Error("Expected range constants.");
+  }
+  builder.connect(entry, body);
+  builder.terminate(entry, { tag: "jump", target: body });
+  const call_span = { start: 6, end: 13 };
+  const call = builder.add_node(
+    body,
+    "loop-body:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [current],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected repeated call result.");
+  const condition = builder.add_node(
+    body,
+    "loop-body:1:2:0" as never,
+    { start: 14, end: 20 },
+    { tag: "primitive", name: "range-has-next:exclusive" },
+    [current, end, step],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected range condition.");
+  builder.connect(body, body);
+  builder.connect(body, exit);
+  builder.terminate(body, {
+    tag: "branch",
+    condition,
+    when_true: body,
+    when_false: exit,
+  });
+  const fallback = builder.add_node(
+    exit,
+    "loop-exit:2:3:0" as never,
+    { start: 21, end: 22 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  builder.terminate(exit, { tag: "return", value: fallback });
+  const control_flow = builder.finish();
+  const requirement: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: { tag: "less_than", value: current, bound: 3n },
+  };
+  assert_equals(
+    infer_semantic_machine_certificate(
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_machine_certificate(
+      semantic_machine_certificate(call_span, requirement),
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+});

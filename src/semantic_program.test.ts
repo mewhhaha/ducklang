@@ -1839,6 +1839,39 @@ Deno.test("loop calls cannot reuse facts from only their first visit", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
+Deno.test("range guards establish bounds on every loop visit", () => {
+  for (
+    const [range, requirement] of [
+      ["0..3", "value < 3"],
+      ["0..=3", "value <= 3"],
+      ["3..0 by -1", "0 < value"],
+      ["3..=0 by -1", "0 <= value"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type run = () -> I32\n" +
+        "let run = () => do\n" +
+        `for index in ${range} do consume index; end;\n` +
+        "0\n" +
+        "end;\n" +
+        "run ()\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
 Deno.test("short-circuit facts stay bound to their original ValueId", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +

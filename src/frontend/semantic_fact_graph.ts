@@ -102,8 +102,22 @@ function semantic_cfg_machine_path_result(
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
   );
-  if (target_block_can_repeat(target.block.id, blocks)) return "unknown";
   const producers = semantic_value_producers(control_flow);
+  if (target_block_can_repeat(target.block.id, blocks)) {
+    if (
+      requirement !== undefined &&
+      repeating_call_requirement_holds(
+        control_flow,
+        target.block.id,
+        requirement,
+        ranges,
+        producers,
+      )
+    ) {
+      return "proved";
+    }
+    return "unknown";
+  }
   const reaches_target = blocks_reaching_target(
     target.block.id,
     blocks,
@@ -301,6 +315,88 @@ function target_block_can_repeat(
   return false;
 }
 
+function repeating_call_requirement_holds(
+  control_flow: SemanticCfg,
+  target: SemanticBlockId,
+  requirement: SemanticMachineRequirement,
+  ranges: ReadonlyMap<ValueId, { signed: boolean; width: number }>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): boolean {
+  const dominators = semantic_block_dominators(control_flow);
+  const target_dominators = dominators.get(target);
+  if (target_dominators === undefined) return false;
+  let domain = machine_fact_domain(ranges);
+  for (const block of control_flow.blocks) {
+    if (block.id === target) continue;
+    if (!target_dominators.has(block.id)) continue;
+    if (block.terminator.tag !== "branch") continue;
+    let branch_value: boolean | undefined;
+    if (target_dominators.has(block.terminator.when_true)) {
+      branch_value = true;
+    }
+    if (target_dominators.has(block.terminator.when_false)) {
+      if (branch_value !== undefined) continue;
+      branch_value = false;
+    }
+    if (branch_value === undefined) continue;
+    const comparison = producers.get(block.terminator.condition);
+    if (comparison === undefined) continue;
+    const premise = semantic_comparison_requirement(
+      comparison,
+      branch_value,
+      ranges,
+      producers,
+    );
+    if (premise === undefined) continue;
+    domain = assume_machine_requirement(domain, premise);
+  }
+  return machine_requirement_holds(domain, requirement);
+}
+
+function semantic_block_dominators(
+  control_flow: SemanticCfg,
+): ReadonlyMap<SemanticBlockId, ReadonlySet<SemanticBlockId>> {
+  const block_ids = new Set(control_flow.blocks.map((block) => block.id));
+  const dominators = new Map<SemanticBlockId, Set<SemanticBlockId>>();
+  for (const block of control_flow.blocks) {
+    if (block.id === control_flow.entry) {
+      dominators.set(block.id, new Set([block.id]));
+    } else {
+      dominators.set(block.id, new Set(block_ids));
+    }
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const block of control_flow.blocks) {
+      if (block.id === control_flow.entry) continue;
+      let intersection = new Set(block_ids);
+      if (block.predecessors.length === 0) intersection = new Set();
+      for (const predecessor of block.predecessors) {
+        const predecessor_dominators = dominators.get(predecessor);
+        if (predecessor_dominators === undefined) return new Map();
+        intersection = new Set(
+          [...intersection].filter((candidate) =>
+            predecessor_dominators.has(candidate)
+          ),
+        );
+      }
+      intersection.add(block.id);
+      const previous = dominators.get(block.id);
+      if (previous === undefined) return new Map();
+      if (
+        previous.size === intersection.size &&
+        [...previous].every((candidate) => intersection.has(candidate))
+      ) {
+        continue;
+      }
+      dominators.set(block.id, intersection);
+      changed = true;
+    }
+  }
+  return dominators;
+}
+
 function enqueue_path(
   pending: PathState[],
   entry_counts: Map<SemanticBlockId, number>,
@@ -439,12 +535,18 @@ function semantic_comparison_requirement(
   ranges: ReadonlyMap<ValueId, { signed: boolean; width: number }>,
   producers: ReadonlyMap<ValueId, SemanticNode>,
 ): SemanticMachineRequirement | undefined {
-  if (
-    comparison.operation.tag !== "primitive" ||
-    comparison.inputs.length !== 2
-  ) {
+  if (comparison.operation.tag !== "primitive") {
     return undefined;
   }
+  if (comparison.operation.name.startsWith("range-has-next:")) {
+    return semantic_range_requirement(
+      comparison,
+      branch_value,
+      ranges,
+      producers,
+    );
+  }
+  if (comparison.inputs.length !== 2) return undefined;
   const left = comparison.inputs[0];
   const right = comparison.inputs[1];
   if (left === undefined || right === undefined) return undefined;
@@ -520,6 +622,111 @@ function semantic_comparison_requirement(
     expected_right,
     ranges,
     producers,
+  );
+}
+
+function semantic_range_requirement(
+  comparison: SemanticNode,
+  branch_value: boolean,
+  ranges: ReadonlyMap<ValueId, { signed: boolean; width: number }>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): SemanticMachineRequirement | undefined {
+  if (comparison.operation.tag !== "primitive") return undefined;
+  if (comparison.inputs.length !== 3) return undefined;
+  const current = comparison.inputs[0];
+  const end = comparison.inputs[1];
+  const step = comparison.inputs[2];
+  if (current === undefined || end === undefined || step === undefined) {
+    return undefined;
+  }
+  const current_range = ranges.get(current);
+  const end_range = ranges.get(end);
+  const step_range = ranges.get(step);
+  if (
+    current_range === undefined || end_range === undefined ||
+    step_range === undefined || !current_range.signed ||
+    current_range.width !== 32 ||
+    current_range.signed !== end_range.signed ||
+    current_range.width !== end_range.width ||
+    current_range.signed !== step_range.signed ||
+    current_range.width !== step_range.width
+  ) {
+    return undefined;
+  }
+  const end_constant = produced_integer_constant(end, producers);
+  const step_constant = produced_integer_constant(step, producers);
+  if (end_constant === undefined || step_constant === undefined) {
+    return undefined;
+  }
+  const normalized_end = normalize_integer(end_range, end_constant);
+  const normalized_step = normalize_integer(step_range, step_constant);
+  if (normalized_step === 0n) return undefined;
+  const inclusive = comparison.operation.name ===
+    "range-has-next:inclusive";
+  const exclusive = comparison.operation.name ===
+    "range-has-next:exclusive";
+  if (!inclusive && !exclusive) return undefined;
+  if (normalized_step > 0n) {
+    if (branch_value && inclusive) {
+      return value_constant_requirement(
+        "less_equal",
+        current,
+        normalized_end,
+        false,
+      );
+    }
+    if (branch_value && exclusive) {
+      return value_constant_requirement(
+        "less",
+        current,
+        normalized_end,
+        false,
+      );
+    }
+    if (inclusive) {
+      return value_constant_requirement(
+        "less",
+        current,
+        normalized_end,
+        true,
+      );
+    }
+    return value_constant_requirement(
+      "less_equal",
+      current,
+      normalized_end,
+      true,
+    );
+  }
+  if (branch_value && inclusive) {
+    return value_constant_requirement(
+      "less_equal",
+      current,
+      normalized_end,
+      true,
+    );
+  }
+  if (branch_value && exclusive) {
+    return value_constant_requirement(
+      "less",
+      current,
+      normalized_end,
+      true,
+    );
+  }
+  if (inclusive) {
+    return value_constant_requirement(
+      "less",
+      current,
+      normalized_end,
+      false,
+    );
+  }
+  return value_constant_requirement(
+    "less_equal",
+    current,
+    normalized_end,
+    false,
   );
 }
 
