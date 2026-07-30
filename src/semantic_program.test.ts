@@ -1434,6 +1434,10 @@ Deno.test("true comparison branches establish call evidence", () => {
   ));
   assert_equals(analysis.diagnostics, []);
   assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
@@ -2144,13 +2148,13 @@ Deno.test("direct proof eliminators produce checked kernel terms", () => {
       "type literal_refl = () -> Proof 0 = 0i32\n" +
       "let literal_refl = () => by refl;\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type parenthesized = " +
       "(value: I32, evidence: Proof predicate(value)) -> " +
       "Proof predicate((value))\n" +
       "let parenthesized = (value, evidence) => by evidence;\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type numeric_atom = " +
       "(evidence: Proof predicate(0)) -> Proof predicate(0i32)\n" +
       "let numeric_atom = evidence => by evidence;\n42\n",
@@ -2326,27 +2330,27 @@ Deno.test("direct quantified proof terms produce checked kernel terms", () => {
       "(outer: I32) -> Proof forall (outer: I32). outer = outer\n" +
       "let shadow_universal = actual => by actual => refl;\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type retain_quantified_predicate = " +
       "(universal: Proof forall (value: I32). predicate(value)) -> " +
       "Proof True\n" +
       "let retain_quantified_predicate = universal => by true_intro;\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type specialize_predicate = " +
       "(actual: I32, universal: Proof forall (value: I32). predicate(value)) -> " +
       "Proof predicate(actual)\n" +
       "let specialize_predicate = (actual, universal) => " +
       "by forall_apply(universal, actual);\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type witness_predicate = " +
       "(actual: I32, evidence: Proof predicate(actual)) -> " +
       "Proof exists (found: I32). predicate(found)\n" +
       "let witness_predicate = (actual, evidence) => " +
       "by exists_intro(actual, evidence);\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type preserve_predicate_witness = " +
       "(package: Proof exists (value: I32). predicate(value)) -> " +
       "Proof exists (copy: I32). predicate(copy)\n" +
@@ -2393,14 +2397,14 @@ Deno.test("direct equality transformations produce checked kernel terms", () => 
       "let substitute_reflexivity = (left, right, equality, evidence) => " +
       "by transport(equality, value => value = value, evidence);\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type substitute = " +
       "(left: I32, right: I32, equality: Proof left = right, " +
       "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
       "let substitute = (left, right, equality, evidence) => " +
       "by transport(equality, value => predicate(value), evidence);\n42\n",
       "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type shadowed_substitute = " +
       "(left: I32, right: I32, equality: Proof left = right, " +
       "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
@@ -2443,17 +2447,17 @@ Deno.test("invalid equality transformations fail before Core", () => {
       ],
       [
         "type predicate = (value: I32) -> Prop\n" +
-        "fact predicate = value => True;\n" +
+        "opaque fact predicate = value => True;\n" +
         "type bad = " +
         "(left: I32, right: I32, equality: Proof left = right, " +
         "evidence: Proof predicate(right)) -> Proof predicate(right)\n" +
         "let bad = (left, right, equality, evidence) => " +
         "by transport(equality, value => predicate(value), evidence);\n42\n",
-        "Proof establishes fact:predicate(#1), not fact:predicate(#0)",
+        "Proof establishes fact:root:predicate(#1), not fact:root:predicate(#0)",
       ],
       [
         "type predicate = (value: I32) -> Prop\n" +
-        "fact predicate = value => True;\n" +
+        "opaque fact predicate = value => True;\n" +
         "type bad = " +
         "(left: I32, right: I32, equality: Proof left = right, " +
         "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
@@ -2488,7 +2492,7 @@ Deno.test("invalid equality transformations fail before Core", () => {
 Deno.test("quantified predicate certificates retain structured arguments", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type predicate = (value: I32) -> Prop\n" +
-      "fact predicate = value => True;\n" +
+      "opaque fact predicate = value => True;\n" +
       "type predicate_identity = () -> " +
       "Proof forall (value: I32). predicate(value) implies predicate(value)\n" +
       "let predicate_identity = () => by value => evidence => evidence;\n" +
@@ -2501,7 +2505,7 @@ Deno.test("quantified predicate certificates retain structured arguments", () =>
   }
   const predicate = {
     tag: "atom" as const,
-    name: "fact:predicate",
+    name: "fact:root:predicate",
     arguments: [{ tag: "var" as const, index: 0 }],
   };
   assert_equals(checked.certificate.proposition, {
@@ -2579,16 +2583,16 @@ Deno.test("invalid direct quantified proof terms fail before Core", () => {
       ],
       [
         "type predicate = (value: I32) -> Prop\n" +
-        "fact predicate = value => True;\n" +
+        "opaque fact predicate = value => True;\n" +
         "type bad = " +
         "(outer: I32, evidence: Proof predicate(outer)) -> " +
         "Proof forall (inner: I32). predicate(inner)\n" +
         "let bad = (outer, evidence) => by inner => evidence;\n42\n",
-        "Proof establishes fact:predicate(#1), not fact:predicate(#0)",
+        "Proof establishes fact:root:predicate(#1), not fact:root:predicate(#0)",
       ],
       [
         "type predicate = (value: I32) -> Prop\n" +
-        "fact predicate = value => True;\n" +
+        "opaque fact predicate = value => True;\n" +
         "type bad = " +
         "() -> Proof forall (value: I32). predicate(value + 1)\n" +
         "let bad = () => by value => true_intro;\n42\n",
@@ -2873,7 +2877,7 @@ Deno.test("orphan proof bodies do not erase enclosing runtime bindings", () => {
 
 Deno.test("proof atoms preserve literal contents during kernel checking", () => {
   const source = "type text_property = (value: Text) -> Prop\n" +
-    "fact text_property = value => True;\n" +
+    "opaque fact text_property = value => True;\n" +
     "type bad = " +
     '(evidence: Proof text_property("a b")) -> Proof text_property("ab")\n' +
     "let bad = proof => by proof;\n42\n";
@@ -2892,7 +2896,7 @@ Deno.test("proof atoms preserve literal contents during kernel checking", () => 
 
 Deno.test("structured predicate atoms preserve quantified variable identity", () => {
   const source = "type predicate = (value: I32) -> Prop\n" +
-    "fact predicate = value => True;\n" +
+    "opaque fact predicate = value => True;\n" +
     "type bad = " +
     "(outer: I32, evidence: Proof " +
     "forall (x: I32). predicate(outer)) -> " +
@@ -2903,7 +2907,7 @@ Deno.test("structured predicate atoms preserve quantified variable identity", ()
     analysis.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2605" &&
       diagnostic.message.includes(
-        "Proof establishes (forall I32. fact:predicate(#1)), not (forall I32. fact:predicate(#0))",
+        "Proof establishes (forall I32. fact:root:predicate(#1)), not (forall I32. fact:root:predicate(#0))",
       )
     ),
     true,
@@ -3100,6 +3104,167 @@ Deno.test("fact definitions check arity and free logical values", () => {
     arity.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2602"),
     true,
   );
+});
+
+Deno.test("transparent facts unfold into contextual call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type nonzero = (value: I32) -> Prop\n" +
+      "fact nonzero = candidate => candidate != 0;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof nonzero(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual != 0 then consume actual else 0 end;\n" +
+      "guarded 7\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("opaque facts do not unfold into contextual call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type nonzero = (value: I32) -> Prop\n" +
+      "opaque fact nonzero = candidate => candidate != 0;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof nonzero(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual != 0 then consume actual else 0 end;\n" +
+      "guarded 7\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("shadowed opaque facts cannot satisfy outer contracts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "do\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  type forward = " +
+      "(value: I32, evidence: Proof p(value)) -> I32\n" +
+      "  let forward = (actual, evidence) => consume actual;\n" +
+      "  42\n" +
+      "end\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("transparent fact bodies retain lexical predicate identities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact q = value => p(value);\n" +
+      "do\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  type invalid = " +
+      "(value: I32, evidence: Proof p(value)) -> Proof q(value)\n" +
+      "  let invalid = (actual, evidence) => by evidence;\n" +
+      "  42\n" +
+      "end\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Proof establishes")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("direct proofs use transparent fact definitions", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type nonzero = (value: I32) -> Prop\n" +
+      "fact nonzero = candidate => candidate != 0;\n" +
+      "type preserve = " +
+      "(value: I32, evidence: Proof value != 0) -> Proof nonzero(value)\n" +
+      "let preserve = (actual, evidence) => by evidence;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("proof bodies see transparent facts defined after their signature", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type reflexive = (value: I32) -> Prop\n" +
+      "type prove = () -> Proof reflexive(1)\n" +
+      "fact reflexive = value => value = value;\n" +
+      "let prove = () => by refl;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("polymorphic transparent facts stay opaque without type substitution", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type reflexive = forall (a: Type). (value: a) -> Prop\n" +
+      "fact reflexive = value => value = value;\n" +
+      "type invalid = (value: I32) -> Proof reflexive(value)\n" +
+      "let invalid = actual => by refl;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("refl requires an equality goal")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("transparent fact substitution avoids quantified capture", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type relates = (outer: I32) -> Prop\n" +
+      "fact relates = outer => " +
+      "forall (inner: I32). outer = inner;\n" +
+      "type invalid = (inner: I32) -> Proof relates(inner)\n" +
+      "let invalid = inner => by witness => refl;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Reflexivity term does not match")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
 Deno.test("fact definitions require well-formed propositions", () => {

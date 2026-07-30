@@ -159,6 +159,34 @@ Deno.test("Duck compiler erases branch-established proofs", async () => {
   }
 });
 
+Deno.test("Duck compiler erases transparent fact proofs", async () => {
+  const proved_source = "type nonzero = (value: I32) -> Prop\n" +
+    "fact nonzero = candidate => candidate != 0;\n" +
+    "type consume = " +
+    "(value: I32, evidence: Proof nonzero(value)) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual != 0 then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const plain_source = "let consume = actual => actual;\n" +
+    "let guarded = actual => " +
+    "if actual != 0 then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test(
   "Duck compiler erases ordered branch proofs across argument packs",
   async () => {
@@ -288,7 +316,7 @@ Deno.test("Duck compiler erases checked proof declarations", async () => {
     "Proof exists (found: I32). found = value\n" +
     "let witness = actual => by exists_intro(actual, refl);\n" +
     "type predicate = (value: I32) -> Prop\n" +
-    "fact predicate = value => True;\n" +
+    "opaque fact predicate = value => True;\n" +
     "type predicate_identity = () -> " +
     "Proof forall (value: I32). predicate(value) implies predicate(value)\n" +
     "let predicate_identity = () => by value => evidence => evidence;\n" +

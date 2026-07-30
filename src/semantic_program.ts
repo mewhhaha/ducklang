@@ -1156,16 +1156,19 @@ function validate_prefix_contracts(
       check_prefix_proof_formation(
         signature,
         resolved_signatures,
+        resolved_definitions,
         declared_type_names,
       ),
       check_prefix_refinement_formation(
         signature,
         resolved_signatures,
+        resolved_definitions,
         declared_type_names,
       ),
       check_prefix_requires(
         signature,
         resolved_signatures,
+        resolved_definitions,
         declared_type_names,
       ),
       check_prefix_decreases(
@@ -1279,6 +1282,11 @@ type PrefixCallObligation = {
   proposition: PrefixProposition;
   source_span: SourceSpan;
   description: string;
+};
+
+type PrefixCallHypothesis = {
+  proposition: PrefixProposition;
+  facts: ReadonlyMap<string, PrefixFactSignature>;
 };
 
 function check_prefix_call_obligations(
@@ -1540,8 +1548,25 @@ function check_prefix_call_obligations(
       }
       record_front_expr_logical_types(argument, binding_index, term_types);
     }
+    const call_span = source_span(call);
     const caller = enclosing_prefix_runtime_contract(call, contracts);
-    const hypotheses = caller_prefix_hypotheses(caller);
+    let caller_scope = contract.signature.scope;
+    let caller_reference_at = contract.signature.span.start;
+    if (caller !== undefined) {
+      caller_scope = caller.signature.scope;
+      caller_reference_at = caller.signature.span.start;
+    }
+    const caller_facts = prefix_fact_signatures(
+      signatures,
+      definitions,
+      caller_scope,
+      caller_reference_at,
+      call_span.start,
+    );
+    const hypotheses = caller_prefix_hypotheses(caller).map((proposition) => ({
+      proposition,
+      facts: caller_facts,
+    }));
     for (const [name, type] of caller_prefix_term_types(caller)) {
       term_types.set(name, type);
     }
@@ -1549,7 +1574,13 @@ function check_prefix_call_obligations(
       contract.signature,
       substitutions,
     );
-    const call_span = source_span(call);
+    const facts = prefix_fact_signatures(
+      signatures,
+      definitions,
+      contract.signature.scope,
+      contract.signature.span.start,
+      call_span.start,
+    );
     if (
       call_is_verified_unreachable(
         call_span,
@@ -1569,6 +1600,7 @@ function check_prefix_call_obligations(
         obligation.proposition,
         source_span(call),
         binding_values,
+        facts,
         control_flow,
         callable_control_flow,
       );
@@ -1577,9 +1609,16 @@ function check_prefix_call_obligations(
           contract.signature,
           obligation,
           call_span,
-          [...hypotheses, ...branch_hypotheses.propositions],
+          [
+            ...hypotheses,
+            ...branch_hypotheses.propositions.map((proposition) => ({
+              proposition,
+              facts,
+            })),
+          ],
           term_types,
           signatures,
+          definitions,
           declared_type_names,
           index,
           branch_hypotheses.certificate,
@@ -1599,6 +1638,7 @@ function verified_branch_hypotheses(
   proposition: PrefixProposition,
   call_span: SourceSpan,
   binding_values: ReadonlyMap<EntityId, ValueId>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
 ): VerifiedBranchHypotheses {
@@ -1613,26 +1653,15 @@ function verified_branch_hypotheses(
       certificate: undefined,
     };
   }
-  const machine_requirement = prefix_machine_requirement(
+  const normalized = unfold_transparent_prefix_proposition(
     proposition,
+    facts,
+  );
+  const machine_requirement = prefix_machine_requirement(
+    normalized,
     binding_values,
   );
-  if (
-    branch_control_flow_establishes(
-      candidate,
-      proposition,
-      call_span,
-      binding_values,
-    )
-  ) {
-    return {
-      propositions: [proposition],
-      certificate: undefined,
-    };
-  }
-  if (
-    machine_requirement !== undefined
-  ) {
+  if (machine_requirement !== undefined) {
     const certificate = infer_semantic_machine_certificate(
       candidate,
       call_span,
@@ -1649,10 +1678,23 @@ function verified_branch_hypotheses(
         "FactGraph produced an invalid semantic machine certificate.",
       );
       return {
-        propositions: [proposition],
+        propositions: [normalized],
         certificate,
       };
     }
+  }
+  if (
+    branch_control_flow_establishes(
+      candidate,
+      normalized,
+      call_span,
+      binding_values,
+    )
+  ) {
+    return {
+      propositions: [normalized],
+      certificate: undefined,
+    };
   }
   return {
     propositions: [],
@@ -2193,9 +2235,10 @@ function check_prefix_call_obligation(
   signature: PrefixSignature,
   obligation: PrefixCallObligation,
   call_span: SourceSpan,
-  hypotheses: readonly PrefixProposition[],
+  hypotheses: readonly PrefixCallHypothesis[],
   term_types: ReadonlyMap<string, LogicalTermType>,
   signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
   obligation_index: number,
   semantic_certificate: SemanticMachineCertificate | undefined,
@@ -2214,7 +2257,9 @@ function check_prefix_call_obligation(
   }
   const facts = prefix_fact_signatures(
     signatures,
+    definitions,
     signature.scope,
+    signature.span.start,
     call_span.start,
   );
   const context: PrefixKernelProofContext = {
@@ -2239,9 +2284,9 @@ function check_prefix_call_obligation(
   const kernel_hypotheses = hypotheses.map((hypothesis) =>
     prefix_kernel_proposition(
       signature.name,
-      hypothesis,
+      hypothesis.proposition,
       context,
-      facts,
+      hypothesis.facts,
       context.type_names,
     )
   );
@@ -2466,12 +2511,29 @@ function substitute_prefix_proposition(
   if (proposition.tag !== "forall" && proposition.tag !== "exists") {
     throw new Error("Unknown substituted prefix proposition.");
   }
+  let binder = proposition.binder;
+  let body = proposition.proposition;
+  const captures_binder = [...substitutions.values()].some((term) =>
+    term.references.includes(binder.name)
+  );
+  if (captures_binder) {
+    const renamed = "$duck:substitution:" + binder.name + ":" +
+      binder.span.start.toString();
+    binder = { ...binder, name: renamed };
+    body = rename_prefix_proposition_reference(
+      body,
+      proposition.binder.name,
+      renamed,
+    );
+  }
   const nested_substitutions = new Map(substitutions);
+  nested_substitutions.delete(binder.name);
   nested_substitutions.delete(proposition.binder.name);
   return {
     ...proposition,
+    binder,
     proposition: substitute_prefix_proposition(
-      proposition.proposition,
+      body,
       nested_substitutions,
     ),
   };
@@ -3275,6 +3337,7 @@ function check_prefix_binder_names(
 function check_prefix_proof_formation(
   signature: PrefixSignature,
   signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
 ): Checked<undefined> {
   const proof_parameters = signature.type.parameters.filter((parameter) =>
@@ -3316,6 +3379,7 @@ function check_prefix_proof_formation(
   }
   const facts = prefix_fact_signatures(
     signatures,
+    definitions,
     signature.scope,
     signature.span.start,
   );
@@ -3680,8 +3744,10 @@ function check_prefix_proof_definition(
   }
   const facts = prefix_fact_signatures(
     signatures,
+    definitions,
     signature.scope,
     signature.span.start,
+    definition.span.start,
   );
   const type_names = signature_type_names(signature, declared_type_names);
   const context: PrefixKernelProofContext = {
@@ -3820,12 +3886,46 @@ function prefix_kernel_proposition(
   context: PrefixKernelProofContext,
   facts: ReadonlyMap<string, PrefixFactSignature>,
   type_names: ReadonlySet<string>,
+  active_facts: ReadonlySet<string> = new Set(),
 ): Proposition {
   if (proposition.tag === "true") return { tag: "true" };
   if (proposition.tag === "false") return { tag: "false" };
   if (proposition.tag === "holds") {
     if (proposition.value.text === "true") return { tag: "true" };
     if (proposition.value.text === "false") return { tag: "false" };
+    const application = prefix_fact_application(proposition.value);
+    if (application !== undefined) {
+      const fact_name = application.name;
+      const fact = facts.get(fact_name);
+      if (
+        fact?.body !== undefined && fact.body_parameters !== undefined &&
+        fact.body_parameters.length === application.arguments.length &&
+        !active_facts.has(fact.kernel_name)
+      ) {
+        const substitutions = new Map<string, PrefixTerm>();
+        for (let index = 0; index < fact.body_parameters.length; index += 1) {
+          const parameter = fact.body_parameters[index];
+          const argument = application.arguments[index];
+          expect(
+            parameter !== undefined && argument !== undefined,
+            `Transparent fact ${fact_name} lost argument ${index}.`,
+          );
+          substitutions.set(parameter, argument);
+        }
+        const nested_active = new Set(active_facts);
+        nested_active.add(fact.kernel_name);
+        let body_facts = facts;
+        if (fact.body_facts !== undefined) body_facts = fact.body_facts;
+        return prefix_kernel_proposition(
+          declaration_name,
+          substitute_prefix_proposition(fact.body, substitutions),
+          context,
+          body_facts,
+          type_names,
+          nested_active,
+        );
+      }
+    }
     return prefix_kernel_atom(
       declaration_name,
       proposition,
@@ -3879,6 +3979,7 @@ function prefix_kernel_proposition(
         context,
         facts,
         type_names,
+        active_facts,
       ),
     };
   }
@@ -3907,6 +4008,7 @@ function prefix_kernel_proposition(
         context,
         facts,
         type_names,
+        active_facts,
       ),
     };
   }
@@ -3920,6 +4022,7 @@ function prefix_kernel_proposition(
       context,
       facts,
       type_names,
+      active_facts,
     );
     const right = prefix_kernel_proposition(
       declaration_name,
@@ -3927,6 +4030,7 @@ function prefix_kernel_proposition(
       context,
       facts,
       type_names,
+      active_facts,
     );
     if (proposition.tag === "and") {
       return { tag: "and", left, right };
@@ -3962,6 +4066,7 @@ function prefix_kernel_proposition(
       nested_context,
       facts,
       type_names,
+      active_facts,
     );
     if (proposition.tag === "forall") {
       return { tag: "forall", domain, body };
@@ -3983,6 +4088,11 @@ function prefix_kernel_atom(
       shape.tag === "call" && shape.function.shape.tag === "name" &&
       facts.has(shape.function.shape.name)
     ) {
+      const fact = facts.get(shape.function.shape.name);
+      expect(
+        fact !== undefined,
+        `Logical fact ${shape.function.shape.name} lost its signature.`,
+      );
       const arguments_: KernelTerm[] = [];
       for (const source_argument of shape.arguments) {
         const checked = prefix_kernel_term(
@@ -3994,7 +4104,8 @@ function prefix_kernel_atom(
         if (checked === undefined) {
           return {
             tag: "atom",
-            name: prefix_proposition_atom_key(proposition, context),
+            name: fact.kernel_name + ":" +
+              prefix_proposition_atom_key(proposition, context),
             arguments: [],
           };
         }
@@ -4002,7 +4113,7 @@ function prefix_kernel_atom(
       }
       return {
         tag: "atom",
-        name: "fact:" + shape.function.shape.name,
+        name: fact.kernel_name,
         arguments: arguments_,
       };
     }
@@ -5245,6 +5356,7 @@ function prefix_proof_synthesizes(proof: PrefixProofTerm): boolean {
 function check_prefix_refinement_formation(
   signature: PrefixSignature,
   signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
 ): Checked<undefined> {
   const term_types = new Map<string, LogicalTermType>();
@@ -5293,6 +5405,7 @@ function check_prefix_refinement_formation(
       signature_type_names(signature, declared_type_names),
       prefix_fact_signatures(
         signatures,
+        definitions,
         signature.scope,
         signature.span.start,
       ),
@@ -5306,6 +5419,7 @@ function check_prefix_refinement_formation(
 function check_prefix_requires(
   signature: PrefixSignature,
   signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
 ): Checked<undefined> {
   if (signature.requires.length === 0) return ok(undefined);
@@ -5326,6 +5440,7 @@ function check_prefix_requires(
       signature_type_names(signature, declared_type_names),
       prefix_fact_signatures(
         signatures,
+        definitions,
         signature.scope,
         signature.span.start,
       ),
@@ -5380,6 +5495,7 @@ function check_prefix_decreases(
       term_types,
       prefix_fact_signatures(
         signatures,
+        definitions,
         signature.scope,
         signature.span.start,
       ),
@@ -5499,6 +5615,7 @@ function check_prefix_fact_definition(
     type_names,
     prefix_fact_signatures(
       signatures,
+      definitions,
       signature.scope,
       definition.span.start,
     ),
@@ -5596,6 +5713,7 @@ function fact_dependency_is_recursive(
   if (definition?.fact_body === undefined) return false;
   const facts = prefix_fact_signatures(
     signatures,
+    definitions,
     scope,
     definition.span.start,
   );
@@ -5704,9 +5822,18 @@ function prefix_term_fact_dependencies(
 }
 
 type PrefixFactSignature = {
+  body?: PrefixProposition;
+  body_facts?: ReadonlyMap<string, PrefixFactSignature>;
+  body_parameters?: readonly string[];
+  kernel_name: string;
   parameters: readonly LogicalTermType[];
   type_parameters: ReadonlySet<string>;
 };
+
+type PrefixFactSignatureCache = Map<
+  string,
+  ReadonlyMap<string, PrefixFactSignature>
+>;
 
 type LogicalTermType = {
   display_name?: string;
@@ -5745,9 +5872,19 @@ function logical_term_type_from_reference(
 
 function prefix_fact_signatures(
   signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
   scope: string,
   visible_at: number,
+  definition_visible_at = visible_at,
+  cache: PrefixFactSignatureCache = new Map(),
 ): ReadonlyMap<string, PrefixFactSignature> {
+  const cache_key = JSON.stringify([
+    scope,
+    visible_at,
+    definition_visible_at,
+  ]);
+  const cached = cache.get(cache_key);
+  if (cached !== undefined) return cached;
   const facts = new Map<string, PrefixFactSignature>();
   for (const signature of signatures) {
     if (signature.kind !== "fact" && signature.kind !== "opaque fact") {
@@ -5760,7 +5897,8 @@ function prefix_fact_signatures(
       continue;
     }
     if (signature.span.start > visible_at) continue;
-    facts.set(signature.name, {
+    const fact: PrefixFactSignature = {
+      kernel_name: "fact:" + signature.scope + ":" + signature.name,
       parameters: signature.type.parameters.map((parameter) =>
         logical_term_type_from_reference(parameter.type)
       ),
@@ -5769,9 +5907,143 @@ function prefix_fact_signatures(
           binder.type.canonical === "Type"
         ).map((binder) => binder.name),
       ),
-    });
+    };
+    if (signature.kind === "fact") {
+      const definition = definitions.find((candidate) =>
+        candidate.name === signature.name &&
+        candidate.scope === signature.scope &&
+        candidate.kind === "fact" &&
+        candidate.span.start >= signature.span.end &&
+        candidate.span.end <= definition_visible_at
+      );
+      if (
+        definition?.fact_body !== undefined &&
+        definition.fact_parameters !== undefined &&
+        fact.type_parameters.size === 0
+      ) {
+        fact.body = definition.fact_body;
+        fact.body_facts = prefix_fact_signatures(
+          signatures,
+          definitions,
+          signature.scope,
+          definition.span.start,
+          definition.span.start,
+          cache,
+        );
+        fact.body_parameters = definition.fact_parameters;
+      }
+    }
+    facts.set(signature.name, fact);
   }
+  cache.set(cache_key, facts);
   return facts;
+}
+
+function unfold_transparent_prefix_proposition(
+  proposition: PrefixProposition,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+  active_facts: ReadonlySet<string> = new Set(),
+): PrefixProposition {
+  if (proposition.tag === "true" || proposition.tag === "false") {
+    return proposition;
+  }
+  if (proposition.tag === "holds") {
+    const application = prefix_fact_application(proposition.value);
+    if (application === undefined) return proposition;
+    const fact_name = application.name;
+    const fact = facts.get(fact_name);
+    if (
+      fact?.body === undefined || fact.body_parameters === undefined ||
+      fact.body_parameters.length !== application.arguments.length ||
+      active_facts.has(fact.kernel_name)
+    ) {
+      return proposition;
+    }
+    const substitutions = new Map<string, PrefixTerm>();
+    for (let index = 0; index < fact.body_parameters.length; index += 1) {
+      const parameter = fact.body_parameters[index];
+      const argument = application.arguments[index];
+      expect(
+        parameter !== undefined && argument !== undefined,
+        `Transparent fact ${fact_name} lost argument ${index}.`,
+      );
+      substitutions.set(parameter, argument);
+    }
+    const nested_active = new Set(active_facts);
+    nested_active.add(fact.kernel_name);
+    let body_facts = facts;
+    if (fact.body_facts !== undefined) body_facts = fact.body_facts;
+    return unfold_transparent_prefix_proposition(
+      substitute_prefix_proposition(fact.body, substitutions),
+      body_facts,
+      nested_active,
+    );
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal" ||
+    proposition.tag === "is"
+  ) {
+    return proposition;
+  }
+  if (proposition.tag === "not") {
+    return {
+      ...proposition,
+      proposition: unfold_transparent_prefix_proposition(
+        proposition.proposition,
+        facts,
+        active_facts,
+      ),
+    };
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return {
+      ...proposition,
+      left: unfold_transparent_prefix_proposition(
+        proposition.left,
+        facts,
+        active_facts,
+      ),
+      right: unfold_transparent_prefix_proposition(
+        proposition.right,
+        facts,
+        active_facts,
+      ),
+    };
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    return {
+      ...proposition,
+      proposition: unfold_transparent_prefix_proposition(
+        proposition.proposition,
+        facts,
+        active_facts,
+      ),
+    };
+  }
+  throw new Error("Unknown transparent fact proposition.");
+}
+
+function prefix_fact_application(
+  term: PrefixTerm,
+): { name: string; arguments: readonly PrefixTerm[] } | undefined {
+  let current = term;
+  while (current.shape.tag === "parenthesized") {
+    current = current.shape.value;
+  }
+  if (
+    current.shape.tag !== "call" ||
+    current.shape.function.shape.tag !== "name"
+  ) {
+    return undefined;
+  }
+  return {
+    name: current.shape.function.shape.name,
+    arguments: current.shape.arguments,
+  };
 }
 
 function signature_type_names(
