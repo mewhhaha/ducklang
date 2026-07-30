@@ -1560,6 +1560,52 @@ Deno.test("bitwise branches establish certified machine facts", () => {
   );
 });
 
+Deno.test("bitwise branches establish power-of-two congruences", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if @bit_and(actual, 1i32) == 0i32 " +
+      "then consume actual else 0 end;\n" +
+      "guarded 4\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("incompatible bitmask and remainder branches are unreachable", () => {
+  for (
+    const [divisor, mask, expected] of [
+      ["2i32", "1i32", "1i32"],
+      ["3i32", "2147483647i32", "1i32"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value = 1i32) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        "let guarded = actual => " +
+        `if actual % ${divisor} == 0i32 then ` +
+        `if @bit_and(actual, ${mask}) == ${expected} ` +
+        "then consume actual else 0 end else 0 end;\n" +
+        "guarded 4\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
 Deno.test("remainder branches establish transparent modular facts", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type multiple_of_four = (value: I32) -> Prop\n" +
@@ -1602,7 +1648,7 @@ Deno.test("remainder branches establish zero-residue divisibility facts", () => 
     assert_equals(analysis.diagnostics, []);
     assert_equals(
       [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
-      "remainder_divisibility",
+      "machine_fact",
     );
     assert_equals(
       checked_value(lower_duck_source(analysis)) !== undefined,
@@ -1624,7 +1670,7 @@ Deno.test("remainder divisibility recognizes reversed logical equality", () => {
   assert_equals(analysis.diagnostics, []);
   assert_equals(
     [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
-    "remainder_divisibility",
+    "machine_fact",
   );
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
@@ -1644,7 +1690,83 @@ Deno.test("remainder divisibility establishes transparent modular facts", () => 
   assert_equals(analysis.diagnostics, []);
   assert_equals(
     [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
-    "remainder_divisibility",
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder congruences combine across nested branches", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 6i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 2i32 == 0i32 then " +
+      "if actual % 3i32 == 0i32 then consume actual else 0 end " +
+      "else 0 end;\n" +
+      "guarded 12\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder congruences reduce machine ranges to exact values", () => {
+  const exact = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 2i32 == 0i32 then " +
+      "if actual % 2147483647i32 == 0i32 " +
+      "then consume actual else 1i32 end else 1i32 end;\n" +
+      "guarded 0i32\n",
+  ));
+  assert_equals(exact.diagnostics, []);
+  assert_equals(
+    [...exact.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(exact)) !== undefined, true);
+
+  const exclusion = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 1i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 2i32 == 0i32 then consume actual else 0i32 end;\n" +
+      "guarded 2i32\n",
+  ));
+  assert_equals(exclusion.diagnostics, []);
+  assert_equals(
+    [...exclusion.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(
+    checked_value(lower_duck_source(exclusion)) !== undefined,
+    true,
+  );
+});
+
+Deno.test("modulo one contracts need no branch evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 1i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type direct = (value: I32) -> I32\n" +
+      "let direct = actual => consume actual;\n" +
+      "direct (-7i32)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
   );
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
@@ -1730,7 +1852,7 @@ Deno.test("remainder divisibility rejects calls repeated by loops", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
-Deno.test("remainder divisibility rejects alternate remainder identities across joins", () => {
+Deno.test("remainder congruence follows predecessor-specific remainder identities", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +
       "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
@@ -1743,13 +1865,29 @@ Deno.test("remainder divisibility rejects alternate remainder identities across 
       "end;\n" +
       "guarded (8, true)\n",
   ));
+  assert_equals(analysis.diagnostics, []);
   assert_equals(
-    analysis.diagnostics.some((diagnostic) =>
-      diagnostic.code === "DUCK2604" &&
-      diagnostic.message.includes(
-        "unknown: call to consume cannot prove proof parameter evidence",
-      )
-    ),
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder congruence rejects a phi with another dividend", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32, choose: Bool) -> I32\n" +
+      "let guarded = (left, right, choose) => do\n" +
+      "  let remainder = if choose then left % 4i32 " +
+      "else right % 4i32 end;\n" +
+      "  if remainder == 0i32 then consume left else 0 end\n" +
+      "end;\n" +
+      "guarded (8, 3, false)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
     true,
   );
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
@@ -1851,7 +1989,7 @@ Deno.test("remainder evidence follows exact equality branch polarity", () => {
   }
 });
 
-Deno.test("remainder evidence stays bound to its dividend identity", () => {
+Deno.test("remainder evidence rejects replacement values and follows aliases", () => {
   const changed_dividend = analyze_duck_source(parse_duck_source(
     "type consume = " +
       "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
@@ -1883,16 +2021,12 @@ Deno.test("remainder evidence stays bound to its dividend identity", () => {
       "end;\n" +
       "guarded 8\n",
   ));
+  assert_equals(alias.diagnostics, []);
   assert_equals(
-    alias.diagnostics.some((diagnostic) =>
-      diagnostic.code === "DUCK2604" &&
-      diagnostic.message.includes(
-        "unknown: call to consume cannot prove proof parameter evidence",
-      )
-    ),
-    true,
+    [...alias.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
   );
-  assert_equals(checked_value(lower_duck_source(alias)), undefined);
+  assert_equals(checked_value(lower_duck_source(alias)) !== undefined, true);
 });
 
 Deno.test("duplicate exact remainder computations preserve evidence", () => {

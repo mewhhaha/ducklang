@@ -1828,6 +1828,214 @@ Deno.test("semantic machine certificates independently verify bitwise branches",
   }
 });
 
+Deno.test("semantic machine certificates independently combine remainder congruences", () => {
+  for (
+    const [first_primitive, proved] of [
+      ["i32.rem_s", true],
+      ["i32.add", false],
+    ] as const
+  ) {
+    const builder = new SemanticCfgBuilder(
+      "remainder-congruence-" + first_primitive,
+    );
+    const entry = builder.add_block(origin);
+    const divisible_by_two = builder.add_block(
+      "congruence-two:1:2:0" as never,
+    );
+    const call_block = builder.add_block(
+      "congruence-call:2:3:0" as never,
+    );
+    const fallback = builder.add_block(
+      "congruence-fallback:3:4:0" as never,
+    );
+    const value = ("congruence-value-" + first_primitive) as ValueId;
+    builder.add_parameter(value, i32_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+    const two = builder.add_node(
+      entry,
+      origin,
+      { start: 2, end: 3 },
+      { tag: "constant", value: -2 },
+      [],
+      [i32_type],
+    )[0];
+    const zero = builder.add_node(
+      entry,
+      origin,
+      { start: 4, end: 5 },
+      { tag: "constant", value: 0 },
+      [],
+      [i32_type],
+    )[0];
+    if (two === undefined || zero === undefined) {
+      throw new Error("Expected first congruence constants.");
+    }
+    const remainder_two = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 3 },
+      { tag: "primitive", name: first_primitive },
+      [value, two],
+      [i32_type],
+    )[0];
+    if (remainder_two === undefined) {
+      throw new Error("Expected first congruence result.");
+    }
+    const condition_two = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 5 },
+      { tag: "primitive", name: "i32.eq" },
+      [remainder_two, zero],
+      [bool_type],
+    )[0];
+    if (condition_two === undefined) {
+      throw new Error("Expected first congruence comparison.");
+    }
+    builder.connect(entry, divisible_by_two);
+    builder.connect(entry, fallback);
+    builder.terminate(entry, {
+      tag: "branch",
+      condition: condition_two,
+      when_true: divisible_by_two,
+      when_false: fallback,
+    });
+    const three = builder.add_node(
+      divisible_by_two,
+      "congruence-two:1:2:0" as never,
+      { start: 6, end: 7 },
+      { tag: "constant", value: 3 },
+      [],
+      [i32_type],
+    )[0];
+    if (three === undefined) throw new Error("Expected second divisor.");
+    const remainder_three = builder.add_node(
+      divisible_by_two,
+      "congruence-two:1:2:0" as never,
+      { start: 6, end: 9 },
+      { tag: "primitive", name: "i32.rem_s" },
+      [value, three],
+      [i32_type],
+    )[0];
+    if (remainder_three === undefined) {
+      throw new Error("Expected second congruence result.");
+    }
+    const condition_three = builder.add_node(
+      divisible_by_two,
+      "congruence-two:1:2:0" as never,
+      { start: 6, end: 11 },
+      { tag: "primitive", name: "i32.eq" },
+      [remainder_three, zero],
+      [bool_type],
+    )[0];
+    if (condition_three === undefined) {
+      throw new Error("Expected second congruence comparison.");
+    }
+    builder.connect(divisible_by_two, call_block);
+    builder.connect(divisible_by_two, fallback);
+    builder.terminate(divisible_by_two, {
+      tag: "branch",
+      condition: condition_three,
+      when_true: call_block,
+      when_false: fallback,
+    });
+    const call_span = { start: 12, end: 19 };
+    const call = builder.add_node(
+      call_block,
+      "congruence-call:2:3:0" as never,
+      call_span,
+      { tag: "call", function_name: "consume" },
+      [value],
+      [i32_type],
+    )[0];
+    if (call === undefined) throw new Error("Expected congruence call.");
+    builder.terminate(call_block, { tag: "return", value: call });
+    const fallback_value = builder.add_node(
+      fallback,
+      "congruence-fallback:3:4:0" as never,
+      { start: 20, end: 21 },
+      { tag: "constant", value: 0 },
+      [],
+      [i32_type],
+    )[0];
+    builder.terminate(fallback, { tag: "return", value: fallback_value });
+    const control_flow = builder.finish();
+    const requirement: SemanticMachineRequirement = {
+      tag: "congruence",
+      value,
+      modulus: 6n,
+      residue: 0n,
+    };
+    assert_equals(
+      infer_semantic_machine_certificate(
+        control_flow,
+        call_span,
+        requirement,
+      ) !== undefined,
+      proved,
+    );
+    assert_equals(
+      verify_semantic_machine_certificate(
+        semantic_machine_certificate(call_span, requirement),
+        control_flow,
+        call_span,
+        requirement,
+      ),
+      proved,
+    );
+    const universal: SemanticMachineRequirement = {
+      tag: "congruence",
+      value,
+      modulus: 1n,
+      residue: 0n,
+    };
+    assert_equals(
+      infer_semantic_machine_certificate(
+        control_flow,
+        call_span,
+        universal,
+      ) !== undefined,
+      true,
+    );
+    assert_equals(
+      verify_semantic_machine_certificate(
+        semantic_machine_certificate(call_span, universal),
+        control_flow,
+        call_span,
+        universal,
+      ),
+      true,
+    );
+    for (
+      const malformed of [
+        { ...universal, modulus: 0n },
+        { ...universal, residue: 1n },
+      ]
+    ) {
+      assert_equals(
+        infer_semantic_machine_certificate(
+          control_flow,
+          call_span,
+          malformed,
+        ),
+        undefined,
+      );
+      assert_equals(
+        verify_semantic_machine_certificate(
+          semantic_machine_certificate(call_span, malformed),
+          control_flow,
+          call_span,
+          malformed,
+        ),
+        false,
+      );
+    }
+  }
+});
+
 Deno.test("semantic unreachable certificates normalize wrapping comparison constants", () => {
   const builder = new SemanticCfgBuilder("wrapping-constant-certificate");
   const entry = builder.add_block(origin);

@@ -28,6 +28,12 @@ export type SemanticMachineRequirement =
   | { tag: "fact"; proposition: FactProposition }
   | { tag: "exclusion"; value: ValueId; expected: bigint }
   | {
+    tag: "congruence";
+    value: ValueId;
+    modulus: bigint;
+    residue: bigint;
+  }
+  | {
     tag: "bitmask";
     value: ValueId;
     known_zero: bigint;
@@ -129,6 +135,11 @@ type VerifiedBitmaskState = {
   known_zero: bigint;
   known_one: bigint;
   malformed: boolean;
+};
+
+type VerifiedCongruence = {
+  modulus: bigint;
+  residue: bigint;
 };
 
 export function semantic_machine_certificate(
@@ -920,6 +931,22 @@ function verify_semantic_paths(
             );
           }
         }
+        const congruence_premise = verified_remainder_congruence_requirement(
+          comparison,
+          branch_value,
+          ranges,
+          producers,
+          aliases,
+        );
+        if (congruence_premise !== undefined) {
+          if (bounded_offset !== undefined) {
+            premises.push(congruence_premise);
+          } else {
+            premises.push(
+              aliased_machine_requirement(congruence_premise, aliases),
+            );
+          }
+        }
       }
       if (
         !enqueue_verification_state(
@@ -962,6 +989,14 @@ function snapshot_machine_requirement(
       known_one: requirement.known_one,
     });
   }
+  if (requirement.tag === "congruence") {
+    return Object.freeze({
+      tag: "congruence",
+      value: requirement.value,
+      modulus: requirement.modulus,
+      residue: requirement.residue,
+    });
+  }
   return Object.freeze({
     tag: "fact",
     proposition: Object.freeze({ ...requirement.proposition }),
@@ -980,6 +1015,11 @@ function same_machine_requirement(
     return left.value === right.value &&
       left.known_zero === right.known_zero &&
       left.known_one === right.known_one;
+  }
+  if (left.tag === "congruence" && right.tag === "congruence") {
+    return left.value === right.value &&
+      left.modulus === right.modulus &&
+      left.residue === right.residue;
   }
   if (left.tag !== "fact" || right.tag !== "fact") return false;
   if (
@@ -1144,6 +1184,16 @@ function verified_repeating_call_requirement(
       new Map(),
     );
     if (bitmask_premise !== undefined) premises.push(bitmask_premise);
+    const congruence_premise = verified_remainder_congruence_requirement(
+      comparison,
+      branch_value,
+      ranges,
+      producers,
+      new Map(),
+    );
+    if (congruence_premise !== undefined) {
+      premises.push(congruence_premise);
+    }
   }
   if (premises_are_contradictory(premises, ranges)) return false;
   const goal_value = requirement_value(requirement);
@@ -1450,6 +1500,14 @@ function aliased_machine_requirement(
       known_one: requirement.known_one,
     };
   }
+  if (requirement.tag === "congruence") {
+    return {
+      tag: "congruence",
+      value: resolved,
+      modulus: requirement.modulus,
+      residue: requirement.residue,
+    };
+  }
   return {
     tag: "fact",
     proposition: {
@@ -1685,6 +1743,74 @@ function verified_bitmask_requirement(
     value,
     known_zero,
     known_one,
+  };
+}
+
+function verified_remainder_congruence_requirement(
+  comparison: SemanticNode,
+  branch_value: boolean,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): SemanticMachineRequirement | undefined {
+  const equality = verified_comparison_requirement(
+    comparison,
+    branch_value,
+    ranges,
+    producers,
+  );
+  if (
+    equality?.tag !== "fact" ||
+    equality.proposition.tag !== "equal"
+  ) {
+    return undefined;
+  }
+  const remainder = resolved_alias(equality.proposition.value, aliases);
+  if (remainder === undefined) return undefined;
+  const operation = producers.get(remainder);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.inputs.length !== 2 ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== remainder
+  ) {
+    return undefined;
+  }
+  const dividend = operation.inputs[0];
+  const divisor_value = operation.inputs[1];
+  if (dividend === undefined || divisor_value === undefined) return undefined;
+  const dividend_range = ranges.get(dividend);
+  const divisor_range = ranges.get(divisor_value);
+  const remainder_range = ranges.get(remainder);
+  if (
+    dividend_range === undefined || divisor_range === undefined ||
+    remainder_range === undefined ||
+    !same_integer_type(dividend_range, divisor_range) ||
+    !same_integer_type(dividend_range, remainder_range)
+  ) {
+    return undefined;
+  }
+  const val_type = integer_val_type(dividend_range);
+  if (val_type === undefined) return undefined;
+  let primitive = val_type + ".rem_u";
+  if (dividend_range.signed) primitive = val_type + ".rem_s";
+  if (operation.operation.name !== primitive) return undefined;
+  const produced_divisor = verified_integer_constant(
+    divisor_value,
+    producers,
+  );
+  if (produced_divisor === undefined) return undefined;
+  let divisor = normalize_integer(divisor_range, produced_divisor);
+  if (divisor === 0n) return undefined;
+  if (divisor < 0n) divisor = -divisor;
+  return {
+    tag: "congruence",
+    value: dividend,
+    modulus: divisor,
+    residue: canonical_verified_residue(
+      equality.proposition.expected,
+      divisor,
+    ),
   };
 }
 
@@ -1986,7 +2112,7 @@ function interval_from_premises(
       exclusions.add(premise.expected);
       continue;
     }
-    if (premise.tag === "bitmask") continue;
+    if (premise.tag === "bitmask" || premise.tag === "congruence") continue;
     const proposition = premise.proposition;
     if (proposition.tag === "equal") {
       if (proposition.expected > minimum) minimum = proposition.expected;
@@ -2055,6 +2181,45 @@ function bitmask_from_premises(
   return { known_zero, known_one, malformed };
 }
 
+function congruence_from_premises(
+  premises: readonly SemanticMachineRequirement[],
+  value: ValueId,
+): {
+  congruence: VerifiedCongruence | undefined;
+  contradiction: boolean;
+  malformed: boolean;
+} {
+  let congruence: VerifiedCongruence | undefined;
+  for (const premise of premises) {
+    if (premise.tag !== "congruence" || premise.value !== value) continue;
+    if (
+      premise.modulus <= 0n ||
+      premise.residue < 0n ||
+      premise.residue >= premise.modulus
+    ) {
+      return {
+        congruence: undefined,
+        contradiction: false,
+        malformed: true,
+      };
+    }
+    const next = {
+      modulus: premise.modulus,
+      residue: premise.residue,
+    };
+    if (congruence === undefined) {
+      congruence = next;
+      continue;
+    }
+    const combined = combine_verified_congruences(congruence, next);
+    if (combined === undefined) {
+      return { congruence, contradiction: true, malformed: false };
+    }
+    congruence = combined;
+  }
+  return { congruence, contradiction: false, malformed: false };
+}
+
 function verified_value_matches_bitmask(
   value: bigint,
   bitmask: VerifiedBitmaskState,
@@ -2092,8 +2257,168 @@ function premises_are_contradictory(
     ) {
       return true;
     }
+    const congruence = congruence_from_premises(premises, value);
+    if (congruence.contradiction) return true;
+    if (
+      !congruence.malformed &&
+      congruence.congruence !== undefined &&
+      !verified_bitmask_matches_congruence(bitmask, congruence.congruence)
+    ) {
+      return true;
+    }
+    if (
+      !congruence.malformed &&
+      congruence.congruence !== undefined &&
+      interval.minimum === interval.maximum &&
+      canonical_verified_residue(
+          interval.minimum,
+          congruence.congruence.modulus,
+        ) !== congruence.congruence.residue
+    ) {
+      return true;
+    }
+    if (
+      !congruence.malformed &&
+      congruence.congruence !== undefined &&
+      reduce_verified_congruence(
+          interval,
+          congruence.congruence,
+          bitmask,
+          range,
+        ).tag === "none"
+    ) {
+      return true;
+    }
+    if (
+      !congruence.malformed &&
+      congruence.congruence !== undefined &&
+      (bitmask.known_zero !== 0n || bitmask.known_one !== 0n)
+    ) {
+      const witness = verified_reduced_product_has_witness(
+        interval,
+        bitmask,
+        congruence.congruence,
+        range,
+      );
+      if (witness === false) return true;
+    }
   }
   return false;
+}
+
+function verified_bitmask_matches_congruence(
+  bitmask: VerifiedBitmaskState,
+  congruence: VerifiedCongruence,
+): boolean {
+  let power_of_two = 1n;
+  let remaining = congruence.modulus;
+  while (remaining % 2n === 0n) {
+    power_of_two *= 2n;
+    remaining /= 2n;
+  }
+  const fixed_mask = power_of_two - 1n;
+  const required_one = congruence.residue & fixed_mask;
+  const required_zero = fixed_mask ^ required_one;
+  return (bitmask.known_zero & required_one) === 0n &&
+    (bitmask.known_one & required_zero) === 0n;
+}
+
+function verified_reduced_product_has_witness(
+  interval: IntervalState,
+  bitmask: VerifiedBitmaskState,
+  congruence: VerifiedCongruence,
+  range: IntegerType,
+): boolean | undefined {
+  const modulus = 1n << BigInt(range.width);
+  const unsigned_intervals: { minimum: bigint; maximum: bigint }[] = [];
+  if (!range.signed || interval.minimum >= 0n) {
+    unsigned_intervals.push({
+      minimum: interval.minimum,
+      maximum: interval.maximum,
+    });
+  } else if (interval.maximum < 0n) {
+    unsigned_intervals.push({
+      minimum: interval.minimum + modulus,
+      maximum: interval.maximum + modulus,
+    });
+  } else {
+    unsigned_intervals.push({
+      minimum: interval.minimum + modulus,
+      maximum: modulus - 1n,
+    });
+    unsigned_intervals.push({ minimum: 0n, maximum: interval.maximum });
+  }
+  let steps = 0;
+  for (const bounds of unsigned_intervals) {
+    let lower = bounds.minimum;
+    while (lower <= bounds.maximum) {
+      const bits = minimum_verified_bitmask_value(
+        lower,
+        bitmask,
+        range.width,
+      );
+      if (bits === undefined || bits > bounds.maximum) break;
+      if (steps + range.width > proof_limits.compiler_search_steps) {
+        return undefined;
+      }
+      steps += range.width;
+      let value = bits;
+      if (range.signed) {
+        const sign = 1n << BigInt(range.width - 1);
+        if (bits >= sign) value -= modulus;
+      }
+      if (
+        canonical_verified_residue(value, congruence.modulus) ===
+          congruence.residue &&
+        !interval.exclusions.has(value)
+      ) {
+        return true;
+      }
+      lower = bits + 1n;
+    }
+  }
+  return false;
+}
+
+function minimum_verified_bitmask_value(
+  lower: bigint,
+  bitmask: VerifiedBitmaskState,
+  width: number,
+): bigint | undefined {
+  const equal = new Map<number, bigint | undefined>();
+  const greater = new Map<number, bigint | undefined>();
+  const search = (
+    bit: number,
+    already_greater: boolean,
+  ): bigint | undefined => {
+    if (bit < 0) return 0n;
+    let memo = equal;
+    if (already_greater) memo = greater;
+    if (memo.has(bit)) return memo.get(bit);
+    const bit_value = 1n << BigInt(bit);
+    let lower_digit = 0n;
+    if ((lower & bit_value) !== 0n) lower_digit = 1n;
+    for (const digit of [0n, 1n]) {
+      if (digit === 0n && (bitmask.known_one & bit_value) !== 0n) {
+        continue;
+      }
+      if (digit === 1n && (bitmask.known_zero & bit_value) !== 0n) {
+        continue;
+      }
+      if (!already_greater && digit < lower_digit) continue;
+      const suffix = search(
+        bit - 1,
+        already_greater || digit > lower_digit,
+      );
+      if (suffix === undefined) continue;
+      const result = digit * bit_value + suffix;
+      memo.set(bit, result);
+      return result;
+    }
+    memo.set(bit, undefined);
+    return undefined;
+  };
+  return search(width - 1, false);
 }
 
 function interval_implies_requirement(
@@ -2129,11 +2454,42 @@ function interval_implies_requirement(
     minimum = exact;
     maximum = exact;
   }
+  const premise_congruence = congruence_from_premises(premises, value);
+  if (premise_congruence.malformed || premise_congruence.contradiction) {
+    return false;
+  }
+  if (premise_congruence.congruence !== undefined) {
+    const reduced = reduce_verified_congruence(
+      {
+        minimum,
+        maximum,
+        exclusions: interval.exclusions,
+        contradiction: false,
+      },
+      premise_congruence.congruence,
+      bitmask,
+      range,
+    );
+    if (reduced.tag === "none") return false;
+    if (reduced.tag === "one") {
+      minimum = reduced.value;
+      maximum = reduced.value;
+    }
+  }
   if (requirement.tag === "exclusion") {
     if (
       requirement.expected < minimum ||
       requirement.expected > maximum ||
       interval.exclusions.has(requirement.expected)
+    ) {
+      return true;
+    }
+    if (
+      premise_congruence.congruence !== undefined &&
+      canonical_verified_residue(
+          requirement.expected,
+          premise_congruence.congruence.modulus,
+        ) !== premise_congruence.congruence.residue
     ) {
       return true;
     }
@@ -2147,6 +2503,41 @@ function interval_implies_requirement(
     return (bitmask.known_zero & requirement.known_zero) ===
         requirement.known_zero &&
       (bitmask.known_one & requirement.known_one) === requirement.known_one;
+  }
+  if (requirement.tag === "congruence") {
+    if (
+      requirement.modulus <= 0n ||
+      requirement.residue < 0n ||
+      requirement.residue >= requirement.modulus
+    ) {
+      return false;
+    }
+    if (requirement.modulus === 1n) return true;
+    if (minimum === maximum) {
+      return canonical_verified_residue(minimum, requirement.modulus) ===
+        requirement.residue;
+    }
+    if (
+      (requirement.modulus & (requirement.modulus - 1n)) === 0n
+    ) {
+      const fixed_mask = requirement.modulus - 1n;
+      const required_one = requirement.residue & fixed_mask;
+      const required_zero = fixed_mask ^ required_one;
+      if (
+        (bitmask.known_zero & required_zero) === required_zero &&
+        (bitmask.known_one & required_one) === required_one
+      ) {
+        return true;
+      }
+    }
+    if (premise_congruence.congruence === undefined) {
+      return false;
+    }
+    return premise_congruence.congruence.modulus % requirement.modulus === 0n &&
+      canonical_verified_residue(
+          premise_congruence.congruence.residue,
+          requirement.modulus,
+        ) === requirement.residue;
   }
   const proposition = requirement.proposition;
   if (proposition.tag === "equal") {
@@ -2164,4 +2555,118 @@ function interval_implies_requirement(
     return minimum > proposition.bound;
   }
   return minimum >= proposition.bound;
+}
+
+function reduce_verified_congruence(
+  interval: IntervalState,
+  congruence: VerifiedCongruence,
+  bitmask: VerifiedBitmaskState,
+  range: IntegerType,
+):
+  | { tag: "unknown" }
+  | { tag: "none" }
+  | { tag: "one"; value: bigint } {
+  const first = interval.minimum +
+    canonical_verified_residue(
+      congruence.residue - interval.minimum,
+      congruence.modulus,
+    );
+  if (first > interval.maximum) return { tag: "none" };
+  const witness_count = (interval.maximum - first) / congruence.modulus + 1n;
+  if (witness_count > BigInt(interval.exclusions.size) + 1n) {
+    return { tag: "unknown" };
+  }
+  let remaining: bigint | undefined;
+  for (
+    let candidate = first;
+    candidate <= interval.maximum;
+    candidate += congruence.modulus
+  ) {
+    if (
+      interval.exclusions.has(candidate) ||
+      !verified_value_matches_bitmask(candidate, bitmask, range)
+    ) {
+      continue;
+    }
+    if (remaining !== undefined) return { tag: "unknown" };
+    remaining = candidate;
+  }
+  if (remaining === undefined) return { tag: "none" };
+  return { tag: "one", value: remaining };
+}
+
+function combine_verified_congruences(
+  left: VerifiedCongruence,
+  right: VerifiedCongruence,
+): VerifiedCongruence | undefined {
+  const divisor = greatest_common_verified_divisor(
+    left.modulus,
+    right.modulus,
+  );
+  const difference = right.residue - left.residue;
+  if (canonical_verified_residue(difference, divisor) !== 0n) {
+    return undefined;
+  }
+  const left_factor = left.modulus / divisor;
+  const right_factor = right.modulus / divisor;
+  let multiplier = 0n;
+  if (right_factor !== 1n) {
+    multiplier = canonical_verified_residue(
+      difference / divisor *
+        verified_modular_inverse(left_factor, right_factor),
+      right_factor,
+    );
+  }
+  const modulus = left.modulus * right_factor;
+  return {
+    modulus,
+    residue: canonical_verified_residue(
+      left.residue + left.modulus * multiplier,
+      modulus,
+    ),
+  };
+}
+
+function verified_modular_inverse(value: bigint, modulus: bigint): bigint {
+  let previous_remainder = value;
+  let remainder = modulus;
+  let previous_coefficient = 1n;
+  let coefficient = 0n;
+  while (remainder !== 0n) {
+    const quotient = previous_remainder / remainder;
+    const next_remainder = previous_remainder - quotient * remainder;
+    previous_remainder = remainder;
+    remainder = next_remainder;
+    const next_coefficient = previous_coefficient - quotient * coefficient;
+    previous_coefficient = coefficient;
+    coefficient = next_coefficient;
+  }
+  expect(
+    previous_remainder === 1n,
+    `Verified congruence inverse does not exist for ${value} modulo ${modulus}.`,
+  );
+  return canonical_verified_residue(previous_coefficient, modulus);
+}
+
+function greatest_common_verified_divisor(
+  left: bigint,
+  right: bigint,
+): bigint {
+  let dividend = left;
+  let divisor = right;
+  while (divisor !== 0n) {
+    const remainder = dividend % divisor;
+    dividend = divisor;
+    divisor = remainder;
+  }
+  return dividend;
+}
+
+function canonical_verified_residue(
+  value: bigint,
+  modulus: bigint,
+): bigint {
+  let residue = value % modulus;
+  if (residue < 0n) residue += modulus;
+  return residue;
 }

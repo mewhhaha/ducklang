@@ -5,9 +5,11 @@ import {
 } from "../integer.ts";
 import {
   assume_machine_bitmask,
+  assume_machine_congruence,
   assume_machine_fact,
   exclude_machine_fact,
   implies_machine_bitmask,
+  implies_machine_congruence,
   implies_machine_fact,
   machine_excludes_equal,
   machine_fact_domain,
@@ -57,6 +59,14 @@ export function infer_semantic_machine_certificate(
   call_span: SourceSpan,
   requirement: SemanticMachineRequirement,
 ): SemanticMachineCertificate | undefined {
+  if (
+    requirement.tag === "congruence" &&
+    (requirement.modulus <= 0n ||
+      requirement.residue < 0n ||
+      requirement.residue >= requirement.modulus)
+  ) {
+    return undefined;
+  }
   if (
     semantic_cfg_machine_path_result(
       control_flow,
@@ -322,6 +332,20 @@ function semantic_cfg_machine_path_result(
             aliased_machine_requirement(bitmask_requirement, aliases),
           );
         }
+        const congruence_requirement =
+          semantic_remainder_congruence_requirement(
+            comparison,
+            branch_value,
+            ranges,
+            producers,
+            aliases,
+          );
+        if (congruence_requirement !== undefined) {
+          branch_domain = assume_machine_requirement(
+            branch_domain,
+            aliased_machine_requirement(congruence_requirement, aliases),
+          );
+        }
       }
       if (!branch_domain.reachable) continue;
       if (
@@ -454,6 +478,16 @@ function repeating_call_requirement_holds(
     );
     if (bitmask_premise !== undefined) {
       domain = assume_machine_requirement(domain, bitmask_premise);
+    }
+    const congruence_premise = semantic_remainder_congruence_requirement(
+      comparison,
+      branch_value,
+      ranges,
+      producers,
+      new Map(),
+    );
+    if (congruence_premise !== undefined) {
+      domain = assume_machine_requirement(domain, congruence_premise);
     }
   }
   return machine_requirement_holds(domain, requirement);
@@ -681,6 +715,14 @@ function aliased_machine_requirement(
       value: resolved,
       known_zero: requirement.known_zero,
       known_one: requirement.known_one,
+    };
+  }
+  if (requirement.tag === "congruence") {
+    return {
+      tag: "congruence",
+      value: resolved,
+      modulus: requirement.modulus,
+      residue: requirement.residue,
     };
   }
   return {
@@ -941,6 +983,75 @@ function semantic_bitmask_requirement(
   };
 }
 
+function semantic_remainder_congruence_requirement(
+  comparison: SemanticNode,
+  branch_value: boolean,
+  ranges: ReadonlyMap<ValueId, { signed: boolean; width: number }>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): SemanticMachineRequirement | undefined {
+  const equality = semantic_comparison_requirement(
+    comparison,
+    branch_value,
+    ranges,
+    producers,
+  );
+  if (
+    equality?.tag !== "fact" ||
+    equality.proposition.tag !== "equal"
+  ) {
+    return undefined;
+  }
+  const remainder = resolved_alias(equality.proposition.value, aliases);
+  if (remainder === undefined) return undefined;
+  const operation = producers.get(remainder);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.inputs.length !== 2 ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== remainder
+  ) {
+    return undefined;
+  }
+  const dividend = operation.inputs[0];
+  const divisor_value = operation.inputs[1];
+  if (dividend === undefined || divisor_value === undefined) return undefined;
+  const dividend_range = ranges.get(dividend);
+  const divisor_range = ranges.get(divisor_value);
+  const remainder_range = ranges.get(remainder);
+  if (
+    dividend_range === undefined || divisor_range === undefined ||
+    remainder_range === undefined ||
+    dividend_range.signed !== divisor_range.signed ||
+    dividend_range.width !== divisor_range.width ||
+    dividend_range.signed !== remainder_range.signed ||
+    dividend_range.width !== remainder_range.width
+  ) {
+    return undefined;
+  }
+  const val_type = integer_val_type(dividend_range);
+  if (val_type === undefined) return undefined;
+  let primitive = val_type + ".rem_u";
+  if (dividend_range.signed) primitive = val_type + ".rem_s";
+  if (operation.operation.name !== primitive) return undefined;
+  const produced_divisor = produced_integer_constant(
+    divisor_value,
+    producers,
+  );
+  if (produced_divisor === undefined) return undefined;
+  let divisor = normalize_integer(divisor_range, produced_divisor);
+  if (divisor === 0n) return undefined;
+  if (divisor < 0n) divisor = -divisor;
+  let residue = equality.proposition.expected % divisor;
+  if (residue < 0n) residue += divisor;
+  return {
+    tag: "congruence",
+    value: dividend,
+    modulus: divisor,
+    residue,
+  };
+}
+
 function semantic_range_requirement(
   comparison: SemanticNode,
   branch_value: boolean,
@@ -1170,6 +1281,14 @@ function assume_machine_requirement(
       requirement.known_one,
     );
   }
+  if (requirement.tag === "congruence") {
+    return assume_machine_congruence(
+      domain,
+      requirement.value,
+      requirement.modulus,
+      requirement.residue,
+    );
+  }
   return exclude_machine_fact(domain, {
     tag: "equal",
     value: requirement.value,
@@ -1190,6 +1309,14 @@ function machine_requirement_holds(
       requirement.value,
       requirement.known_zero,
       requirement.known_one,
+    );
+  }
+  if (requirement.tag === "congruence") {
+    return implies_machine_congruence(
+      domain,
+      requirement.value,
+      requirement.modulus,
+      requirement.residue,
     );
   }
   return machine_excludes_equal(

@@ -1756,6 +1756,31 @@ function verified_branch_hypotheses(
       certificate,
     };
   }
+  const congruence_requirement = prefix_remainder_congruence_requirement(
+    normalized,
+    binding_values,
+  );
+  if (congruence_requirement !== undefined) {
+    const certificate = infer_semantic_machine_certificate(
+      candidate,
+      call_span,
+      congruence_requirement,
+    );
+    if (
+      certificate !== undefined &&
+      verify_semantic_machine_certificate(
+        certificate,
+        candidate,
+        call_span,
+        congruence_requirement,
+      )
+    ) {
+      return {
+        propositions: [proposition],
+        certificate,
+      };
+    }
+  }
   for (
     const divisibility_requirement
       of prefix_remainder_divisibility_requirements(
@@ -2456,6 +2481,46 @@ function prefix_remainder_divisibility_requirements(
     }
   }
   return requirements;
+}
+
+function prefix_remainder_congruence_requirement(
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+): SemanticMachineRequirement | undefined {
+  if (proposition.tag !== "equal") return undefined;
+  let expression = proposition.left;
+  let expected_term = proposition.right;
+  if (
+    expression.shape.tag !== "binary" ||
+    expression.shape.operator !== "%"
+  ) {
+    expression = proposition.right;
+    expected_term = proposition.left;
+  }
+  if (
+    expression.shape.tag !== "binary" ||
+    expression.shape.operator !== "%"
+  ) {
+    return undefined;
+  }
+  const value = prefix_semantic_value(
+    expression.shape.left,
+    binding_values,
+  );
+  const modulus = prefix_integer_constant(expression.shape.right);
+  const expected = prefix_integer_constant(expected_term);
+  if (
+    value === undefined || modulus === undefined || expected === undefined ||
+    modulus <= 0n || expected !== 0n
+  ) {
+    return undefined;
+  }
+  return {
+    tag: "congruence",
+    value,
+    modulus,
+    residue: 0n,
+  };
 }
 
 function prefix_integer_constant(term: PrefixTerm): bigint | undefined {
