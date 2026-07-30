@@ -5,6 +5,7 @@ import {
   type IntegerType,
   normalize_integer,
 } from "../integer.ts";
+import { proof_limits } from "./proof_limits.ts";
 
 export type ScalarFact =
   | { tag: "bottom" }
@@ -213,6 +214,28 @@ export function implies_machine_fact(
   return fact_implies(current, machine_proposition_fact(proposition, range));
 }
 
+export function machine_excludes_equal(
+  domain: MachineFactDomain,
+  value: ValueId,
+  expected: bigint,
+): boolean {
+  assert_machine_domain(domain);
+  const range = domain.ranges.get(value);
+  if (range === undefined) {
+    throw new Error(`Missing machine range for ${value}.`);
+  }
+  if (!domain.reachable) return false;
+  const bounds = machine_range(range);
+  if (expected < bounds.minimum || expected > bounds.maximum) return true;
+  const exclusions = domain.exclusions.get(value);
+  if (exclusions?.includes(expected)) return true;
+  const current = domain.facts.get(value);
+  if (current === undefined || current.tag === "unknown") return false;
+  if (current.tag === "bottom") return false;
+  if (current.tag === "exact") return current.value !== expected;
+  return expected < current.minimum || expected > current.maximum;
+}
+
 export function exclude_machine_fact(
   domain: MachineFactDomain,
   proposition: FactProposition,
@@ -248,7 +271,11 @@ export function exclude_machine_fact(
     let existing: readonly bigint[] = [];
     if (known_exclusions !== undefined) existing = known_exclusions;
     if (existing.includes(proposition.expected)) return domain;
-    if (existing.length >= MAX_EXCLUSIONS) return domain;
+    if (
+      existing.length >= proof_limits.maximum_exclusions_per_value
+    ) {
+      return domain;
+    }
     const exclusions = new Map(domain.exclusions);
     exclusions.set(
       proposition.value,
@@ -292,7 +319,11 @@ function apply_exclusions(
   if (canonical.tag !== "interval") return canonical;
   const bounds = machine_range(range);
   const size = canonical.maximum - canonical.minimum + 1n;
-  if (size > BigInt(MAX_EXCLUSIONS)) return canonical;
+  if (
+    size > BigInt(proof_limits.maximum_exclusions_per_value)
+  ) {
+    return canonical;
+  }
   for (
     let candidate = canonical.minimum;
     candidate <= canonical.maximum;
@@ -320,7 +351,12 @@ function remaining_singleton(
   }
   if (canonical.tag !== "interval") return undefined;
   const size = canonical.maximum - canonical.minimum + 1n;
-  if (size < 1n || size > BigInt(MAX_EXCLUSIONS)) return undefined;
+  if (
+    size < 1n ||
+    size > BigInt(proof_limits.maximum_exclusions_per_value)
+  ) {
+    return undefined;
+  }
   let remaining: bigint | undefined;
   for (
     let candidate = canonical.minimum;
@@ -880,4 +916,3 @@ function freeze_fact(fact: ScalarFact): ScalarFact {
 }
 
 const MAX_INTEGER = (1n << 127n) - 1n;
-const MAX_EXCLUSIONS = 16;

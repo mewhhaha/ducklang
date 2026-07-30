@@ -1,4 +1,6 @@
 import { expect } from "../expect.ts";
+import { integer_type_from_name } from "../integer.ts";
+import { specialize_prim_for_integer } from "../op.ts";
 import type { FrontExpr, Pattern, Source, Stmt } from "./ast.ts";
 import type { BabaCstNode, BabaSourceNodeId } from "./baba_parser.ts";
 import type { BindingEntity, BindingIndex, EntityId } from "./binding_index.ts";
@@ -1288,10 +1290,28 @@ function lower_expression(
       context,
     );
     if (operands.tag === "terminated") return operands;
+    let primitive = expression.prim;
+    const left = operands.values[0];
+    const right = operands.values[1];
+    expect(left !== undefined, "Primitive left operand was not lowered.");
+    expect(right !== undefined, "Primitive right operand was not lowered.");
+    const left_type = context.value_types.get(left);
+    const right_type = context.value_types.get(right);
+    expect(left_type !== undefined, "Primitive left operand lost its type.");
+    expect(right_type !== undefined, "Primitive right operand lost its type.");
+    if (
+      left_type.tag === "scalar" && right_type.tag === "scalar" &&
+      left_type.name === right_type.name
+    ) {
+      const integer = integer_type_from_name(left_type.name);
+      if (integer !== undefined) {
+        primitive = specialize_prim_for_integer(primitive, integer.signed);
+      }
+    }
     const value = emit_operation(
       operands.block,
       expression,
-      { tag: "primitive", name: expression.prim },
+      { tag: "primitive", name: primitive },
       operands.values,
       type,
       undefined,

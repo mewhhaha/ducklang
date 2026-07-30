@@ -191,6 +191,49 @@ Deno.test(
   },
 );
 
+Deno.test("Duck compiler erases short-circuit FactGraph proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value < 20) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32, ready: I32) -> I32\n" +
+    "let guarded = (actual, ready) => " +
+    "if actual < 10 && ready != 0 then consume actual else 0 end;\n" +
+    "guarded (5, 1)\n";
+  const plain_source = "let consume = actual => actual;\n" +
+    "let guarded = (actual, ready) => " +
+    "if actual < 10 && ready != 0 then consume actual else 0 end;\n" +
+    "guarded (5, 1)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 5 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler preserves unsigned comparison semantics for proved branches", async () => {
+  const source = "type consume = " +
+    "(value: U32, evidence: Proof 10u32 <= value) -> I32\n" +
+    "let consume = (actual, evidence) => 7;\n" +
+    "type guarded = (value: U32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual < 10u32 then 1 else consume actual end;\n" +
+    "guarded 4294967295u32\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 7 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
     "type merge = (choice: Proof True or True) -> Proof True\n" +

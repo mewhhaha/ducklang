@@ -1,0 +1,710 @@
+import { expect } from "../expect.ts";
+import {
+  integer_maximum,
+  integer_minimum,
+  integer_type_from_name,
+  integer_val_type,
+  type IntegerType,
+} from "../integer.ts";
+import type { FactProposition } from "./fact_graph.ts";
+import { proof_limits } from "./proof_limits.ts";
+import {
+  type SemanticBlock,
+  type SemanticBlockId,
+  type SemanticCfg,
+  type SemanticNode,
+  unique_semantic_call_at_span,
+} from "./semantic_cfg.ts";
+import type { ValueId } from "./semantic_identity.ts";
+import type { SourceSpan } from "./syntax.ts";
+
+export type SemanticMachineRequirement =
+  | { tag: "fact"; proposition: FactProposition }
+  | { tag: "exclusion"; value: ValueId; expected: bigint };
+
+export type SemanticMachineCertificate = {
+  tag: "machine_fact";
+  call_span: SourceSpan;
+  requirement: SemanticMachineRequirement;
+};
+
+type VerificationState = {
+  block: SemanticBlockId;
+  predecessor: SemanticBlockId | undefined;
+  booleans: ReadonlyMap<ValueId, boolean>;
+  premises: readonly SemanticMachineRequirement[];
+  visited: ReadonlySet<SemanticBlockId>;
+};
+
+type IntervalState = {
+  minimum: bigint;
+  maximum: bigint;
+  exclusions: Set<bigint>;
+  contradiction: boolean;
+};
+
+export function semantic_machine_certificate(
+  call_span: SourceSpan,
+  requirement: SemanticMachineRequirement,
+): SemanticMachineCertificate {
+  return Object.freeze({
+    tag: "machine_fact",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    requirement: snapshot_machine_requirement(requirement),
+  });
+}
+
+export function verify_semantic_machine_certificate(
+  certificate: SemanticMachineCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticMachineRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic machine certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "machine_fact",
+    "Semantic machine certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    !same_machine_requirement(certificate.requirement, requirement)
+  ) {
+    return false;
+  }
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (target === undefined) return false;
+  const ranges = machine_ranges(control_flow);
+  const goal_value = requirement_value(requirement);
+  const goal_range = ranges.get(goal_value);
+  if (goal_range === undefined) return false;
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  const producers = semantic_value_producers(control_flow);
+  const reaches_target = blocks_reaching_target(target.block.id, blocks);
+  const entry_counts = new Map<SemanticBlockId, number>();
+  entry_counts.set(control_flow.entry, 1);
+  const pending: VerificationState[] = [{
+    block: control_flow.entry,
+    predecessor: undefined,
+    booleans: new Map(),
+    premises: [],
+    visited: new Set(),
+  }];
+  let feasible_paths = 0;
+  let steps = 0;
+  while (pending.length > 0) {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) return false;
+    const state = pending.pop();
+    expect(state !== undefined, "Semantic certificate worklist disappeared.");
+    if (state.visited.has(state.block)) return false;
+    const visited = new Set(state.visited);
+    visited.add(state.block);
+    if (visited.size > proof_limits.compiler_search_depth) return false;
+    const block = blocks.get(state.block);
+    if (block === undefined) return false;
+    const booleans = transfer_boolean_values(
+      block,
+      state.predecessor,
+      state.booleans,
+      target.node,
+    );
+    let reached_call = false;
+    for (const node of block.nodes) {
+      steps += 1;
+      if (steps > proof_limits.compiler_search_steps) return false;
+      if (node !== target.node) continue;
+      reached_call = true;
+      if (premises_are_contradictory(state.premises, ranges)) break;
+      const interval = interval_from_premises(
+        state.premises,
+        goal_value,
+        goal_range,
+      );
+      if (interval.contradiction) break;
+      feasible_paths += 1;
+      if (!interval_implies_requirement(interval, requirement)) return false;
+      break;
+    }
+    if (reached_call || block.id === target.block.id) continue;
+    if (block.terminator.tag !== "branch") {
+      for (const successor of block.successors) {
+        if (!reaches_target.has(successor)) continue;
+        if (
+          !enqueue_verification_state(
+            pending,
+            entry_counts,
+            {
+              block: successor,
+              predecessor: block.id,
+              booleans,
+              premises: state.premises,
+              visited,
+            },
+          )
+        ) {
+          return false;
+        }
+      }
+      continue;
+    }
+    const comparison = producers.get(block.terminator.condition);
+    let known_condition = booleans.get(block.terminator.condition);
+    if (known_condition === undefined && comparison !== undefined) {
+      known_condition = verified_comparison_truth(
+        comparison,
+        ranges,
+        producers,
+      );
+    }
+    for (
+      const [branch_value, successor] of [
+        [true, block.terminator.when_true],
+        [false, block.terminator.when_false],
+      ] as const
+    ) {
+      if (!reaches_target.has(successor)) continue;
+      if (
+        known_condition !== undefined && known_condition !== branch_value
+      ) {
+        continue;
+      }
+      const premises = [...state.premises];
+      if (comparison !== undefined) {
+        const premise = verified_comparison_requirement(
+          comparison,
+          branch_value,
+          ranges,
+          producers,
+        );
+        if (premise !== undefined) premises.push(premise);
+      }
+      if (
+        !enqueue_verification_state(
+          pending,
+          entry_counts,
+          {
+            block: successor,
+            predecessor: block.id,
+            booleans,
+            premises,
+            visited,
+          },
+        )
+      ) {
+        return false;
+      }
+    }
+  }
+  return feasible_paths > 0;
+}
+
+function snapshot_machine_requirement(
+  requirement: SemanticMachineRequirement,
+): SemanticMachineRequirement {
+  if (requirement.tag === "exclusion") {
+    return Object.freeze({
+      tag: "exclusion",
+      value: requirement.value,
+      expected: requirement.expected,
+    });
+  }
+  return Object.freeze({
+    tag: "fact",
+    proposition: Object.freeze({ ...requirement.proposition }),
+  });
+}
+
+function same_machine_requirement(
+  left: SemanticMachineRequirement,
+  right: SemanticMachineRequirement,
+): boolean {
+  if (left.tag !== right.tag) return false;
+  if (left.tag === "exclusion" && right.tag === "exclusion") {
+    return left.value === right.value && left.expected === right.expected;
+  }
+  if (left.tag !== "fact" || right.tag !== "fact") return false;
+  if (
+    left.proposition.tag !== right.proposition.tag ||
+    left.proposition.value !== right.proposition.value
+  ) {
+    return false;
+  }
+  if (
+    left.proposition.tag === "equal" &&
+    right.proposition.tag === "equal"
+  ) {
+    return left.proposition.expected === right.proposition.expected;
+  }
+  if (
+    left.proposition.tag === "equal" ||
+    right.proposition.tag === "equal"
+  ) {
+    return false;
+  }
+  return left.proposition.bound === right.proposition.bound;
+}
+
+function machine_ranges(
+  control_flow: SemanticCfg,
+): ReadonlyMap<ValueId, IntegerType> {
+  const ranges = new Map<ValueId, IntegerType>();
+  for (const value of control_flow.values) {
+    if (value.type.tag !== "scalar") continue;
+    const range = integer_type_from_name(value.type.name);
+    if (range === undefined || range.width > 128) continue;
+    ranges.set(value.value, range);
+  }
+  return ranges;
+}
+
+function requirement_value(requirement: SemanticMachineRequirement): ValueId {
+  if (requirement.tag === "fact") return requirement.proposition.value;
+  return requirement.value;
+}
+
+function semantic_value_producers(
+  control_flow: SemanticCfg,
+): ReadonlyMap<ValueId, SemanticNode> {
+  const producers = new Map<ValueId, SemanticNode>();
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      for (const output of node.outputs) producers.set(output, node);
+    }
+  }
+  return producers;
+}
+
+function blocks_reaching_target(
+  target: SemanticBlockId,
+  blocks: ReadonlyMap<SemanticBlockId, SemanticBlock>,
+): ReadonlySet<SemanticBlockId> {
+  const reachable = new Set<SemanticBlockId>([target]);
+  const pending = [target];
+  while (pending.length > 0) {
+    const block_id = pending.pop();
+    if (block_id === undefined) break;
+    const block = blocks.get(block_id);
+    if (block === undefined) continue;
+    for (const predecessor of block.predecessors) {
+      if (reachable.has(predecessor)) continue;
+      reachable.add(predecessor);
+      pending.push(predecessor);
+    }
+  }
+  return reachable;
+}
+
+function enqueue_verification_state(
+  pending: VerificationState[],
+  entry_counts: Map<SemanticBlockId, number>,
+  state: VerificationState,
+): boolean {
+  let count = 1;
+  const previous = entry_counts.get(state.block);
+  if (previous !== undefined) count = previous + 1;
+  if (count > proof_limits.maximum_formula_disjuncts) return false;
+  entry_counts.set(state.block, count);
+  pending.push(state);
+  return true;
+}
+
+function transfer_boolean_values(
+  block: SemanticBlock,
+  predecessor: SemanticBlockId | undefined,
+  current: ReadonlyMap<ValueId, boolean>,
+  target: SemanticNode,
+): ReadonlyMap<ValueId, boolean> {
+  const booleans = new Map(current);
+  for (const node of block.nodes) {
+    if (node === target) break;
+    const output = node.outputs[0];
+    if (output === undefined) continue;
+    if (
+      node.operation.tag === "constant" &&
+      typeof node.operation.value === "boolean"
+    ) {
+      booleans.set(output, node.operation.value);
+      continue;
+    }
+    if (node.operation.tag !== "phi" || predecessor === undefined) continue;
+    const incoming = node.operation.incoming.find((candidate) =>
+      candidate.predecessor === predecessor
+    );
+    if (incoming === undefined) continue;
+    const value = booleans.get(incoming.value);
+    if (value !== undefined) booleans.set(output, value);
+  }
+  return booleans;
+}
+
+function verified_comparison_requirement(
+  comparison: SemanticNode,
+  branch_value: boolean,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): SemanticMachineRequirement | undefined {
+  if (
+    comparison.operation.tag !== "primitive" ||
+    comparison.inputs.length !== 2
+  ) {
+    return undefined;
+  }
+  const left = comparison.inputs[0];
+  const right = comparison.inputs[1];
+  if (left === undefined || right === undefined) return undefined;
+  const left_range = ranges.get(left);
+  const right_range = ranges.get(right);
+  if (
+    left_range === undefined || right_range === undefined ||
+    !same_integer_type(left_range, right_range) ||
+    !comparison_primitive_matches_integer_type(
+      comparison.operation.name,
+      left_range,
+    )
+  ) {
+    return undefined;
+  }
+  let relation:
+    | "equal"
+    | "not_equal"
+    | "less"
+    | "less_equal";
+  let expected_left = left;
+  let expected_right = right;
+  const primitive = comparison.operation.name;
+  if (primitive.endsWith(".eq")) {
+    relation = "not_equal";
+    if (branch_value) relation = "equal";
+  } else if (primitive.endsWith(".ne")) {
+    relation = "equal";
+    if (branch_value) relation = "not_equal";
+  } else if (
+    primitive.endsWith(".lt_s") || primitive.endsWith(".lt_u")
+  ) {
+    relation = "less";
+    if (!branch_value) {
+      relation = "less_equal";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else if (
+    primitive.endsWith(".le_s") || primitive.endsWith(".le_u")
+  ) {
+    relation = "less_equal";
+    if (!branch_value) {
+      relation = "less";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else if (
+    primitive.endsWith(".gt_s") || primitive.endsWith(".gt_u")
+  ) {
+    relation = "less_equal";
+    if (branch_value) {
+      relation = "less";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else if (
+    primitive.endsWith(".ge_s") || primitive.endsWith(".ge_u")
+  ) {
+    relation = "less";
+    if (branch_value) {
+      relation = "less_equal";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else {
+    return undefined;
+  }
+  return verified_constant_comparison(
+    relation,
+    expected_left,
+    expected_right,
+    ranges,
+    producers,
+  );
+}
+
+function verified_comparison_truth(
+  comparison: SemanticNode,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): boolean | undefined {
+  if (
+    comparison.operation.tag !== "primitive" ||
+    comparison.inputs.length !== 2
+  ) {
+    return undefined;
+  }
+  const left = comparison.inputs[0];
+  const right = comparison.inputs[1];
+  if (left === undefined || right === undefined) return undefined;
+  const left_constant = verified_integer_constant(left, producers);
+  const right_constant = verified_integer_constant(right, producers);
+  const left_range = ranges.get(left);
+  const right_range = ranges.get(right);
+  if (
+    left_constant === undefined || right_constant === undefined ||
+    left_range === undefined || right_range === undefined ||
+    !same_integer_type(left_range, right_range) ||
+    !comparison_primitive_matches_integer_type(
+      comparison.operation.name,
+      left_range,
+    )
+  ) {
+    return undefined;
+  }
+  const primitive = comparison.operation.name;
+  if (primitive.endsWith(".eq")) return left_constant === right_constant;
+  if (primitive.endsWith(".ne")) return left_constant !== right_constant;
+  if (
+    primitive.endsWith(".lt_s") || primitive.endsWith(".lt_u")
+  ) {
+    return left_constant < right_constant;
+  }
+  if (
+    primitive.endsWith(".le_s") || primitive.endsWith(".le_u")
+  ) {
+    return left_constant <= right_constant;
+  }
+  if (
+    primitive.endsWith(".gt_s") || primitive.endsWith(".gt_u")
+  ) {
+    return left_constant > right_constant;
+  }
+  if (
+    primitive.endsWith(".ge_s") || primitive.endsWith(".ge_u")
+  ) {
+    return left_constant >= right_constant;
+  }
+  return undefined;
+}
+
+function verified_constant_comparison(
+  relation: "equal" | "not_equal" | "less" | "less_equal",
+  left: ValueId,
+  right: ValueId,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): SemanticMachineRequirement | undefined {
+  const left_constant = verified_integer_constant(left, producers);
+  const right_constant = verified_integer_constant(right, producers);
+  const left_range = ranges.get(left);
+  const right_range = ranges.get(right);
+  if (
+    right_constant !== undefined && left_range !== undefined &&
+    right_range !== undefined && same_integer_type(left_range, right_range)
+  ) {
+    return verified_value_constant_requirement(
+      relation,
+      left,
+      right_constant,
+      false,
+    );
+  }
+  if (
+    left_constant !== undefined && right_range !== undefined &&
+    left_range !== undefined && same_integer_type(left_range, right_range)
+  ) {
+    return verified_value_constant_requirement(
+      relation,
+      right,
+      left_constant,
+      true,
+    );
+  }
+  return undefined;
+}
+
+function verified_integer_constant(
+  value: ValueId,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): bigint | undefined {
+  const producer = producers.get(value);
+  if (producer?.operation.tag !== "constant") return undefined;
+  const constant = producer.operation.value;
+  if (typeof constant === "bigint") return constant;
+  if (typeof constant !== "number" || !Number.isSafeInteger(constant)) {
+    return undefined;
+  }
+  return BigInt(constant);
+}
+
+function same_integer_type(left: IntegerType, right: IntegerType): boolean {
+  return left.signed === right.signed && left.width === right.width;
+}
+
+function comparison_primitive_matches_integer_type(
+  primitive: string,
+  type: IntegerType,
+): boolean {
+  const val_type = integer_val_type(type);
+  if (val_type === undefined || !primitive.startsWith(val_type + ".")) {
+    return false;
+  }
+  const operation = primitive.slice(val_type.length + 1);
+  if (operation === "eq" || operation === "ne") return true;
+  if (
+    operation === "lt_s" || operation === "le_s" ||
+    operation === "gt_s" || operation === "ge_s"
+  ) {
+    return type.signed;
+  }
+  if (
+    operation === "lt_u" || operation === "le_u" ||
+    operation === "gt_u" || operation === "ge_u"
+  ) {
+    return !type.signed;
+  }
+  return false;
+}
+
+function verified_value_constant_requirement(
+  relation: "equal" | "not_equal" | "less" | "less_equal",
+  value: ValueId,
+  expected: bigint,
+  constant_is_left: boolean,
+): SemanticMachineRequirement {
+  if (relation === "equal") {
+    return {
+      tag: "fact",
+      proposition: { tag: "equal", value, expected },
+    };
+  }
+  if (relation === "not_equal") {
+    return { tag: "exclusion", value, expected };
+  }
+  if (relation === "less") {
+    if (constant_is_left) {
+      return {
+        tag: "fact",
+        proposition: { tag: "greater_than", value, bound: expected },
+      };
+    }
+    return {
+      tag: "fact",
+      proposition: { tag: "less_than", value, bound: expected },
+    };
+  }
+  if (constant_is_left) {
+    return {
+      tag: "fact",
+      proposition: { tag: "greater_equal", value, bound: expected },
+    };
+  }
+  return {
+    tag: "fact",
+    proposition: { tag: "less_equal", value, bound: expected },
+  };
+}
+
+function interval_from_premises(
+  premises: readonly SemanticMachineRequirement[],
+  value: ValueId,
+  range: IntegerType,
+): IntervalState {
+  let minimum = integer_minimum(range);
+  let maximum = integer_maximum(range);
+  const exclusions = new Set<bigint>();
+  for (const premise of premises) {
+    if (requirement_value(premise) !== value) continue;
+    if (premise.tag === "exclusion") {
+      exclusions.add(premise.expected);
+      continue;
+    }
+    const proposition = premise.proposition;
+    if (proposition.tag === "equal") {
+      if (proposition.expected > minimum) minimum = proposition.expected;
+      if (proposition.expected < maximum) maximum = proposition.expected;
+      continue;
+    }
+    if (proposition.tag === "less_than") {
+      const bound = proposition.bound - 1n;
+      if (bound < maximum) maximum = bound;
+      continue;
+    }
+    if (proposition.tag === "less_equal") {
+      if (proposition.bound < maximum) maximum = proposition.bound;
+      continue;
+    }
+    if (proposition.tag === "greater_than") {
+      const bound = proposition.bound + 1n;
+      if (bound > minimum) minimum = bound;
+      continue;
+    }
+    if (proposition.bound > minimum) minimum = proposition.bound;
+  }
+  let contradiction = minimum > maximum;
+  if (!contradiction && minimum === maximum && exclusions.has(minimum)) {
+    contradiction = true;
+  }
+  if (!contradiction) {
+    const size = maximum - minimum + 1n;
+    if (
+      size > 0n &&
+      size <= BigInt(proof_limits.maximum_exclusions_per_value)
+    ) {
+      let exhausted = true;
+      for (let candidate = minimum; candidate <= maximum; candidate += 1n) {
+        if (exclusions.has(candidate)) continue;
+        exhausted = false;
+        break;
+      }
+      if (exhausted) contradiction = true;
+    }
+  }
+  return { minimum, maximum, exclusions, contradiction };
+}
+
+function premises_are_contradictory(
+  premises: readonly SemanticMachineRequirement[],
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+): boolean {
+  const values = new Set(premises.map(requirement_value));
+  for (const value of values) {
+    const range = ranges.get(value);
+    if (range === undefined) continue;
+    if (interval_from_premises(premises, value, range).contradiction) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function interval_implies_requirement(
+  interval: IntervalState,
+  requirement: SemanticMachineRequirement,
+): boolean {
+  if (interval.contradiction) return true;
+  if (requirement.tag === "exclusion") {
+    return requirement.expected < interval.minimum ||
+      requirement.expected > interval.maximum ||
+      interval.exclusions.has(requirement.expected);
+  }
+  const proposition = requirement.proposition;
+  if (proposition.tag === "equal") {
+    return interval.minimum === proposition.expected &&
+      interval.maximum === proposition.expected &&
+      !interval.exclusions.has(proposition.expected);
+  }
+  if (proposition.tag === "less_than") {
+    return interval.maximum < proposition.bound;
+  }
+  if (proposition.tag === "less_equal") {
+    return interval.maximum <= proposition.bound;
+  }
+  if (proposition.tag === "greater_than") {
+    return interval.minimum > proposition.bound;
+  }
+  return interval.minimum >= proposition.bound;
+}

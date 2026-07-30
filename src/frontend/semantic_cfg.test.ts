@@ -1,5 +1,8 @@
 import { assert_equals, assert_throws } from "../assert.ts";
-import { SemanticCfgBuilder } from "./semantic_cfg.ts";
+import {
+  SemanticCfgBuilder,
+  unique_semantic_call_at_span,
+} from "./semantic_cfg.ts";
 import type { ValueId } from "./semantic_identity.ts";
 import type { RepresentationType } from "./representation_type.ts";
 
@@ -92,6 +95,42 @@ Deno.test("semantic CFG preserves typed operations and stable value identities",
     start: 0,
     end: 1,
   });
+});
+
+Deno.test("semantic CFG call lookup rejects reused source spans", () => {
+  const builder = new SemanticCfgBuilder("duplicate-call-span");
+  const entry = builder.add_block(origin);
+  const value = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (value === undefined) throw new Error("missing call argument");
+  const call_span = { start: 2, end: 8 };
+  builder.add_node(
+    entry,
+    origin,
+    call_span,
+    { tag: "call", function_name: "first" },
+    [value],
+    [i32_type],
+  );
+  const result = builder.add_node(
+    entry,
+    origin,
+    call_span,
+    { tag: "call", function_name: "second" },
+    [value],
+    [i32_type],
+  )[0];
+  builder.terminate(entry, { tag: "return", value: result });
+  assert_equals(
+    unique_semantic_call_at_span(builder.finish(), call_span),
+    undefined,
+  );
 });
 
 Deno.test("semantic CFG parameters are typed values available from entry", () => {

@@ -80,6 +80,27 @@ export type SemanticCfg = {
   blocks: readonly SemanticBlock[];
 };
 
+export function unique_semantic_call_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): { block: SemanticBlock; node: SemanticNode } | undefined {
+  let found: { block: SemanticBlock; node: SemanticNode } | undefined;
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "call" ||
+        node.span.start !== span.start ||
+        node.span.end !== span.end
+      ) {
+        continue;
+      }
+      if (found !== undefined) return undefined;
+      found = { block, node };
+    }
+  }
+  return found;
+}
+
 export type SemanticCallableControlFlow = {
   callable: ValueId;
   parameters: readonly ValueId[];

@@ -6233,7 +6233,10 @@ class DuckCoreLowering {
       this.materialize_type_definition(specialized_name);
       return this.named_type(specialized_name);
     }
-    if (name === "Char" || name === "Int" || name === "I32") {
+    if (
+      name === "Char" || name === "Int" || name === "I32" ||
+      name === "U32"
+    ) {
       return integer_type;
     }
     if (name === "Bool") {

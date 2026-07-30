@@ -1636,6 +1636,157 @@ Deno.test("false greater-than branches do not reverse operands", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
+Deno.test("short-circuit conjunctions retain every required branch fact", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume_left = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume_left = (actual, evidence) => actual;\n" +
+      "type consume_right = " +
+      "(value: I32, evidence: Proof value < 10) -> I32\n" +
+      "let consume_right = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left != 0 && right < 10 then " +
+      "consume_left left + consume_right right else 0 end;\n" +
+      "guarded (5, 7)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 2);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("FactGraph proves weaker bounds from short-circuit branches", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 20) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32, ready: I32) -> I32\n" +
+      "let guarded = (actual, ready) => " +
+      "if actual < 10 && ready != 0 then consume actual else 0 end;\n" +
+      "guarded (5, 1)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("short-circuit ordered facts preserve every machine polarity", () => {
+  for (const value_type of ["I32", "U32"]) {
+    let suffix = "";
+    if (value_type === "U32") suffix = "u32";
+    const bound = "10" + suffix;
+    for (
+      const [condition, true_requirement, false_requirement] of [
+        [`actual < ${bound}`, `value < ${bound}`, `${bound} <= value`],
+        [`actual <= ${bound}`, `value <= ${bound}`, `${bound} < value`],
+        [`actual > ${bound}`, `${bound} < value`, `value <= ${bound}`],
+        [`actual >= ${bound}`, `${bound} <= value`, `value < ${bound}`],
+      ]
+    ) {
+      for (
+        const [requirement, body] of [
+          [
+            true_requirement,
+            `if ${condition} && ready != 0 then consume actual else actual end`,
+          ],
+          [
+            false_requirement,
+            `if ${condition} || ready != 0 then actual else consume actual end`,
+          ],
+        ]
+      ) {
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(value: ${value_type}, evidence: Proof ${requirement}) -> ` +
+            `${value_type}\n` +
+            "let consume = (actual, evidence) => actual;\n" +
+            `type guarded = (value: ${value_type}, ready: I32) -> ` +
+            `${value_type}\n` +
+            `let guarded = (actual, ready) => ${body};\n` +
+            `guarded (5${suffix}, 1)\n`,
+        ));
+        assert_equals(analysis.diagnostics, []);
+        assert_equals(analysis.proofs.size, 1);
+        assert_equals(
+          checked_value(lower_duck_source(analysis)) !== undefined,
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("false disjunction branches retain both negative facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left != 0 || right != 0 then 1 else consume left end;\n" +
+      "guarded (0, 0)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("true disjunction branches do not choose one sufficient fact", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (left: I32, right: I32) -> I32\n" +
+      "let wrong = (left, right) => " +
+      "if left != 0 || right != 0 then consume left else 0 end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("false conjunction branches do not choose one failed fact", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (left: I32, right: I32) -> I32\n" +
+      "let wrong = (left, right) => " +
+      "if left != 0 && right != 0 then 1 else consume left end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("short-circuit facts stay bound to their original ValueId", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 20) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (value: I32, ready: I32) -> I32\n" +
+      "let wrong = (actual, ready) => " +
+      "if actual < 10 && ready != 0 then do " +
+      "actual = 100; consume actual end else 0 end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("comparison evidence does not cross branch joins", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +

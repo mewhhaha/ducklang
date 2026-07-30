@@ -63,6 +63,7 @@ import type {
   SemanticCfg,
   SemanticNode,
 } from "./frontend/semantic_cfg.ts";
+import { unique_semantic_call_at_span } from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
   has_source_span,
@@ -88,6 +89,14 @@ import {
   snapshot_representation_type,
 } from "./frontend/representation_type.ts";
 import type { FactState } from "./frontend/fact_graph.ts";
+import {
+  infer_semantic_machine_certificate,
+  type SemanticMachineRequirement,
+} from "./frontend/semantic_fact_graph.ts";
+import {
+  type SemanticMachineCertificate,
+  verify_semantic_machine_certificate,
+} from "./frontend/semantic_fact_certificate.ts";
 import {
   check_proof,
   instantiate_proposition,
@@ -127,6 +136,7 @@ export type CheckedKernelCertificate = {
   certificate: KernelCertificate;
   environment: KernelEnvironment;
   term_context: KernelContext;
+  semantic_certificate?: SemanticMachineCertificate;
 };
 export type KernelCertificateIndex = ReadonlyMap<
   string,
@@ -1553,11 +1563,12 @@ function check_prefix_call_obligations(
           contract.signature,
           obligation,
           call_span,
-          [...hypotheses, ...branch_hypotheses],
+          [...hypotheses, ...branch_hypotheses.propositions],
           term_types,
           signatures,
           declared_type_names,
           index,
+          branch_hypotheses.certificate,
         ),
       );
     }
@@ -1565,18 +1576,27 @@ function check_prefix_call_obligations(
   return checks;
 }
 
+type VerifiedBranchHypotheses = {
+  propositions: readonly PrefixProposition[];
+  certificate: SemanticMachineCertificate | undefined;
+};
+
 function verified_branch_hypotheses(
   proposition: PrefixProposition,
   call_span: SourceSpan,
   binding_values: ReadonlyMap<EntityId, ValueId>,
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
-): readonly PrefixProposition[] {
+): VerifiedBranchHypotheses {
   const control_flows: SemanticCfg[] = [];
   if (control_flow !== undefined) control_flows.push(control_flow);
   for (const callable of callable_control_flow.values()) {
     control_flows.push(callable.control_flow);
   }
+  const machine_requirement = prefix_machine_requirement(
+    proposition,
+    binding_values,
+  );
   for (const candidate of control_flows) {
     if (
       branch_control_flow_establishes(
@@ -1586,10 +1606,40 @@ function verified_branch_hypotheses(
         binding_values,
       )
     ) {
-      return [proposition];
+      return {
+        propositions: [proposition],
+        certificate: undefined,
+      };
+    }
+    if (
+      machine_requirement !== undefined
+    ) {
+      const certificate = infer_semantic_machine_certificate(
+        candidate,
+        call_span,
+        machine_requirement,
+      );
+      if (certificate !== undefined) {
+        expect(
+          verify_semantic_machine_certificate(
+            certificate,
+            candidate,
+            call_span,
+            machine_requirement,
+          ),
+          "FactGraph produced an invalid semantic machine certificate.",
+        );
+        return {
+          propositions: [proposition],
+          certificate,
+        };
+      }
     }
   }
-  return [];
+  return {
+    propositions: [],
+    certificate: undefined,
+  };
 }
 
 function branch_control_flow_establishes(
@@ -1598,19 +1648,13 @@ function branch_control_flow_establishes(
   call_span: SourceSpan,
   binding_values: ReadonlyMap<EntityId, ValueId>,
 ): boolean {
-  const call_block = control_flow.blocks.find((block) =>
-    block.nodes.some((node) =>
-      node.operation.tag === "call" &&
-      node.span.start === call_span.start &&
-      node.span.end === call_span.end
-    )
-  );
-  if (call_block === undefined) return false;
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (target === undefined) return false;
   const dominators = semantic_block_dominators(control_flow);
-  const call_dominators = dominators.get(call_block.id);
+  const call_dominators = dominators.get(target.block.id);
   expect(
     call_dominators !== undefined,
-    `Call block ${String(call_block.id)} lost its dominators.`,
+    `Call block ${String(target.block.id)} lost its dominators.`,
   );
   const producers = new Map<ValueId, SemanticNode>();
   for (const block of control_flow.blocks) {
@@ -1821,11 +1865,18 @@ function prefix_comparison_operand_matches(
   value: ValueId,
   binding_values: ReadonlyMap<EntityId, ValueId>,
 ): boolean {
-  if (term.shape.tag !== "name") return false;
+  return prefix_semantic_value(term, binding_values) === value;
+}
+
+function prefix_semantic_value(
+  term: PrefixTerm,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+): ValueId | undefined {
+  if (term.shape.tag !== "name") return undefined;
   const prefix = "semantic:";
-  if (!term.shape.name.startsWith(prefix)) return false;
+  if (!term.shape.name.startsWith(prefix)) return undefined;
   const entity = term.shape.name.slice(prefix.length) as EntityId;
-  return binding_values.get(entity) === value;
+  return binding_values.get(entity);
 }
 
 function prefix_constant_matches(
@@ -1836,6 +1887,93 @@ function prefix_constant_matches(
   const literal = parse_number_expr(term.text);
   if (literal.tag !== "num") return false;
   return literal.value === value;
+}
+
+function prefix_machine_requirement(
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+): SemanticMachineRequirement | undefined {
+  if (
+    proposition.tag !== "equal" && proposition.tag !== "not_equal" &&
+    proposition.tag !== "less" && proposition.tag !== "less_equal"
+  ) {
+    return undefined;
+  }
+  const left_value = prefix_semantic_value(
+    proposition.left,
+    binding_values,
+  );
+  const right_value = prefix_semantic_value(
+    proposition.right,
+    binding_values,
+  );
+  const left_constant = prefix_integer_constant(proposition.left);
+  const right_constant = prefix_integer_constant(proposition.right);
+  if (left_value !== undefined && right_constant !== undefined) {
+    return prefix_value_constant_requirement(
+      proposition.tag,
+      left_value,
+      right_constant,
+      false,
+    );
+  }
+  if (right_value !== undefined && left_constant !== undefined) {
+    return prefix_value_constant_requirement(
+      proposition.tag,
+      right_value,
+      left_constant,
+      true,
+    );
+  }
+  return undefined;
+}
+
+function prefix_integer_constant(term: PrefixTerm): bigint | undefined {
+  if (term.shape.tag !== "number") return undefined;
+  const literal = parse_number_expr(term.text);
+  if (literal.tag !== "num") return undefined;
+  if (typeof literal.value === "bigint") return literal.value;
+  if (!Number.isSafeInteger(literal.value)) return undefined;
+  return BigInt(literal.value);
+}
+
+function prefix_value_constant_requirement(
+  relation: "equal" | "not_equal" | "less" | "less_equal",
+  value: ValueId,
+  expected: bigint,
+  constant_is_left: boolean,
+): SemanticMachineRequirement {
+  if (relation === "equal") {
+    return {
+      tag: "fact",
+      proposition: { tag: "equal", value, expected },
+    };
+  }
+  if (relation === "not_equal") {
+    return { tag: "exclusion", value, expected };
+  }
+  if (relation === "less") {
+    if (constant_is_left) {
+      return {
+        tag: "fact",
+        proposition: { tag: "greater_than", value, bound: expected },
+      };
+    }
+    return {
+      tag: "fact",
+      proposition: { tag: "less_than", value, bound: expected },
+    };
+  }
+  if (constant_is_left) {
+    return {
+      tag: "fact",
+      proposition: { tag: "greater_equal", value, bound: expected },
+    };
+  }
+  return {
+    tag: "fact",
+    proposition: { tag: "less_equal", value, bound: expected },
+  };
 }
 
 function enclosing_prefix_runtime_contract(
@@ -1994,6 +2132,7 @@ function check_prefix_call_obligation(
   signatures: readonly PrefixSignature[],
   declared_type_names: ReadonlySet<string>,
   obligation_index: number,
+  semantic_certificate: SemanticMachineCertificate | undefined,
 ): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
   const declarations = new Map<string, KernelType>();
   const term_context: KernelType[] = [];
@@ -2086,6 +2225,7 @@ function check_prefix_call_obligation(
         certificate,
         environment,
         term_context: stable_term_context,
+        semantic_certificate,
       }),
     });
   }

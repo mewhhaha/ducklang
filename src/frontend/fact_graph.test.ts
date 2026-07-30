@@ -13,6 +13,7 @@ import {
   join_facts,
   join_machine_domains,
   join_states,
+  machine_excludes_equal,
   machine_fact_domain,
   machine_fact_evidence,
   machine_range,
@@ -259,6 +260,23 @@ Deno.test("machine false equality branches retain finite exclusions", () => {
   assert_equals(domain.exclusions.get(value), [1n]);
   domain = assume_machine_fact(domain, { tag: "equal", value, expected: 1n });
   assert_equals(domain.reachable, false);
+});
+
+Deno.test("machine equality exclusions imply disequality", () => {
+  let domain = machine_fact_domain(
+    new Map([[value, { width: 3, signed: true }]]),
+  );
+  domain = exclude_machine_fact(domain, { tag: "equal", value, expected: 1n });
+  assert_equals(machine_excludes_equal(domain, value, 1n), true);
+  assert_equals(machine_excludes_equal(domain, value, 2n), false);
+
+  domain = assume_machine_fact(domain, {
+    tag: "greater_equal",
+    value,
+    bound: 2n,
+  });
+  assert_equals(machine_excludes_equal(domain, value, -1n), true);
+  assert_equals(machine_excludes_equal(domain, value, 3n), false);
 });
 
 Deno.test("machine implications use exclusions to recover a singleton", () => {
