@@ -1175,7 +1175,7 @@ Deno.test("checked refinement signatures erase to their base representation", ()
   const refined = analyze_duck_source(parse_duck_source(refined_source));
   const plain = analyze_duck_source(parse_duck_source(plain_source));
   assert_equals(refined.diagnostics, []);
-  assert_equals(refined.proofs.size, 1);
+  assert_equals(refined.proofs.size, 2);
   const refined_program = checked_value(lower_duck_source(refined));
   const plain_program = checked_value(lower_duck_source(plain));
   if (refined_program === undefined || plain_program === undefined) {
@@ -1220,7 +1220,7 @@ Deno.test("checked refinement signatures erase to their base representation", ()
     unchecked_parameter.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2604" &&
       diagnostic.message.includes(
-        "cannot yet synthesize calls requiring parameter refinement",
+        "disproved: call to divide cannot prove parameter refinement",
       )
     ),
     true,
@@ -1308,6 +1308,228 @@ Deno.test("direct proof hypotheses alpha rename and compose", () => {
     checked_value(lower_duck_source(analysis))?.core.statements,
     [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
   );
+});
+
+Deno.test("runtime callables erase explicit proof parameters from Core", () => {
+  const proved = analyze_duck_source(parse_duck_source(
+    "type identity = " +
+      "(value: I32, evidence: Proof value = value) -> I32\n" +
+      "let identity = (actual, evidence) => actual;\n" +
+      "identity 42\n",
+  ));
+  const plain = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> I32\n" +
+      "let identity = actual => actual;\n" +
+      "identity 42\n",
+  ));
+  assert_equals(proved.diagnostics, []);
+  assert_equals(plain.diagnostics, []);
+  assert_equals(proved.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(proved))?.core,
+    checked_value(lower_duck_source(plain))?.core,
+  );
+});
+
+Deno.test("proof-only runtime callables erase to zero parameters", () => {
+  const constant = analyze_duck_source(parse_duck_source(
+    "type constant = (evidence: Proof True) -> I32\n" +
+      "let constant = evidence => 42;\n" +
+      "constant()\n",
+  ));
+  assert_equals(constant.diagnostics, []);
+  assert_equals(
+    checked_value(lower_duck_source(constant))?.core.statements.length,
+    2,
+  );
+});
+
+Deno.test("explicit proof parameters propagate exact contextual evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let forward = (actual, evidence) => consume actual;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected contextual proof evidence to reach Core.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("evidence"),
+    false,
+  );
+});
+
+Deno.test("shadowed values cannot reuse contextual proof evidence", () => {
+  const shadowed = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "let actual = 0;\n" +
+      "consume actual\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    shadowed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(shadowed)), undefined);
+});
+
+Deno.test("erased proof evidence cannot become runtime data", () => {
+  const used = analyze_duck_source(parse_duck_source(
+    "type expose = " +
+      "(value: I32, evidence: Proof value = value) -> I32\n" +
+      "let expose = (actual, evidence) => evidence;\n" +
+      "expose 42\n",
+  ));
+  assert_equals(
+    used.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "Erased proof evidence evidence cannot be used as runtime data",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(used)), undefined);
+});
+
+Deno.test("assignment targets cannot reference erased proof evidence", () => {
+  for (const operator of ["=", ":="]) {
+    const assigned = analyze_duck_source(parse_duck_source(
+      "type expose = (value: I32, evidence: Proof True) -> I32\n" +
+        "let expose = (actual, evidence) => do\n" +
+        `evidence ${operator} true;\n` +
+        "actual\n" +
+        "end;\n" +
+        "expose 42\n",
+    ));
+    assert_equals(
+      assigned.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(
+          "Erased proof evidence evidence cannot be used as runtime data",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(assigned)), undefined);
+  }
+});
+
+Deno.test("shadowed proof parameter names remain runtime values", () => {
+  const shadowed = analyze_duck_source(parse_duck_source(
+    "type expose = (value: I32, evidence: Proof True) -> I32\n" +
+      "let expose = (actual, evidence) => do\n" +
+      "let evidence = actual;\n" +
+      "evidence\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    shadowed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Erased proof evidence")
+    ),
+    false,
+  );
+});
+
+Deno.test("proof arguments cannot be supplied as runtime values", () => {
+  const supplied = analyze_duck_source(parse_duck_source(
+    "type expose = (evidence: Proof True) -> I32\n" +
+      "let expose = evidence => 42;\n" +
+      "expose true\n",
+  ));
+  assert_equals(
+    supplied.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "erased signature accepts 0; proof arguments are implicit",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(supplied)), undefined);
+});
+
+Deno.test("proof-requiring callables cannot escape unchecked", () => {
+  const escaped = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = value) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "let callback = consume;\n" +
+      "callback\n",
+  ));
+  assert_equals(
+    escaped.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "cannot be used as a runtime value without higher-order contract checking",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(escaped)), undefined);
+});
+
+Deno.test("custom operators reject proof-requiring targets", () => {
+  for (const operands of ["1 === 1", "1 === 2"]) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+        "let consume = (left, right, evidence) => left;\n" +
+        "infixl 60 === = consume\n" +
+        operands + "\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "cannot be a custom fixity target until operator applications support contract checking",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("custom operators reject aliased proof-requiring targets", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let alias = consume;\n" +
+      "infixl 60 === = alias\n" +
+      "1 === 1\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "cannot be a custom fixity target until operator applications support contract checking",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
 Deno.test("direct proof eliminators produce checked kernel terms", () => {
@@ -1869,11 +2091,6 @@ Deno.test("invalid direct proof declarations fail before Core", () => {
         "must express its guarantee in the Proof result",
       ],
       [
-        "type bad = (evidence: Proof True) -> I32\n" +
-        "let bad = evidence => 42;\nbad true\n",
-        "cannot yet erase explicit proof parameter evidence",
-      ],
-      [
         "type bad = () -> Proof True\n" +
         "let bad = () => by true_intro\n" +
         "and runtime = () => 42;\n42\n",
@@ -2187,7 +2404,7 @@ Deno.test("semantic analysis rejects an unsatisfiable literal contract", () => {
   );
 });
 
-Deno.test("requirements are rejected until semantic summaries can carry them", () => {
+Deno.test("requirements are enforced at direct and aliased calls", () => {
   const called = analyze_duck_source(parse_duck_source(
     "type f = (value: I32) -> (result: I32)\n" +
       "requires False\n" +
@@ -2197,7 +2414,9 @@ Deno.test("requirements are rejected until semantic summaries can carry them", (
   assert_equals(
     called.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2604" &&
-      diagnostic.message.includes("cannot yet propagate requires False")
+      diagnostic.message.includes(
+        "disproved: call to f cannot prove requires False",
+      )
     ),
     true,
   );
@@ -2207,13 +2426,7 @@ Deno.test("requirements are rejected until semantic summaries can carry them", (
       "requires False\n" +
       "let f = value => value;\n",
   ));
-  assert_equals(
-    uncalled.diagnostics.some((diagnostic) =>
-      diagnostic.code === "DUCK2604" &&
-      diagnostic.message.includes("cannot yet propagate requires False")
-    ),
-    true,
-  );
+  assert_equals(uncalled.diagnostics, []);
 
   const alias = analyze_duck_source(parse_duck_source(
     "type f = (value: I32) -> (result: I32)\n" +
@@ -2225,7 +2438,9 @@ Deno.test("requirements are rejected until semantic summaries can carry them", (
   assert_equals(
     alias.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2604" &&
-      diagnostic.message.includes("cannot yet propagate requires False")
+      diagnostic.message.includes(
+        "disproved: call to f cannot prove requires False",
+      )
     ),
     true,
   );

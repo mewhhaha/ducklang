@@ -80,6 +80,38 @@ Deno.test("Duck compiler erases checked refinement signatures", async () => {
   }
 });
 
+Deno.test("Duck compiler erases runtime proof parameters", async () => {
+  const proved_source = "type identity = " +
+    "(value: I32, evidence: Proof value = value) -> I32\n" +
+    "let identity = (actual, evidence) => actual;\n" +
+    "identity 42\n";
+  const plain_source = "type identity = (value: I32) -> I32\n" +
+    "let identity = actual => actual;\n" +
+    "identity 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-runtime-proof-",
+  });
+  const path = directory + "/identity.duck";
+  Deno.writeTextFileSync(path, proved_source);
+  try {
+    assert_equals(encode_duck_file(path).nodeWords, plain_module.nodeWords);
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
     "type merge = (choice: Proof True or True) -> Proof True\n" +

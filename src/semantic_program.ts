@@ -27,8 +27,12 @@ import {
   type BabaParseResult,
   is_trusted_baba_parse_result,
 } from "./frontend/baba_parser.ts";
-import type { Source as SourceNode } from "./frontend/ast.ts";
-import type { Stmt } from "./frontend/ast.ts";
+import type {
+  FixityDeclaration,
+  FrontExpr,
+  Source as SourceNode,
+  Stmt,
+} from "./frontend/ast.ts";
 import {
   analyze_baba_semantics,
   type BabaSemanticAnalyzeOptions,
@@ -89,6 +93,7 @@ import {
   lift_proposition,
   type ProofTerm,
   type Proposition,
+  proposition_equal,
 } from "./frontend/proof_kernel.ts";
 import {
   type KernelContext,
@@ -178,6 +183,11 @@ const checked_semantic_program_sources = new WeakMap<
 const weak_map_get = WeakMap.prototype.get;
 const weak_map_set = WeakMap.prototype.set;
 const weak_set_add = WeakSet.prototype.add;
+
+type ProofParameterUsageContext = {
+  source: SourceNode;
+  binding_index: BindingIndex;
+};
 const weak_set_has = WeakSet.prototype.has;
 
 export function is_checked_duck_semantic_program_for_source(
@@ -257,17 +267,42 @@ export function analyze_duck_source(
     source = { tag: "program", statements: [] };
     mark_source_span(source, { start: 0, end: stable_input.cst.text.length });
   }
+  const syntax = baba_source_syntax(stable_input);
+  mark_source_syntax(source, syntax);
+  record_baba_source_name_sites(source, syntax);
+  let proof_parameter_usage: ProofParameterUsageContext | undefined;
+  if (
+    prefix_signatures.some((signature) =>
+      signature.type.result.type.proof === undefined &&
+      signature.type.parameters.some((parameter) =>
+        parameter.type.proof !== undefined
+      )
+    )
+  ) {
+    const usage_lowering = lower_baba_source(stable_input);
+    const usage_source = checked_value(usage_lowering);
+    if (usage_source !== undefined) {
+      mark_source_syntax(usage_source, syntax);
+      record_baba_source_name_sites(usage_source, syntax);
+      proof_parameter_usage = {
+        source: usage_source,
+        binding_index: build_binding_index({
+          source: usage_source,
+          syntax,
+          recovery_intervals: stable_input.recovery_intervals,
+        }),
+      };
+    }
+  }
   const prefix_type_application = apply_prefix_signature_types(
     source,
     stable_input.cst.root,
     stable_input.cst.text,
     prefix_signatures,
     prefix_definitions,
+    proof_parameter_usage,
   );
   const prefix_type_diagnostics = diagnostics_of(prefix_type_application);
-  const syntax = baba_source_syntax(stable_input);
-  mark_source_syntax(source, syntax);
-  record_baba_source_name_sites(source, syntax);
   let analysis_source = source;
   if (options.host_interface !== undefined) {
     analysis_source = source_with_host_interface(
@@ -323,6 +358,7 @@ export function analyze_duck_source(
     source_analysis.source,
     stable_input.cst.root,
     stable_input.cst.text,
+    binding_index,
     symbols,
     types,
     origins,
@@ -400,6 +436,7 @@ function apply_prefix_signature_types(
   source_text: string,
   signatures: readonly PrefixSignature[],
   definitions: readonly PrefixDefinition[],
+  proof_parameter_usage: ProofParameterUsageContext | undefined,
 ): Checked<SourceNode> {
   const applications: Checked<null>[] = [];
   for (const signature of signatures) {
@@ -410,21 +447,6 @@ function apply_prefix_signature_types(
       continue;
     }
     if (signature.type.result.type.proof !== undefined) continue;
-    const proof_parameter = signature.type.parameters.find((parameter) =>
-      parameter.type.proof !== undefined
-    );
-    if (proof_parameter !== undefined) {
-      applications.push(
-        fail(
-          compiler_diagnostic(
-            diagnostic_codes.prefix_proof_invalid,
-            `Prefix signature ${signature.name} cannot yet erase explicit proof parameter ${proof_parameter.name} from a runtime-returning definition.`,
-            proof_parameter.span,
-          ),
-        ),
-      );
-      continue;
-    }
     const definition = definitions.find((candidate) =>
       candidate.name === signature.name &&
       candidate.scope === signature.scope &&
@@ -474,7 +496,27 @@ function apply_prefix_signature_types(
       );
       continue;
     }
-    const parameter_checks = signature.type.parameters.map((parameter) => {
+    const proof_parameter_indices = signature.type.parameters.flatMap(
+      (parameter, index) => {
+        if (parameter.type.proof === undefined) return [];
+        return [index];
+      },
+    );
+    const erased_parameter_usage = check_erased_proof_parameter_usage(
+      signature,
+      definition,
+      proof_parameter_usage,
+    );
+    applications.push(erased_parameter_usage.map(() => null));
+    if (diagnostics_of(erased_parameter_usage).length > 0) continue;
+    erase_callable_proof_parameters(
+      binding.value,
+      proof_parameter_indices,
+    );
+    const runtime_parameters = signature.type.parameters.filter((parameter) =>
+      parameter.type.proof === undefined
+    );
+    const parameter_checks = runtime_parameters.map((parameter) => {
       const type_node = find_cst_node(
         cst_root,
         parameter.type.span,
@@ -562,6 +604,131 @@ function apply_prefix_signature_types(
     );
   }
   return all(applications).map(() => source);
+}
+
+function check_erased_proof_parameter_usage(
+  signature: PrefixSignature,
+  definition: PrefixDefinition,
+  usage: ProofParameterUsageContext | undefined,
+): Checked<undefined> {
+  const proof_parameter_indices = signature.type.parameters.flatMap(
+    (parameter, index) => {
+      if (parameter.type.proof === undefined) return [];
+      return [index];
+    },
+  );
+  if (proof_parameter_indices.length === 0) return ok(undefined);
+  expect(
+    usage !== undefined,
+    `Proof-requiring callable ${signature.name} lost its usage context.`,
+  );
+  const binding = find_source_binding(
+    usage.source,
+    signature.name,
+    definition.span,
+  );
+  expect(
+    binding !== undefined &&
+      (binding.value.tag === "lam" || binding.value.tag === "rec"),
+    `Proof-requiring callable ${signature.name} lost its function value.`,
+  );
+  const binding_index = usage.binding_index;
+  const proof_entities = new Map<
+    EntityId,
+    PrefixSignature["type"]["parameters"][number]
+  >();
+  for (const index of proof_parameter_indices) {
+    const parameter = signature.type.parameters[index];
+    const source_parameter = binding.value.params[index];
+    expect(
+      parameter !== undefined && source_parameter !== undefined,
+      `Proof-requiring callable ${signature.name} lost proof parameter ${index}.`,
+    );
+    let parameter_entity: EntityId | undefined;
+    for (const entity of binding_index.entities.values()) {
+      if (
+        entity.kind === "parameter" &&
+        entity.definition_subject === source_parameter
+      ) {
+        parameter_entity = entity.id;
+        break;
+      }
+    }
+    expect(
+      parameter_entity !== undefined,
+      `Proof-requiring callable ${signature.name} parameter ${source_parameter.name} lost its semantic identity.`,
+    );
+    proof_entities.set(parameter_entity, parameter);
+  }
+  const checks: Checked<undefined>[] = [];
+  const body_span = source_span(binding.value.body);
+  for (const occurrence of binding_index.occurrences.values()) {
+    if (
+      occurrence.span.start < body_span.start ||
+      occurrence.span.end > body_span.end ||
+      occurrence.entity === undefined
+    ) {
+      continue;
+    }
+    let parameter = proof_entities.get(occurrence.entity);
+    const entity = binding_index.entities.get(occurrence.entity);
+    if (
+      parameter === undefined &&
+      occurrence.role === "shadow" &&
+      entity?.replaces !== undefined
+    ) {
+      const subject = entity.definition_subject as { tag?: string };
+      if (subject.tag === "assign" || subject.tag === "index_assign") {
+        parameter = proof_entities.get(entity.replaces);
+      }
+    }
+    if (parameter === undefined) continue;
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          `Erased proof evidence ${occurrence.name} cannot be used as runtime data.`,
+          occurrence.span,
+          [{
+            message: "Proof parameter is declared here.",
+            span: parameter.span,
+          }],
+        ),
+      ),
+    );
+  }
+  return all(checks).map(() => undefined);
+}
+
+function erase_callable_proof_parameters(
+  value: FrontExpr,
+  proof_parameter_indices: readonly number[],
+): void {
+  if (
+    proof_parameter_indices.length === 0 ||
+    (value.tag !== "lam" && value.tag !== "rec")
+  ) {
+    return;
+  }
+  const erased = new Set(proof_parameter_indices);
+  value.params = value.params.filter((_parameter, index) => !erased.has(index));
+  const pattern = value.pattern;
+  if (pattern?.tag !== "product" || pattern.value_pack !== true) {
+    if (value.params.length === 0) value.pattern = { tag: "unit" };
+    return;
+  }
+  pattern.entries = pattern.entries.filter((_entry, index) =>
+    !erased.has(index)
+  );
+  if (pattern.entries.length === 0) {
+    value.pattern = { tag: "unit" };
+    return;
+  }
+  if (pattern.entries.length === 1) {
+    const entry = pattern.entries[0];
+    expect(entry !== undefined, "Erased callable pattern lost its parameter.");
+    value.pattern = entry.pattern;
+  }
 }
 
 function find_source_binding(
@@ -728,6 +895,7 @@ function validate_prefix_contracts(
   source: SourceNode,
   cst_root: BabaCstNode | undefined,
   source_text: string,
+  binding_index: BindingIndex,
   symbols: ReadonlyMap<string, readonly ValueId[]>,
   types: ReadonlyMap<ValueId, RepresentationType>,
   origins: ReadonlyMap<ValueId, SemanticOrigin>,
@@ -962,7 +1130,6 @@ function validate_prefix_contracts(
       check_prefix_requires(
         signature,
         resolved_signatures,
-        source_text,
         declared_type_names,
       ),
       check_prefix_decreases(
@@ -1040,6 +1207,16 @@ function validate_prefix_contracts(
       );
     }
   }
+  checks.push(
+    ...check_prefix_call_obligations(
+      source,
+      source_text,
+      resolved_signatures,
+      resolved_definitions,
+      declared_type_names,
+      binding_index,
+    ),
+  );
   const proofs = new Map<string, CheckedKernelCertificate>();
   for (const check of checks) {
     const proof = checked_value(check);
@@ -1051,6 +1228,933 @@ function validate_prefix_contracts(
     diagnostics: diagnostics_of(all(checks)),
     proofs,
   };
+}
+
+type PrefixRuntimeContract = {
+  signature: PrefixSignature;
+  definition: PrefixDefinition;
+  parameter_terms: ReadonlyMap<string, PrefixTerm>;
+};
+
+type PrefixCallObligation = {
+  proposition: PrefixProposition;
+  source_span: SourceSpan;
+  description: string;
+};
+
+function check_prefix_call_obligations(
+  source: SourceNode,
+  source_text: string,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  declared_type_names: ReadonlySet<string>,
+  binding_index: BindingIndex,
+): Checked<
+  { key: string; proof: CheckedKernelCertificate } | undefined
+>[] {
+  const contracts_by_entity = new Map<EntityId, PrefixRuntimeContract>();
+  const contracts: PrefixRuntimeContract[] = [];
+  for (const signature of signatures) {
+    if (
+      signature.type.result.type.proof !== undefined ||
+      (signature.requires.length === 0 &&
+        !signature.type.parameters.some((parameter) =>
+          parameter.type.proof !== undefined ||
+          parameter.type.refinement !== undefined
+        ))
+    ) {
+      continue;
+    }
+    const definition = definitions.find((candidate) =>
+      candidate.name === signature.name &&
+      candidate.scope === signature.scope &&
+      candidate.span.start >= signature.span.end
+    );
+    if (definition === undefined) continue;
+    const binding = find_source_binding(
+      source,
+      signature.name,
+      definition.span,
+    );
+    if (binding === undefined) continue;
+    const occurrence = binding_index.occurrence_of(binding, "name");
+    if (occurrence?.entity === undefined) continue;
+    expect(
+      binding.value.tag === "lam" || binding.value.tag === "rec",
+      `Proof-requiring callable ${signature.name} lost its function value.`,
+    );
+    const runtime_parameters = signature.type.parameters.filter((parameter) =>
+      parameter.type.proof === undefined
+    );
+    if (binding.value.params.length !== runtime_parameters.length) continue;
+    const parameter_terms = new Map<string, PrefixTerm>();
+    for (let index = 0; index < runtime_parameters.length; index += 1) {
+      const signature_parameter = runtime_parameters[index];
+      const source_parameter = binding.value.params[index];
+      expect(
+        signature_parameter !== undefined && source_parameter !== undefined,
+        `Proof-requiring callable ${signature.name} lost runtime parameter ${index}.`,
+      );
+      let parameter_entity: EntityId | undefined;
+      for (const entity of binding_index.entities.values()) {
+        if (
+          entity.kind === "parameter" &&
+          entity.definition_subject === source_parameter
+        ) {
+          parameter_entity = entity.id;
+          break;
+        }
+      }
+      expect(
+        parameter_entity !== undefined,
+        `Proof-requiring callable ${signature.name} parameter ${source_parameter.name} lost its semantic identity.`,
+      );
+      const semantic_name = logical_entity_name(parameter_entity);
+      parameter_terms.set(signature_parameter.name, {
+        text: source_parameter.name,
+        references: [semantic_name],
+        shape: { tag: "name", name: semantic_name },
+        span: source_span(source_parameter),
+      });
+    }
+    const contract = { signature, definition, parameter_terms };
+    contracts_by_entity.set(occurrence.entity, contract);
+    contracts.push(contract);
+  }
+  if (contracts_by_entity.size === 0) return [];
+
+  const calls: Extract<FrontExpr, { tag: "app" }>[] = [];
+  const aliases: Extract<Stmt, { tag: "bind" }>[] = [];
+  const variables: Extract<FrontExpr, { tag: "var" }>[] = [];
+  const pending: object[] = [source];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Call obligation traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if ("tag" in current && current.tag === "app") {
+      calls.push(current as Extract<FrontExpr, { tag: "app" }>);
+    }
+    if ("tag" in current && current.tag === "var") {
+      variables.push(current as Extract<FrontExpr, { tag: "var" }>);
+    }
+    if (
+      "tag" in current && current.tag === "bind" &&
+      "value" in current &&
+      (current as Extract<Stmt, { tag: "bind" }>).value.tag === "var"
+    ) {
+      aliases.push(current as Extract<Stmt, { tag: "bind" }>);
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        continue;
+      }
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
+  let added_alias = true;
+  while (added_alias) {
+    added_alias = false;
+    for (const alias of aliases) {
+      const alias_occurrence = binding_index.occurrence_of(alias, "name");
+      const target_occurrence = binding_index.occurrence_of(
+        alias.value,
+        "name",
+      );
+      if (
+        alias_occurrence?.entity === undefined ||
+        target_occurrence?.entity === undefined ||
+        contracts_by_entity.has(alias_occurrence.entity)
+      ) {
+        continue;
+      }
+      const contract = contracts_by_entity.get(target_occurrence.entity);
+      if (contract === undefined) continue;
+      contracts_by_entity.set(alias_occurrence.entity, contract);
+      added_alias = true;
+    }
+  }
+  const fixity_declarations: FixityDeclaration[] = [];
+  if (source.declarations !== undefined) {
+    for (const declaration of source.declarations) {
+      if (declaration.tag === "fixity") fixity_declarations.push(declaration);
+    }
+  }
+  for (const declaration of fixity_declarations) {
+    if (
+      declaration.target.startsWith("@syntax.") ||
+      declaration.target.includes(".")
+    ) {
+      continue;
+    }
+    const target = binding_index.visible_at(source_span(declaration).start)
+      .find((entity) => entity.name === declaration.target);
+    if (target === undefined) continue;
+    const contract = contracts_by_entity.get(target.id);
+    if (contract === undefined) continue;
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `Proof-requiring callable ${contract.signature.name} cannot be a custom fixity target until operator applications support contract checking.`,
+          source_span(declaration),
+          [{
+            message: "The proof-requiring signature is here.",
+            span: contract.signature.span,
+          }],
+        ),
+      ),
+    );
+  }
+  const allowed_contract_references = new WeakSet<object>();
+  for (const call of calls) {
+    if (call.func.tag === "var") allowed_contract_references.add(call.func);
+  }
+  for (const alias of aliases) {
+    if (alias.value.tag === "var") {
+      allowed_contract_references.add(alias.value);
+    }
+  }
+  for (const variable of variables) {
+    if (allowed_contract_references.has(variable)) continue;
+    const occurrence = binding_index.occurrence_of(variable, "name");
+    if (
+      occurrence?.entity === undefined ||
+      !contracts_by_entity.has(occurrence.entity)
+    ) {
+      continue;
+    }
+    const contract = contracts_by_entity.get(occurrence.entity);
+    expect(contract !== undefined, "Contract reference lost its signature.");
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `Proof-requiring callable ${contract.signature.name} cannot be used as a runtime value without higher-order contract checking.`,
+          source_span(variable),
+          [{
+            message: "The proof-requiring signature is here.",
+            span: contract.signature.span,
+          }],
+        ),
+      ),
+    );
+  }
+  for (const call of calls) {
+    if (call.func.tag !== "var") continue;
+    const occurrence = binding_index.occurrence_of(call.func, "name");
+    if (occurrence?.entity === undefined) continue;
+    const contract = contracts_by_entity.get(occurrence.entity);
+    if (contract === undefined) continue;
+    const runtime_parameters = contract.signature.type.parameters.filter(
+      (parameter) => parameter.type.proof === undefined,
+    );
+    if (call.args.length !== runtime_parameters.length) {
+      checks.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_proof_invalid,
+            `Call to ${contract.signature.name} supplies ${call.args.length} runtime arguments, but its erased signature accepts ${runtime_parameters.length}; proof arguments are implicit.`,
+            source_span(call),
+            [{
+              message: "The erased signature is here.",
+              span: contract.signature.span,
+            }],
+          ),
+        ),
+      );
+      continue;
+    }
+    const substitutions = new Map<string, PrefixTerm>();
+    const term_types = new Map<string, LogicalTermType>();
+    for (let index = 0; index < runtime_parameters.length; index += 1) {
+      const parameter = runtime_parameters[index];
+      const argument = call.args[index];
+      expect(
+        parameter !== undefined && argument !== undefined,
+        `Call to ${contract.signature.name} lost argument ${index}.`,
+      );
+      const term = prefix_term_from_front_expr(
+        argument,
+        source_text,
+        binding_index,
+      );
+      substitutions.set(parameter.name, term);
+      if (term.shape.tag === "name") {
+        term_types.set(
+          term.shape.name,
+          logical_term_type_from_reference(parameter.type),
+        );
+      }
+      record_front_expr_logical_types(argument, binding_index, term_types);
+    }
+    const caller = enclosing_prefix_runtime_contract(call, contracts);
+    const hypotheses = caller_prefix_hypotheses(caller);
+    for (const [name, type] of caller_prefix_term_types(caller)) {
+      term_types.set(name, type);
+    }
+    const obligations = instantiate_prefix_call_obligations(
+      contract.signature,
+      substitutions,
+    );
+    const call_span = source_span(call);
+    for (let index = 0; index < obligations.length; index += 1) {
+      const obligation = obligations[index];
+      expect(
+        obligation !== undefined,
+        `Call to ${contract.signature.name} lost obligation ${index}.`,
+      );
+      checks.push(
+        check_prefix_call_obligation(
+          contract.signature,
+          obligation,
+          call_span,
+          hypotheses,
+          term_types,
+          signatures,
+          declared_type_names,
+          index,
+        ),
+      );
+    }
+  }
+  return checks;
+}
+
+function enclosing_prefix_runtime_contract(
+  call: FrontExpr,
+  contracts: readonly PrefixRuntimeContract[],
+): PrefixRuntimeContract | undefined {
+  const span = source_span(call);
+  let enclosing: PrefixRuntimeContract | undefined;
+  let width = Number.POSITIVE_INFINITY;
+  for (const contract of contracts) {
+    const body = contract.definition.callable_body;
+    if (
+      body === undefined || body.span.start > span.start ||
+      body.span.end < span.end
+    ) {
+      continue;
+    }
+    const candidate_width = body.span.end - body.span.start;
+    if (candidate_width >= width) continue;
+    enclosing = contract;
+    width = candidate_width;
+  }
+  return enclosing;
+}
+
+function caller_prefix_substitutions(
+  contract: PrefixRuntimeContract | undefined,
+): ReadonlyMap<string, PrefixTerm> {
+  if (contract === undefined) return new Map();
+  return contract.parameter_terms;
+}
+
+function caller_prefix_hypotheses(
+  contract: PrefixRuntimeContract | undefined,
+): readonly PrefixProposition[] {
+  if (contract === undefined) return [];
+  const substitutions = caller_prefix_substitutions(contract);
+  return instantiate_prefix_contract_propositions(
+    contract.signature,
+    substitutions,
+  );
+}
+
+function caller_prefix_term_types(
+  contract: PrefixRuntimeContract | undefined,
+): ReadonlyMap<string, LogicalTermType> {
+  const types = new Map<string, LogicalTermType>();
+  if (contract === undefined) return types;
+  for (const parameter of contract.signature.type.parameters) {
+    if (parameter.type.proof !== undefined) continue;
+    const term = contract.parameter_terms.get(parameter.name);
+    expect(
+      term !== undefined && term.shape.tag === "name",
+      `Callable ${contract.signature.name} parameter ${parameter.name} lost its logical identity.`,
+    );
+    types.set(
+      term.shape.name,
+      logical_term_type_from_reference(parameter.type),
+    );
+  }
+  return types;
+}
+
+function instantiate_prefix_call_obligations(
+  signature: PrefixSignature,
+  substitutions: ReadonlyMap<string, PrefixTerm>,
+): readonly PrefixCallObligation[] {
+  const obligations: PrefixCallObligation[] = [];
+  for (const requirement of signature.requires) {
+    obligations.push({
+      proposition: substitute_prefix_proposition(requirement, substitutions),
+      source_span: requirement.span,
+      description: "requires " + requirement_text(requirement),
+    });
+  }
+  for (const parameter of signature.type.parameters) {
+    if (parameter.type.proof !== undefined) {
+      obligations.push({
+        proposition: substitute_prefix_proposition(
+          parameter.type.proof,
+          substitutions,
+        ),
+        source_span: parameter.type.proof.span,
+        description: "proof parameter " + parameter.name,
+      });
+    }
+    const refinement = parameter.type.refinement;
+    if (refinement === undefined) continue;
+    const renamed = rename_prefix_proposition_reference(
+      refinement.proposition,
+      refinement.binder,
+      parameter.name,
+    );
+    obligations.push({
+      proposition: substitute_prefix_proposition(renamed, substitutions),
+      source_span: refinement.span,
+      description: "parameter refinement " + refinement.text,
+    });
+  }
+  return obligations;
+}
+
+function instantiate_prefix_contract_propositions(
+  signature: PrefixSignature,
+  substitutions: ReadonlyMap<string, PrefixTerm>,
+): readonly PrefixProposition[] {
+  return instantiate_prefix_call_obligations(signature, substitutions).map(
+    (obligation) => obligation.proposition,
+  );
+}
+
+function requirement_text(proposition: PrefixProposition): string {
+  if (proposition.tag === "true") return "True";
+  if (proposition.tag === "false") return "False";
+  if (proposition.tag === "holds") return proposition.value.text;
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    const operators = {
+      equal: "=",
+      not_equal: "!=",
+      less: "<",
+      less_equal: "<=",
+    } as const;
+    return proposition.left.text + " " + operators[proposition.tag] + " " +
+      proposition.right.text;
+  }
+  if (proposition.tag === "is") {
+    return proposition.value.text + " is " + proposition.type.text;
+  }
+  if (proposition.tag === "not") {
+    return "not " + requirement_text(proposition.proposition);
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return requirement_text(proposition.left) + " " + proposition.tag + " " +
+      requirement_text(proposition.right);
+  }
+  if (proposition.tag !== "forall" && proposition.tag !== "exists") {
+    throw new Error("Unknown call obligation proposition.");
+  }
+  return proposition.tag + " (" + proposition.binder.name + ": " +
+    proposition.binder.type.text + "). " +
+    requirement_text(proposition.proposition);
+}
+
+function check_prefix_call_obligation(
+  signature: PrefixSignature,
+  obligation: PrefixCallObligation,
+  call_span: SourceSpan,
+  hypotheses: readonly PrefixProposition[],
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  signatures: readonly PrefixSignature[],
+  declared_type_names: ReadonlySet<string>,
+  obligation_index: number,
+): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+  const declarations = new Map<string, KernelType>();
+  const term_context: KernelType[] = [];
+  const term_indices = new Map<string, number>();
+  for (const [name, logical_type] of term_types) {
+    const type: KernelType = {
+      tag: "constant",
+      name: logical_type.representation,
+    };
+    declarations.set(logical_type.representation, type_sort(0));
+    term_indices.set(name, term_context.length);
+    term_context.push(type);
+  }
+  const facts = prefix_fact_signatures(
+    signatures,
+    signature.scope,
+    call_span.start,
+  );
+  const context: PrefixKernelProofContext = {
+    allow_unsafe: false,
+    declaration_name: signature.name,
+    declarations,
+    facts,
+    proof_indices: new Map(),
+    proof_propositions: new Map(),
+    term_context,
+    term_indices,
+    term_types,
+    type_names: signature_type_names(signature, declared_type_names),
+  };
+  const goal = prefix_kernel_proposition(
+    signature.name,
+    obligation.proposition,
+    context,
+    facts,
+    context.type_names,
+  );
+  const kernel_hypotheses = hypotheses.map((hypothesis) =>
+    prefix_kernel_proposition(
+      signature.name,
+      hypothesis,
+      context,
+      facts,
+      context.type_names,
+    )
+  );
+  const environment = KernelEnvironment.from(declarations);
+  const stable_term_context = snapshot_kernel_context(term_context);
+  let proof: ProofTerm | undefined;
+  let certificate_goal = goal;
+  for (const hypothesis of kernel_hypotheses) {
+    if (
+      !proposition_equal(hypothesis, goal, {
+        environment,
+        term_context: stable_term_context,
+      })
+    ) {
+      continue;
+    }
+    certificate_goal = {
+      tag: "implies",
+      premise: hypothesis,
+      conclusion: goal,
+    };
+    proof = {
+      tag: "implies_intro",
+      premise: hypothesis,
+      body: { tag: "assumption", index: 0 },
+    };
+    break;
+  }
+  if (proof === undefined) {
+    proof = automatic_prefix_proof(obligation.proposition, goal);
+  }
+  if (proof !== undefined) {
+    const certificate = check_proof(proof, certificate_goal, {
+      allow_unsafe: false,
+      require_safe: true,
+      environment,
+      term_context: stable_term_context,
+    });
+    return ok({
+      key: signature.scope + ":" + signature.name + ":call:" +
+        call_span.start.toString() + ":" + obligation_index.toString(),
+      proof: Object.freeze({
+        certificate,
+        environment,
+        term_context: stable_term_context,
+      }),
+    });
+  }
+  let status = "unknown";
+  if (prefix_proposition_is_definitely_false(obligation.proposition)) {
+    status = "disproved";
+  }
+  return fail(
+    compiler_diagnostic(
+      diagnostic_codes.prefix_signature_unproved,
+      `${status}: call to ${signature.name} cannot prove ${obligation.description}.`,
+      call_span,
+      [{
+        message: "The proof obligation is declared here.",
+        span: obligation.source_span,
+      }],
+    ),
+  );
+}
+
+function automatic_prefix_proof(
+  source: PrefixProposition,
+  proposition: Proposition,
+): ProofTerm | undefined {
+  if (
+    proposition.tag === "true" &&
+    (source.tag === "true" ||
+      (source.tag === "holds" && source.value.text === "true"))
+  ) {
+    return { tag: "true_intro" };
+  }
+  if (
+    source.tag === "equal" && proposition.tag === "equal" &&
+    prefix_term_surface_key(source.left) ===
+      prefix_term_surface_key(source.right)
+  ) {
+    return {
+      tag: "refl",
+      type: proposition.type,
+      term: proposition.left,
+    };
+  }
+  if (source.tag !== "and" || proposition.tag !== "and") return undefined;
+  const left = automatic_prefix_proof(source.left, proposition.left);
+  const right = automatic_prefix_proof(source.right, proposition.right);
+  if (left === undefined || right === undefined) return undefined;
+  return { tag: "and_intro", left, right };
+}
+
+function prefix_proposition_is_definitely_false(
+  proposition: PrefixProposition,
+): boolean {
+  if (proposition.tag === "false") return true;
+  if (proposition.tag === "holds") return proposition.value.text === "false";
+  if (proposition.tag === "not_equal") {
+    return prefix_term_surface_key(proposition.left) ===
+      prefix_term_surface_key(proposition.right);
+  }
+  if (proposition.tag === "and") {
+    return prefix_proposition_is_definitely_false(proposition.left) ||
+      prefix_proposition_is_definitely_false(proposition.right);
+  }
+  return false;
+}
+
+function prefix_term_surface_key(term: PrefixTerm): string {
+  const shape = term.shape;
+  if (shape.tag === "name") return JSON.stringify(["name", shape.name]);
+  if (
+    shape.tag === "number" || shape.tag === "string" ||
+    shape.tag === "character" || shape.tag === "boolean"
+  ) {
+    return JSON.stringify([shape.tag, term.text]);
+  }
+  if (shape.tag === "binary") {
+    return JSON.stringify([
+      "binary",
+      shape.operator,
+      prefix_term_surface_key(shape.left),
+      prefix_term_surface_key(shape.right),
+    ]);
+  }
+  if (shape.tag === "unary") {
+    return JSON.stringify([
+      "unary",
+      shape.operator,
+      prefix_term_surface_key(shape.operand),
+    ]);
+  }
+  if (shape.tag === "call") {
+    return JSON.stringify([
+      "call",
+      prefix_term_surface_key(shape.function),
+      shape.arguments.map(prefix_term_surface_key),
+    ]);
+  }
+  if (shape.tag === "field") {
+    return JSON.stringify([
+      "field",
+      prefix_term_surface_key(shape.object),
+      shape.field,
+    ]);
+  }
+  if (shape.tag === "parenthesized") {
+    return prefix_term_surface_key(shape.value);
+  }
+  return JSON.stringify(["source", term.text]);
+}
+
+function substitute_prefix_proposition(
+  proposition: PrefixProposition,
+  substitutions: ReadonlyMap<string, PrefixTerm>,
+): PrefixProposition {
+  if (proposition.tag === "true" || proposition.tag === "false") {
+    return proposition;
+  }
+  if (proposition.tag === "holds") {
+    return {
+      ...proposition,
+      value: substitute_prefix_term(proposition.value, substitutions),
+    };
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    return {
+      ...proposition,
+      left: substitute_prefix_term(proposition.left, substitutions),
+      right: substitute_prefix_term(proposition.right, substitutions),
+    };
+  }
+  if (proposition.tag === "is") {
+    return {
+      ...proposition,
+      value: substitute_prefix_term(proposition.value, substitutions),
+    };
+  }
+  if (proposition.tag === "not") {
+    return {
+      ...proposition,
+      proposition: substitute_prefix_proposition(
+        proposition.proposition,
+        substitutions,
+      ),
+    };
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return {
+      ...proposition,
+      left: substitute_prefix_proposition(proposition.left, substitutions),
+      right: substitute_prefix_proposition(proposition.right, substitutions),
+    };
+  }
+  if (proposition.tag !== "forall" && proposition.tag !== "exists") {
+    throw new Error("Unknown substituted prefix proposition.");
+  }
+  const nested_substitutions = new Map(substitutions);
+  nested_substitutions.delete(proposition.binder.name);
+  return {
+    ...proposition,
+    proposition: substitute_prefix_proposition(
+      proposition.proposition,
+      nested_substitutions,
+    ),
+  };
+}
+
+function substitute_prefix_term(
+  term: PrefixTerm,
+  substitutions: ReadonlyMap<string, PrefixTerm>,
+): PrefixTerm {
+  const shape = term.shape;
+  if (shape.tag === "name") {
+    const replacement = substitutions.get(shape.name);
+    if (replacement !== undefined) return replacement;
+    return term;
+  }
+  if (shape.tag === "binary") {
+    const left = substitute_prefix_term(shape.left, substitutions);
+    const right = substitute_prefix_term(shape.right, substitutions);
+    return {
+      ...term,
+      text: left.text + " " + shape.operator + " " + right.text,
+      references: [...left.references, ...right.references],
+      shape: { ...shape, left, right },
+    };
+  }
+  if (shape.tag === "unary") {
+    const operand = substitute_prefix_term(shape.operand, substitutions);
+    return {
+      ...term,
+      text: shape.operator + operand.text,
+      references: operand.references,
+      shape: { ...shape, operand },
+    };
+  }
+  if (shape.tag === "call") {
+    const function_term = substitute_prefix_term(
+      shape.function,
+      substitutions,
+    );
+    const arguments_ = shape.arguments.map((argument) =>
+      substitute_prefix_term(argument, substitutions)
+    );
+    return {
+      ...term,
+      references: [
+        ...function_term.references,
+        ...arguments_.flatMap((argument) => argument.references),
+      ],
+      shape: {
+        ...shape,
+        function: function_term,
+        arguments: arguments_,
+      },
+    };
+  }
+  if (shape.tag === "field" || shape.tag === "index") {
+    const object = substitute_prefix_term(shape.object, substitutions);
+    return {
+      ...term,
+      references: object.references,
+      shape: { ...shape, object },
+    };
+  }
+  if (shape.tag === "parenthesized") {
+    const value = substitute_prefix_term(shape.value, substitutions);
+    return {
+      ...term,
+      text: "(" + value.text + ")",
+      references: value.references,
+      shape: { ...shape, value },
+    };
+  }
+  return term;
+}
+
+function prefix_term_from_front_expr(
+  expression: FrontExpr,
+  source_text: string,
+  binding_index: BindingIndex,
+): PrefixTerm {
+  const span = source_span(expression);
+  let text = source_text.slice(span.start, span.end);
+  if (text.length === 0 && expression.tag === "var") text = expression.name;
+  if (expression.tag === "var") {
+    const occurrence = binding_index.occurrence_of(expression, "name");
+    let name = expression.name;
+    if (occurrence?.entity !== undefined) {
+      name = logical_entity_name(occurrence.entity);
+    }
+    return {
+      text,
+      references: [name],
+      shape: { tag: "name", name },
+      span,
+    };
+  }
+  if (expression.tag === "num") {
+    return { text, references: [], shape: { tag: "number" }, span };
+  }
+  if (expression.tag === "bool") {
+    return { text, references: [], shape: { tag: "boolean" }, span };
+  }
+  if (expression.tag === "text") {
+    return { text, references: [], shape: { tag: "string" }, span };
+  }
+  if (expression.tag === "app") {
+    const function_term = prefix_term_from_front_expr(
+      expression.func,
+      source_text,
+      binding_index,
+    );
+    const arguments_ = expression.args.map((argument) =>
+      prefix_term_from_front_expr(argument, source_text, binding_index)
+    );
+    return {
+      text,
+      references: [
+        ...function_term.references,
+        ...arguments_.flatMap((argument) => argument.references),
+      ],
+      shape: {
+        tag: "call",
+        function: function_term,
+        arguments: arguments_,
+      },
+      span,
+    };
+  }
+  if (expression.tag === "field") {
+    const object = prefix_term_from_front_expr(
+      expression.object,
+      source_text,
+      binding_index,
+    );
+    return {
+      text,
+      references: object.references,
+      shape: { tag: "field", object, field: expression.name },
+      span,
+    };
+  }
+  if (expression.tag === "index") {
+    const object = prefix_term_from_front_expr(
+      expression.object,
+      source_text,
+      binding_index,
+    );
+    return {
+      text,
+      references: object.references,
+      shape: { tag: "index", object },
+      span,
+    };
+  }
+  return { text, references: [], shape: { tag: "unsupported" }, span };
+}
+
+function record_front_expr_logical_types(
+  expression: FrontExpr,
+  binding_index: BindingIndex,
+  term_types: Map<string, LogicalTermType>,
+): void {
+  if (expression.tag === "var") {
+    const occurrence = binding_index.occurrence_of(expression, "name");
+    if (occurrence?.entity === undefined) return;
+    const semantic_name = logical_entity_name(occurrence.entity);
+    if (term_types.has(semantic_name)) return;
+    const representation = binding_index.facts.get(
+      occurrence.entity,
+    )?.representation;
+    if (representation === undefined) return;
+    const name = logical_representation_name(representation);
+    term_types.set(semantic_name, {
+      display_name: name,
+      name,
+      representation: name,
+    });
+    return;
+  }
+  if (expression.tag === "app") {
+    record_front_expr_logical_types(
+      expression.func,
+      binding_index,
+      term_types,
+    );
+    for (const argument of expression.args) {
+      record_front_expr_logical_types(argument, binding_index, term_types);
+    }
+    return;
+  }
+  if (expression.tag === "field") {
+    record_front_expr_logical_types(
+      expression.object,
+      binding_index,
+      term_types,
+    );
+    return;
+  }
+  if (expression.tag === "index") {
+    record_front_expr_logical_types(
+      expression.object,
+      binding_index,
+      term_types,
+    );
+    record_front_expr_logical_types(
+      expression.index,
+      binding_index,
+      term_types,
+    );
+  }
+}
+
+function logical_entity_name(entity: EntityId): string {
+  return "semantic:" + entity;
 }
 
 function resolve_transparent_type_aliases(
@@ -1645,20 +2749,6 @@ function check_prefix_proof_formation(
   const proof_parameters = signature.type.parameters.filter((parameter) =>
     parameter.type.proof !== undefined
   );
-  if (
-    proof_parameters.length > 0 &&
-    signature.type.result.type.proof === undefined
-  ) {
-    const parameter = proof_parameters[0];
-    expect(parameter !== undefined, "Proof parameter selection disappeared.");
-    return fail(
-      compiler_diagnostic(
-        diagnostic_codes.prefix_proof_invalid,
-        `Prefix signature ${signature.name} cannot yet erase explicit proof parameter ${parameter.name} from a runtime-returning definition.`,
-        parameter.span,
-      ),
-    );
-  }
   if (
     signature.type.result.type.proof !== undefined &&
     signature.type.result.name !== undefined
@@ -3634,11 +4724,8 @@ function check_prefix_refinement_formation(
       logical_term_type_from_reference(parameter.type),
     );
   }
-  const parameter_references = new Set(
-    signature.type.parameters.map((parameter) => parameter.type),
-  );
   const references = [
-    ...parameter_references,
+    ...signature.type.parameters.map((parameter) => parameter.type),
     signature.type.result.type,
   ];
   const checks: Checked<undefined>[] = [];
@@ -3681,24 +4768,6 @@ function check_prefix_refinement_formation(
       new Set(),
     );
     checks.push(formation);
-    if (
-      parameter_references.has(reference) &&
-      diagnostics_of(formation).length === 0 &&
-      !prefix_proposition_is_tautology(
-        refinement.proposition,
-        scoped_terms,
-      )
-    ) {
-      checks.push(
-        fail(
-          compiler_diagnostic(
-            diagnostic_codes.prefix_signature_unproved,
-            `Prefix signature ${signature.name} cannot yet synthesize calls requiring parameter refinement ${refinement.text}.`,
-            refinement.span,
-          ),
-        ),
-      );
-    }
   }
   return all(checks).map(() => undefined);
 }
@@ -3706,7 +4775,6 @@ function check_prefix_refinement_formation(
 function check_prefix_requires(
   signature: PrefixSignature,
   signatures: readonly PrefixSignature[],
-  source_text: string,
   declared_type_names: ReadonlySet<string>,
 ): Checked<undefined> {
   if (signature.requires.length === 0) return ok(undefined);
@@ -3736,23 +4804,7 @@ function check_prefix_requires(
       checks.push(formation);
       continue;
     }
-    if (prefix_proposition_is_tautology(requirement, term_types)) {
-      checks.push(ok(undefined));
-      continue;
-    }
-    const requirement_text = source_text.slice(
-      requirement.span.start,
-      requirement.span.end,
-    );
-    checks.push(
-      fail(
-        compiler_diagnostic(
-          diagnostic_codes.prefix_signature_unproved,
-          `Prefix signature ${signature.name} cannot yet propagate requires ${requirement_text} by semantic identity.`,
-          requirement.span,
-        ),
-      ),
-    );
+    checks.push(ok(undefined));
   }
   return all(checks).map(() => undefined);
 }
@@ -3818,26 +4870,6 @@ function check_prefix_decreases(
     );
   });
   return all(checks).map(() => undefined);
-}
-
-function prefix_proposition_is_tautology(
-  proposition: PrefixSignature["requires"][number],
-  term_types: ReadonlyMap<string, LogicalTermType>,
-): boolean {
-  if (proposition.tag === "true") return true;
-  if (proposition.tag === "holds") return proposition.value.text === "true";
-  if (proposition.tag === "equal") {
-    if (proposition.left.text !== proposition.right.text) return false;
-    if (proposition.left.references.length === 0) return true;
-    return proposition.left.references.every((reference) =>
-      term_types.has(reference)
-    );
-  }
-  if (proposition.tag === "and") {
-    return prefix_proposition_is_tautology(proposition.left, term_types) &&
-      prefix_proposition_is_tautology(proposition.right, term_types);
-  }
-  return false;
 }
 
 function check_prefix_fact_definition(
@@ -5595,9 +6627,15 @@ function check_prefix_ensures(
     parameter.name === expected_name
   );
   const expected_parameter = signature_parameters[expected_index];
-  const expected_representation = callable_type.params[expected_index];
+  const runtime_parameters = signature_parameters.filter((parameter) =>
+    parameter.type.proof === undefined
+  );
+  const runtime_expected_index = runtime_parameters.findIndex((parameter) =>
+    parameter.name === expected_name
+  );
+  const expected_representation = callable_type.params[runtime_expected_index];
   if (
-    callable_type.params.length !== signature_parameters.length ||
+    callable_type.params.length !== runtime_parameters.length ||
     expected_parameter === undefined ||
     expected_representation === undefined ||
     !same_representation_type(
@@ -5699,12 +6737,7 @@ function check_prefix_signature_representation(
       ),
     );
   }
-  if (
-    signature.type.result.type.proof !== undefined ||
-    signature.type.parameters.some((parameter) =>
-      parameter.type.proof !== undefined
-    )
-  ) {
+  if (signature.type.result.type.proof !== undefined) {
     return ok(undefined);
   }
   if (signature.kind === "fact" || signature.kind === "opaque fact") {
@@ -5723,6 +6756,16 @@ function check_prefix_signature_representation(
     candidate.span.start >= signature.span.end
   );
   if (definition === undefined) return ok(undefined);
+  const binding = find_source_binding(source, signature.name, definition.span);
+  if (
+    signature.type.parameters.some((parameter) =>
+      parameter.type.proof !== undefined
+    ) &&
+    (binding?.value.tag === "lam" || binding?.value.tag === "rec") &&
+    binding.value.params.length === signature.type.parameters.length
+  ) {
+    return ok(undefined);
+  }
   const body_check = check_prefix_callable_body(
     signature,
     definition,
@@ -5760,7 +6803,10 @@ function check_prefix_signature_representation(
       ),
     );
   }
-  if (callable.params.length !== signature.type.parameters.length) {
+  const runtime_parameter_count = signature.type.parameters.filter(
+    (parameter) => parameter.type.proof === undefined,
+  ).length;
+  if (callable.params.length !== runtime_parameter_count) {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_mismatch,
@@ -5828,6 +6874,7 @@ function check_prefix_callable_body(
       parameter !== undefined && declared !== undefined,
       `Prefix callable ${signature.name} lost parameter ${index}.`,
     );
+    if (declared.type.proof !== undefined) continue;
     term_types.set(parameter, logical_term_type_from_reference(declared.type));
   }
   const checked_body = check_prefix_term_type(
@@ -5837,9 +6884,6 @@ function check_prefix_callable_body(
     new Map(),
     new Set(),
   );
-  const body_type = checked_value(checked_body);
-  if (body_type === undefined) return checked_body.map(() => undefined);
-  const result_type = signature.type.result.type.canonical;
   const binding = find_source_binding(source, signature.name, definition.span);
   if (binding === undefined) {
     return fail(
@@ -5851,14 +6895,22 @@ function check_prefix_callable_body(
       ),
     );
   }
-  if (body_type.name === result_type) return ok(undefined);
-  if (body.text === result_type) return ok(undefined);
   let actual_result_name: string | undefined;
   if (binding.value.tag === "lam" || binding.value.tag === "rec") {
     actual_result_name = source_facts(source).editor_type_of.get(
       binding.value.body,
     )?.resolved_name;
   }
+  const body_type = checked_value(checked_body);
+  if (body_type === undefined) {
+    if (actual_result_name === signature.type.result.type.canonical) {
+      return ok(undefined);
+    }
+    return checked_body.map(() => undefined);
+  }
+  const result_type = signature.type.result.type.canonical;
+  if (body_type.name === result_type) return ok(undefined);
+  if (body.text === result_type) return ok(undefined);
   if (actual_result_name === result_type) return ok(undefined);
   return fail(
     compiler_diagnostic(
