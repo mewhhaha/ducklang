@@ -84,6 +84,11 @@ export type MachineBitmask = {
   known_zero: bigint;
   known_one: bigint;
 };
+export type MachineDifference = {
+  left: ValueId;
+  right: ValueId;
+  maximum: bigint;
+};
 type MachineWitnessSearch =
   | { tag: "found"; value: bigint }
   | { tag: "none" }
@@ -101,6 +106,14 @@ export class MachineFactDomain {
   readonly exclusions: ReadonlyMap<ValueId, readonly bigint[]>;
   readonly congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>;
   readonly bitmasks: ReadonlyMap<ValueId, MachineBitmask>;
+  readonly difference_assumptions: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >;
+  readonly differences: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >;
 
   constructor(
     token: symbol,
@@ -111,6 +124,11 @@ export class MachineFactDomain {
     exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
     congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
     bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+    difference_assumptions: ReadonlyMap<
+      ValueId,
+      ReadonlyMap<ValueId, bigint>
+    >,
+    differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>,
   ) {
     if (token !== MACHINE_DOMAIN_TOKEN) {
       throw new Error(
@@ -124,6 +142,10 @@ export class MachineFactDomain {
     this.exclusions = snapshot_machine_exclusions(exclusions);
     this.congruences = snapshot_machine_congruences(congruences);
     this.bitmasks = snapshot_machine_bitmasks(bitmasks);
+    this.difference_assumptions = snapshot_machine_differences(
+      difference_assumptions,
+    );
+    this.differences = snapshot_machine_differences(differences);
     Object.freeze(this);
     TRUSTED_MACHINE_DOMAINS.add(this);
   }
@@ -303,7 +325,203 @@ export function machine_fact_domain(
     immutable_map<ValueId, readonly bigint[]>([]),
     immutable_map<ValueId, readonly MachineCongruence[]>([]),
     immutable_map<ValueId, MachineBitmask>([]),
+    immutable_map<ValueId, ReadonlyMap<ValueId, bigint>>([]),
+    immutable_map<ValueId, ReadonlyMap<ValueId, bigint>>([]),
   );
+}
+
+export function assume_machine_difference(
+  domain: MachineFactDomain,
+  left: ValueId,
+  right: ValueId,
+  maximum: bigint,
+): MachineFactDomain {
+  assert_machine_domain(domain);
+  if (typeof maximum !== "bigint") {
+    throw new Error(
+      `Machine difference maximum must be an integer: ${String(maximum)}.`,
+    );
+  }
+  if (!domain.reachable) return domain;
+  const left_range = domain.ranges.get(left);
+  const right_range = domain.ranges.get(right);
+  if (left_range === undefined || right_range === undefined) {
+    throw new Error(
+      `Machine difference ${left}, ${right} is missing a range.`,
+    );
+  }
+  if (
+    left_range.width !== right_range.width ||
+    left_range.signed !== right_range.signed
+  ) {
+    throw new Error(
+      `Machine difference ${left}, ${right} has incompatible ranges.`,
+    );
+  }
+  if (left === right) {
+    if (maximum < 0n) return unreachable_machine_domain(domain, left);
+    return domain;
+  }
+  const possible_minimum = integer_minimum(left_range) -
+    integer_maximum(right_range);
+  const possible_maximum = integer_maximum(left_range) -
+    integer_minimum(right_range);
+  if (maximum < possible_minimum) {
+    return unreachable_machine_domain(domain, left);
+  }
+  if (maximum >= possible_maximum) return domain;
+  if (
+    machine_value_has_nonconvex_domain(
+      left,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      domain.bitmasks,
+    ) ||
+    machine_value_has_nonconvex_domain(
+      right,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      domain.bitmasks,
+    )
+  ) {
+    return domain;
+  }
+  const values = machine_difference_values(domain.difference_assumptions);
+  values.add(left);
+  values.add(right);
+  if (
+    values.size > proof_limits.maximum_relational_terms_per_function
+  ) {
+    return domain;
+  }
+  const assumptions = mutable_machine_differences(
+    domain.difference_assumptions,
+  );
+  set_machine_difference(assumptions, left, right, maximum);
+  const closed = close_machine_differences(assumptions, values);
+  for (const value of values) {
+    const self = closed.get(value)?.get(value);
+    if (self !== undefined && self < 0n) {
+      return unreachable_machine_domain(domain, value);
+    }
+  }
+  for (const [from, bounds] of closed) {
+    const from_range = domain.ranges.get(from);
+    if (from_range === undefined) {
+      throw new Error(`Machine difference ${from} lost its range.`);
+    }
+    for (const [to, bound] of bounds) {
+      const to_range = domain.ranges.get(to);
+      if (to_range === undefined) {
+        throw new Error(`Machine difference ${to} lost its range.`);
+      }
+      const minimum = integer_minimum(from_range) -
+        integer_maximum(to_range);
+      if (bound < minimum) {
+        return unreachable_machine_domain(domain, from);
+      }
+    }
+  }
+  if (
+    !machine_differences_allow_facts(
+      closed,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      domain.bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, left);
+  }
+  return new MachineFactDomain(
+    MACHINE_DOMAIN_TOKEN,
+    true,
+    domain.facts,
+    domain.ranges,
+    domain.evidence,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+    assumptions,
+    closed,
+  );
+}
+
+export function implies_machine_difference(
+  domain: MachineFactDomain,
+  left: ValueId,
+  right: ValueId,
+  maximum: bigint,
+): boolean {
+  assert_machine_domain(domain);
+  const left_range = domain.ranges.get(left);
+  const right_range = domain.ranges.get(right);
+  if (left_range === undefined || right_range === undefined) {
+    throw new Error(
+      `Machine difference ${left}, ${right} is missing a range.`,
+    );
+  }
+  if (
+    left_range.width !== right_range.width ||
+    left_range.signed !== right_range.signed
+  ) {
+    throw new Error(
+      `Machine difference ${left}, ${right} has incompatible ranges.`,
+    );
+  }
+  if (!domain.reachable) return false;
+  if (left === right) return maximum >= 0n;
+  const left_bounds = machine_difference_fact_bounds(
+    left,
+    domain.facts,
+    domain.ranges,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+  );
+  const right_bounds = machine_difference_fact_bounds(
+    right,
+    domain.facts,
+    domain.ranges,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+  );
+  if (
+    left_bounds !== undefined && right_bounds !== undefined &&
+    left_bounds.maximum - right_bounds.minimum <= maximum
+  ) {
+    return true;
+  }
+  const possible_maximum = integer_maximum(left_range) -
+    integer_minimum(right_range);
+  if (maximum >= possible_maximum) return true;
+  const known = domain.differences.get(left)?.get(right);
+  return known !== undefined && known <= maximum;
+}
+
+export function machine_differences(
+  domain: MachineFactDomain,
+): readonly MachineDifference[] {
+  assert_machine_domain(domain);
+  const differences: MachineDifference[] = [];
+  for (const [left, bounds] of domain.differences) {
+    for (const [right, maximum] of bounds) {
+      if (left === right && maximum === 0n) continue;
+      differences.push(Object.freeze({ left, right, maximum }));
+    }
+  }
+  differences.sort((left, right) => {
+    const left_order = compare_value_ids(left.left, right.left);
+    if (left_order !== 0) return left_order;
+    return compare_value_ids(left.right, right.right);
+  });
+  return Object.freeze(differences);
 }
 
 export function assume_machine_congruence(
@@ -367,6 +585,35 @@ export function assume_machine_congruence(
     value,
     Object.freeze([combined]),
   );
+  let difference_assumptions = domain.difference_assumptions;
+  let differences = domain.differences;
+  if (
+    machine_differences_reference_value(differences, value) &&
+    machine_value_has_nonconvex_domain(
+      value,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      congruences,
+      domain.bitmasks,
+    )
+  ) {
+    const retained = without_machine_difference_value(domain, value);
+    difference_assumptions = retained.assumptions;
+    differences = retained.differences;
+  }
+  if (
+    !machine_differences_allow_facts(
+      differences,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      congruences,
+      domain.bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, value);
+  }
   return new MachineFactDomain(
     MACHINE_DOMAIN_TOKEN,
     true,
@@ -376,6 +623,8 @@ export function assume_machine_congruence(
     domain.exclusions,
     congruences,
     domain.bitmasks,
+    difference_assumptions,
+    differences,
   );
 }
 
@@ -521,6 +770,35 @@ export function assume_machine_bitmask(
   }
   const bitmasks = new Map(domain.bitmasks);
   bitmasks.set(value, combined);
+  let difference_assumptions = domain.difference_assumptions;
+  let differences = domain.differences;
+  if (
+    machine_differences_reference_value(differences, value) &&
+    machine_value_has_nonconvex_domain(
+      value,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      bitmasks,
+    )
+  ) {
+    const retained = without_machine_difference_value(domain, value);
+    difference_assumptions = retained.assumptions;
+    differences = retained.differences;
+  }
+  if (
+    !machine_differences_allow_facts(
+      differences,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, value);
+  }
   return new MachineFactDomain(
     MACHINE_DOMAIN_TOKEN,
     true,
@@ -530,6 +808,8 @@ export function assume_machine_bitmask(
     domain.exclusions,
     domain.congruences,
     bitmasks,
+    difference_assumptions,
+    differences,
   );
 }
 
@@ -575,6 +855,10 @@ function replace_machine_fact(
   const exclusions = new Map(domain.exclusions);
   const congruences = new Map(domain.congruences);
   const bitmasks = new Map(domain.bitmasks);
+  const retained_differences = without_machine_difference_value(
+    domain,
+    value,
+  );
   facts.delete(value);
   evidence.delete(value);
   exclusions.delete(value);
@@ -590,6 +874,8 @@ function replace_machine_fact(
     exclusions,
     congruences,
     bitmasks,
+    retained_differences.assumptions,
+    retained_differences.differences,
   );
 }
 
@@ -652,6 +938,18 @@ export function assume_machine_fact(
   }
   const result = new Map(domain.facts);
   result.set(proposition.value, fact);
+  if (
+    !machine_differences_allow_facts(
+      domain.differences,
+      result,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      domain.bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, proposition.value);
+  }
   const evidence = new Map(domain.evidence);
   const prior = evidence.get(proposition.value);
   const current_evidence: FactEvidence[] = [];
@@ -668,6 +966,8 @@ export function assume_machine_fact(
     domain.exclusions,
     domain.congruences,
     domain.bitmasks,
+    domain.difference_assumptions,
+    domain.differences,
   );
 }
 
@@ -812,6 +1112,29 @@ export function exclude_machine_fact(
       proposition.value,
       Object.freeze([...existing, proposition.expected]),
     );
+    let difference_assumptions = domain.difference_assumptions;
+    let differences = domain.differences;
+    if (
+      machine_differences_reference_value(
+        differences,
+        proposition.value,
+      ) &&
+      machine_value_has_nonconvex_domain(
+        proposition.value,
+        domain.facts,
+        domain.ranges,
+        exclusions,
+        domain.congruences,
+        domain.bitmasks,
+      )
+    ) {
+      const retained = without_machine_difference_value(
+        domain,
+        proposition.value,
+      );
+      difference_assumptions = retained.assumptions;
+      differences = retained.differences;
+    }
     const updated = new MachineFactDomain(
       MACHINE_DOMAIN_TOKEN,
       true,
@@ -821,6 +1144,8 @@ export function exclude_machine_fact(
       exclusions,
       domain.congruences,
       domain.bitmasks,
+      difference_assumptions,
+      differences,
     );
     const updated_values = exclusions.get(proposition.value);
     let current_fact: ScalarFact = bounded_interval(
@@ -867,6 +1192,18 @@ export function exclude_machine_fact(
       if (witness.tag === "none") {
         return unreachable_machine_domain(updated, proposition.value);
       }
+    }
+    if (
+      !machine_differences_allow_facts(
+        updated.differences,
+        updated.facts,
+        updated.ranges,
+        updated.exclusions,
+        updated.congruences,
+        updated.bitmasks,
+      )
+    ) {
+      return unreachable_machine_domain(updated, proposition.value);
     }
     return updated;
   }
@@ -997,15 +1334,28 @@ export function join_machine_domains(
     );
     if (shared.length > 0) exclusions.set(value, Object.freeze(shared));
   }
+  const facts = join_environments(left.facts, right.facts);
+  const congruences = joined_machine_congruences(left, right);
+  const bitmasks = joined_machine_bitmasks(left, right);
+  const joined_differences = joined_machine_differences(
+    left,
+    right,
+    facts,
+    exclusions,
+    congruences,
+    bitmasks,
+  );
   return new MachineFactDomain(
     MACHINE_DOMAIN_TOKEN,
     true,
-    join_environments(left.facts, right.facts),
+    facts,
     left.ranges,
     immutable_map<ValueId, readonly FactEvidence[]>([]),
     exclusions,
-    joined_machine_congruences(left, right),
-    joined_machine_bitmasks(left, right),
+    congruences,
+    bitmasks,
+    joined_differences.assumptions,
+    joined_differences.differences,
   );
 }
 
@@ -1080,6 +1430,341 @@ function joined_machine_bitmasks(
   return joined;
 }
 
+function joined_machine_differences(
+  left: MachineFactDomain,
+  right: MachineFactDomain,
+  facts: FactEnvironment,
+  exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
+  congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
+  bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+): {
+  assumptions: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+} {
+  const assumptions = new Map<ValueId, Map<ValueId, bigint>>();
+  for (const [from, bounds] of left.difference_assumptions) {
+    for (const [to, left_maximum] of bounds) {
+      const right_maximum = right.difference_assumptions.get(from)?.get(to);
+      if (right_maximum === undefined) continue;
+      let maximum = left_maximum;
+      if (right_maximum > maximum) maximum = right_maximum;
+      set_machine_difference(assumptions, from, to, maximum);
+    }
+  }
+  for (const value of machine_difference_values(assumptions)) {
+    if (
+      !machine_value_has_nonconvex_domain(
+        value,
+        facts,
+        left.ranges,
+        exclusions,
+        congruences,
+        bitmasks,
+      )
+    ) {
+      continue;
+    }
+    assumptions.delete(value);
+    for (const bounds of assumptions.values()) bounds.delete(value);
+  }
+  const values = machine_difference_values(assumptions);
+  if (values.size === 0) {
+    return {
+      assumptions,
+      differences: new Map(),
+    };
+  }
+  return {
+    assumptions,
+    differences: close_machine_differences(assumptions, values),
+  };
+}
+
+function mutable_machine_differences(
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>,
+): Map<ValueId, Map<ValueId, bigint>> {
+  const mutable = new Map<ValueId, Map<ValueId, bigint>>();
+  for (const [left, bounds] of differences) {
+    mutable.set(left, new Map(bounds));
+  }
+  return mutable;
+}
+
+function machine_difference_values(
+  differences: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >,
+): Set<ValueId> {
+  const values = new Set<ValueId>();
+  for (const [left, bounds] of differences) {
+    values.add(left);
+    for (const right of bounds.keys()) values.add(right);
+  }
+  return values;
+}
+
+function machine_differences_reference_value(
+  differences: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >,
+  value: ValueId,
+): boolean {
+  if (differences.has(value)) return true;
+  for (const bounds of differences.values()) {
+    if (bounds.has(value)) return true;
+  }
+  return false;
+}
+
+function without_machine_difference_value(
+  domain: MachineFactDomain,
+  value: ValueId,
+): {
+  assumptions: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+} {
+  const assumptions = mutable_machine_differences(
+    domain.difference_assumptions,
+  );
+  assumptions.delete(value);
+  for (const bounds of assumptions.values()) bounds.delete(value);
+  const values = machine_difference_values(assumptions);
+  if (values.size === 0) {
+    return {
+      assumptions,
+      differences: new Map(),
+    };
+  }
+  return {
+    assumptions,
+    differences: close_machine_differences(assumptions, values),
+  };
+}
+
+function machine_value_has_nonconvex_domain(
+  value: ValueId,
+  facts: FactEnvironment,
+  ranges: ReadonlyMap<ValueId, MachineInteger>,
+  exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
+  congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
+  bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+): boolean {
+  const has_congruence = congruences.has(value);
+  const has_bitmask = bitmasks.has(value);
+  const excluded = exclusions.get(value);
+  const bounds = machine_difference_fact_bounds(
+    value,
+    facts,
+    ranges,
+    exclusions,
+    congruences,
+    bitmasks,
+  );
+  if (bounds === undefined) return false;
+  if (excluded !== undefined) {
+    if (has_congruence || has_bitmask) return true;
+    for (const candidate of excluded) {
+      if (
+        candidate >= bounds.minimum &&
+        candidate <= bounds.maximum
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (!has_congruence && !has_bitmask) return false;
+  if (has_congruence && has_bitmask) return true;
+  return bounds.minimum !== bounds.maximum;
+}
+
+function machine_differences_allow_facts(
+  differences: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >,
+  facts: FactEnvironment,
+  ranges: ReadonlyMap<ValueId, MachineInteger>,
+  exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
+  congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
+  bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+): boolean {
+  for (const [left, bounds] of differences) {
+    const left_bounds = machine_difference_fact_bounds(
+      left,
+      facts,
+      ranges,
+      exclusions,
+      congruences,
+      bitmasks,
+    );
+    if (left_bounds === undefined) return false;
+    for (const [right, maximum] of bounds) {
+      const right_bounds = machine_difference_fact_bounds(
+        right,
+        facts,
+        ranges,
+        exclusions,
+        congruences,
+        bitmasks,
+      );
+      if (right_bounds === undefined) return false;
+      if (left_bounds.minimum - right_bounds.maximum > maximum) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function machine_difference_fact_bounds(
+  value: ValueId,
+  facts: FactEnvironment,
+  ranges: ReadonlyMap<ValueId, MachineInteger>,
+  exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
+  congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
+  bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+): { minimum: bigint; maximum: bigint } | undefined {
+  const range = ranges.get(value);
+  if (range === undefined) {
+    throw new Error(`Machine difference ${value} lost its range.`);
+  }
+  let fact = facts.get(value);
+  if (fact === undefined || fact.tag === "unknown") {
+    fact = bounded_interval(
+      integer_minimum(range),
+      integer_maximum(range),
+    );
+  }
+  if (fact.tag === "bottom") return undefined;
+  const excluded = exclusions.get(value);
+  if (fact.tag === "interval" && excluded !== undefined) {
+    let minimum = fact.minimum;
+    let maximum = fact.maximum;
+    while (minimum <= maximum && excluded.includes(minimum)) minimum += 1n;
+    while (maximum >= minimum && excluded.includes(maximum)) maximum -= 1n;
+    if (minimum > maximum) return undefined;
+    if (minimum === maximum) {
+      fact = { tag: "exact", value: minimum };
+    } else {
+      fact = { tag: "interval", minimum, maximum };
+    }
+  }
+  const remaining = remaining_singleton(fact, excluded);
+  if (remaining !== undefined) {
+    fact = { tag: "exact", value: remaining };
+  }
+  const known_congruences = congruences.get(value);
+  if (known_congruences !== undefined) {
+    const combined = combine_machine_congruences(known_congruences);
+    if (combined === undefined) return undefined;
+    const congruent = remaining_congruence_singleton(
+      fact,
+      combined,
+      excluded,
+    );
+    if (congruent !== undefined) {
+      fact = { tag: "exact", value: congruent };
+    }
+  }
+  const bitmask = bitmasks.get(value);
+  if (bitmask !== undefined) {
+    const witnesses = machine_bitmask_witnesses(
+      fact,
+      bitmask,
+      range,
+      excluded,
+    );
+    if (witnesses.length === 0) return undefined;
+    if (witnesses.length === 1) {
+      fact = { tag: "exact", value: witnesses[0] };
+    }
+  }
+  let effective_bitmask = EMPTY_MACHINE_BITMASK;
+  if (bitmask !== undefined) effective_bitmask = bitmask;
+  let effective_congruences = EMPTY_CONGRUENCES;
+  if (known_congruences !== undefined) {
+    effective_congruences = known_congruences;
+  }
+  const minimum = machine_reduced_product_witness(
+    fact,
+    effective_bitmask,
+    effective_congruences,
+    range,
+    excluded,
+  );
+  const maximum = machine_reduced_product_maximum(
+    fact,
+    effective_bitmask,
+    effective_congruences,
+    range,
+    excluded,
+  );
+  if (minimum.tag === "none" || maximum.tag === "none") return undefined;
+  if (minimum.tag === "found" && maximum.tag === "found") {
+    return { minimum: minimum.value, maximum: maximum.value };
+  }
+  if (fact.tag === "exact") {
+    return { minimum: fact.value, maximum: fact.value };
+  }
+  if (fact.tag === "interval") {
+    return { minimum: fact.minimum, maximum: fact.maximum };
+  }
+  throw new Error(`Machine difference ${value} retained an unknown fact.`);
+}
+
+function set_machine_difference(
+  differences: Map<ValueId, Map<ValueId, bigint>>,
+  left: ValueId,
+  right: ValueId,
+  maximum: bigint,
+): void {
+  let bounds = differences.get(left);
+  if (bounds === undefined) {
+    bounds = new Map();
+    differences.set(left, bounds);
+  }
+  const current = bounds.get(right);
+  if (current !== undefined && current <= maximum) return;
+  bounds.set(right, maximum);
+}
+
+function close_machine_differences(
+  differences: Map<ValueId, Map<ValueId, bigint>>,
+  values: ReadonlySet<ValueId>,
+): Map<ValueId, Map<ValueId, bigint>> {
+  const closed = mutable_machine_differences(differences);
+  const ordered_values = [...values].sort(compare_value_ids);
+  for (const value of ordered_values) {
+    set_machine_difference(closed, value, value, 0n);
+  }
+  for (const via of ordered_values) {
+    for (const left of ordered_values) {
+      const to_via = closed.get(left)?.get(via);
+      if (to_via === undefined) continue;
+      for (const right of ordered_values) {
+        const from_via = closed.get(via)?.get(right);
+        if (from_via === undefined) continue;
+        set_machine_difference(
+          closed,
+          left,
+          right,
+          to_via + from_via,
+        );
+      }
+    }
+  }
+  return closed;
+}
+
+function compare_value_ids(left: ValueId, right: ValueId): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
 function machine_bitmask_basis(
   domain: MachineFactDomain,
   value: ValueId,
@@ -1134,6 +1819,8 @@ function clone_machine_domain(domain: MachineFactDomain): MachineFactDomain {
     exclusions,
     congruences,
     bitmasks,
+    domain.difference_assumptions,
+    domain.differences,
   );
 }
 
@@ -1228,6 +1915,43 @@ function snapshot_machine_bitmasks(
   return immutable_map(snapshots);
 }
 
+function snapshot_machine_differences(
+  differences: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >,
+): ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>> {
+  const snapshots = new Map<ValueId, ReadonlyMap<ValueId, bigint>>();
+  const values = machine_difference_values(differences);
+  if (
+    values.size > proof_limits.maximum_relational_terms_per_function
+  ) {
+    throw new Error(
+      `Machine relational term budget exceeded: ${values.size}.`,
+    );
+  }
+  const ordered_left = [...differences.keys()].sort(compare_value_ids);
+  for (const left of ordered_left) {
+    const bounds = differences.get(left);
+    if (bounds === undefined) {
+      throw new Error(`Machine difference ${left} lost its bounds.`);
+    }
+    const ordered_bounds = new Map<ValueId, bigint>();
+    const ordered_right = [...bounds.keys()].sort(compare_value_ids);
+    for (const right of ordered_right) {
+      const maximum = bounds.get(right);
+      if (maximum === undefined) {
+        throw new Error(
+          `Machine difference ${left}, ${right} lost its bound.`,
+        );
+      }
+      ordered_bounds.set(right, maximum);
+    }
+    snapshots.set(left, immutable_map(ordered_bounds));
+  }
+  return immutable_map(snapshots);
+}
+
 function unreachable_machine_domain(
   domain: MachineFactDomain,
   value: ValueId,
@@ -1243,6 +1967,8 @@ function unreachable_machine_domain(
     domain.exclusions,
     domain.congruences,
     domain.bitmasks,
+    domain.difference_assumptions,
+    domain.differences,
   );
 }
 
@@ -1510,6 +2236,51 @@ function machine_reduced_product_witness(
   return NO_MACHINE_WITNESS;
 }
 
+function machine_reduced_product_maximum(
+  fact: ScalarFact,
+  bitmask: MachineBitmask,
+  congruences: readonly MachineCongruence[],
+  range: MachineInteger,
+  exclusions: readonly bigint[] | undefined,
+): MachineWitnessSearch {
+  const intervals = [...machine_fact_unsigned_intervals(fact, range)].reverse();
+  if (intervals.length === 0) return NO_MACHINE_WITNESS;
+  let steps = 0;
+  for (const interval of intervals) {
+    let upper = interval.maximum;
+    while (upper >= interval.minimum) {
+      const bits = maximum_matching_bitmask(
+        upper,
+        bitmask,
+        range.width,
+      );
+      if (bits === undefined || bits < interval.minimum) break;
+      if (steps + range.width > proof_limits.compiler_search_steps) {
+        return UNKNOWN_MACHINE_WITNESS;
+      }
+      steps += range.width;
+      const value = machine_value_from_bits(bits, range);
+      let congruent = true;
+      for (const congruence of congruences) {
+        if (
+          canonical_residue(value, congruence.modulus) !== congruence.residue
+        ) {
+          congruent = false;
+          break;
+        }
+      }
+      if (
+        congruent &&
+        (exclusions === undefined || !exclusions.includes(value))
+      ) {
+        return { tag: "found", value };
+      }
+      upper = bits - 1n;
+    }
+  }
+  return NO_MACHINE_WITNESS;
+}
+
 function machine_fact_unsigned_intervals(
   fact: ScalarFact,
   range: MachineInteger,
@@ -1579,6 +2350,44 @@ function minimum_matching_bitmask(
       }
       if (!greater && digit < lower_digit) continue;
       const suffix = search(bit - 1, greater || digit > lower_digit);
+      if (suffix === undefined) continue;
+      const result = digit * bit_value + suffix;
+      results.set(bit, result);
+      return result;
+    }
+    results.set(bit, undefined);
+    return undefined;
+  };
+  return search(width - 1, false);
+}
+
+function maximum_matching_bitmask(
+  upper: bigint,
+  bitmask: MachineBitmask,
+  width: number,
+): bigint | undefined {
+  const equal_results = new Map<number, bigint | undefined>();
+  const lower_results = new Map<number, bigint | undefined>();
+  const search = (
+    bit: number,
+    lower: boolean,
+  ): bigint | undefined => {
+    if (bit < 0) return 0n;
+    let results = equal_results;
+    if (lower) results = lower_results;
+    if (results.has(bit)) return results.get(bit);
+    const bit_value = 1n << BigInt(bit);
+    let upper_digit = 0n;
+    if ((upper & bit_value) !== 0n) upper_digit = 1n;
+    for (const digit of [1n, 0n]) {
+      if (digit === 0n && (bitmask.known_one & bit_value) !== 0n) {
+        continue;
+      }
+      if (digit === 1n && (bitmask.known_zero & bit_value) !== 0n) {
+        continue;
+      }
+      if (!lower && digit > upper_digit) continue;
+      const suffix = search(bit - 1, lower || digit < upper_digit);
       if (suffix === undefined) continue;
       const result = digit * bit_value + suffix;
       results.set(bit, result);

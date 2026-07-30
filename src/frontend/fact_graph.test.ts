@@ -3,6 +3,7 @@ import {
   assume_fact,
   assume_machine_bitmask,
   assume_machine_congruence,
+  assume_machine_difference,
   assume_machine_fact,
   assume_state,
   establish_fact,
@@ -13,12 +14,14 @@ import {
   implies_fact,
   implies_machine_bitmask,
   implies_machine_congruence,
+  implies_machine_difference,
   implies_machine_fact,
   join_facts,
   join_machine_domains,
   join_states,
   machine_bitmask,
   machine_congruences,
+  machine_differences,
   machine_excludes_equal,
   machine_fact_domain,
   machine_fact_evidence,
@@ -635,6 +638,631 @@ Deno.test("machine congruence normalization is assumption-order independent", ()
     () => assume_machine_congruence(forward, value, 0n, 0n),
     "Machine congruence modulus must be positive: 0.",
   );
+});
+
+Deno.test("machine differences close transitively and detect negative cycles", () => {
+  const middle = "difference:middle" as ValueId;
+  const upper = "difference:upper" as ValueId;
+  let domain = machine_fact_domain(
+    new Map([
+      [value, { width: 3, signed: true }],
+      [middle, { width: 3, signed: true }],
+      [upper, { width: 3, signed: true }],
+    ]),
+  );
+  domain = assume_machine_difference(domain, value, middle, -1n);
+  domain = assume_machine_difference(domain, middle, upper, 0n);
+  assert_equals(
+    implies_machine_difference(domain, value, upper, -1n),
+    true,
+  );
+  assert_equals(
+    implies_machine_difference(domain, value, upper, -2n),
+    false,
+  );
+  assert_equals(
+    machine_differences(domain).some((difference) =>
+      difference.left === value &&
+      difference.right === upper &&
+      difference.maximum === -1n
+    ),
+    true,
+  );
+  let reverse = machine_fact_domain(
+    new Map([
+      [value, { width: 3, signed: true }],
+      [middle, { width: 3, signed: true }],
+      [upper, { width: 3, signed: true }],
+    ]),
+  );
+  reverse = assume_machine_difference(reverse, middle, upper, 0n);
+  reverse = assume_machine_difference(reverse, value, middle, -1n);
+  assert_equals(machine_differences(domain), machine_differences(reverse));
+  domain = assume_machine_difference(domain, upper, value, 0n);
+  assert_equals(domain.reachable, false);
+
+  let exhausted = machine_fact_domain(
+    new Map([
+      [value, { width: 3, signed: false }],
+      [middle, { width: 3, signed: false }],
+      [upper, { width: 3, signed: false }],
+    ]),
+  );
+  exhausted = assume_machine_difference(exhausted, value, middle, -7n);
+  exhausted = assume_machine_difference(exhausted, middle, upper, -7n);
+  assert_equals(exhausted.reachable, false);
+  assert_throws(
+    () =>
+      assume_machine_difference(
+        exhausted,
+        value,
+        middle,
+        "invalid" as unknown as bigint,
+      ),
+    "Machine difference maximum must be an integer: invalid.",
+  );
+});
+
+Deno.test("machine differences reduce against scalar facts in either order", () => {
+  const right = "difference:scalar:right" as ValueId;
+  for (const relation_first of [false, true]) {
+    let domain = machine_fact_domain(
+      new Map([
+        [value, { width: 3, signed: false }],
+        [right, { width: 3, signed: false }],
+      ]),
+    );
+    if (relation_first) {
+      domain = assume_machine_difference(domain, value, right, -1n);
+    }
+    domain = assume_machine_fact(domain, {
+      tag: "equal",
+      value,
+      expected: 0n,
+    });
+    domain = assume_machine_fact(domain, {
+      tag: "equal",
+      value: right,
+      expected: 0n,
+    });
+    if (!relation_first) {
+      domain = assume_machine_difference(domain, value, right, -1n);
+    }
+    assert_equals(domain.reachable, false);
+  }
+
+  let bounded = machine_fact_domain(
+    new Map([
+      [value, { width: 3, signed: false }],
+      [right, { width: 3, signed: false }],
+    ]),
+  );
+  bounded = assume_machine_fact(bounded, {
+    tag: "less_equal",
+    value,
+    bound: 2n,
+  });
+  bounded = assume_machine_fact(bounded, {
+    tag: "greater_equal",
+    value: right,
+    bound: 3n,
+  });
+  assert_equals(
+    implies_machine_difference(bounded, value, right, -1n),
+    true,
+  );
+});
+
+Deno.test("machine differences reduce against finite value domains", () => {
+  const right = "difference:finite:right" as ValueId;
+  for (const relation_first of [false, true]) {
+    let bitmask = machine_fact_domain(
+      new Map([
+        [value, { width: 3, signed: false }],
+        [right, { width: 3, signed: false }],
+      ]),
+    );
+    if (relation_first) {
+      bitmask = assume_machine_difference(bitmask, value, right, -1n);
+    }
+    bitmask = assume_machine_bitmask(bitmask, value, 0b111n, 0n);
+    bitmask = assume_machine_bitmask(bitmask, right, 0b111n, 0n);
+    if (!relation_first) {
+      bitmask = assume_machine_difference(bitmask, value, right, -1n);
+    }
+    assert_equals(bitmask.reachable, false);
+
+    let congruence = machine_fact_domain(
+      new Map([
+        [value, { width: 3, signed: false }],
+        [right, { width: 3, signed: false }],
+      ]),
+    );
+    if (relation_first) {
+      congruence = assume_machine_difference(
+        congruence,
+        value,
+        right,
+        -1n,
+      );
+    }
+    congruence = assume_machine_congruence(
+      congruence,
+      value,
+      8n,
+      0n,
+    );
+    congruence = assume_machine_congruence(
+      congruence,
+      right,
+      8n,
+      0n,
+    );
+    if (!relation_first) {
+      congruence = assume_machine_difference(
+        congruence,
+        value,
+        right,
+        -1n,
+      );
+    }
+    assert_equals(congruence.reachable, false);
+
+    let exclusion = machine_fact_domain(
+      new Map([
+        [value, { width: 3, signed: false }],
+        [right, { width: 3, signed: false }],
+      ]),
+    );
+    if (relation_first) {
+      exclusion = assume_machine_difference(
+        exclusion,
+        value,
+        right,
+        -7n,
+      );
+    }
+    exclusion = exclude_machine_fact(exclusion, {
+      tag: "equal",
+      value,
+      expected: 0n,
+    });
+    if (!relation_first) {
+      exclusion = assume_machine_difference(
+        exclusion,
+        value,
+        right,
+        -7n,
+      );
+    }
+    assert_equals(exclusion.reachable, false);
+  }
+});
+
+Deno.test("nonconvex value domains discard affine precision", () => {
+  const right = "difference:nonconvex:right" as ValueId;
+  for (const finite_domain of ["bitmask", "congruence"]) {
+    for (const relation_first of [false, true]) {
+      let domain = machine_fact_domain(
+        new Map([
+          [value, { width: 3, signed: false }],
+          [right, { width: 3, signed: false }],
+        ]),
+      );
+      if (relation_first) {
+        domain = assume_machine_difference(domain, value, right, 1n);
+        domain = assume_machine_difference(domain, right, value, -1n);
+      }
+      if (finite_domain === "bitmask") {
+        domain = assume_machine_bitmask(domain, value, 0b001n, 0n);
+        domain = assume_machine_bitmask(domain, right, 0b001n, 0n);
+      } else {
+        domain = assume_machine_congruence(domain, value, 2n, 0n);
+        domain = assume_machine_congruence(domain, right, 2n, 0n);
+      }
+      if (!relation_first) {
+        domain = assume_machine_difference(domain, value, right, 1n);
+        domain = assume_machine_difference(domain, right, value, -1n);
+      }
+      assert_equals(domain.reachable, true);
+      assert_equals(
+        implies_machine_difference(domain, value, right, 1n),
+        false,
+      );
+      assert_equals(
+        implies_machine_difference(domain, right, value, -1n),
+        false,
+      );
+    }
+  }
+  for (const relation_first of [false, true]) {
+    let domain = machine_fact_domain(
+      new Map([
+        [value, { width: 3, signed: false }],
+        [right, { width: 3, signed: false }],
+      ]),
+    );
+    if (relation_first) {
+      domain = assume_machine_difference(domain, value, right, 0n);
+    }
+    domain = exclude_machine_fact(domain, {
+      tag: "equal",
+      value,
+      expected: 3n,
+    });
+    if (!relation_first) {
+      domain = assume_machine_difference(domain, value, right, 0n);
+    }
+    assert_equals(domain.reachable, true);
+    assert_equals(
+      implies_machine_difference(domain, value, right, 0n),
+      false,
+    );
+  }
+});
+
+Deno.test("nonconvex values discard only their relational assumptions", () => {
+  const middle = "difference:nonconvex-order:middle" as ValueId;
+  const upper = "difference:nonconvex-order:upper" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: false }],
+    [middle, { width: 3, signed: false }],
+    [upper, { width: 3, signed: false }],
+  ]);
+  let relation_first = machine_fact_domain(ranges);
+  relation_first = assume_machine_difference(
+    relation_first,
+    value,
+    middle,
+    0n,
+  );
+  relation_first = assume_machine_difference(
+    relation_first,
+    middle,
+    upper,
+    0n,
+  );
+  relation_first = assume_machine_bitmask(
+    relation_first,
+    value,
+    0b001n,
+    0n,
+  );
+
+  let nonconvex_first = machine_fact_domain(ranges);
+  nonconvex_first = assume_machine_bitmask(
+    nonconvex_first,
+    value,
+    0b001n,
+    0n,
+  );
+  nonconvex_first = assume_machine_difference(
+    nonconvex_first,
+    value,
+    middle,
+    0n,
+  );
+  nonconvex_first = assume_machine_difference(
+    nonconvex_first,
+    middle,
+    upper,
+    0n,
+  );
+
+  assert_equals(
+    machine_differences(relation_first),
+    machine_differences(nonconvex_first),
+  );
+  assert_equals(
+    implies_machine_difference(relation_first, middle, upper, 0n),
+    true,
+  );
+  assert_equals(
+    implies_machine_difference(relation_first, value, upper, 0n),
+    false,
+  );
+});
+
+Deno.test("machine difference joins retain the weakest shared bound", () => {
+  const right = "difference:join:right" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: false }],
+    [right, { width: 3, signed: false }],
+  ]);
+  const strict = assume_machine_difference(
+    machine_fact_domain(ranges),
+    value,
+    right,
+    -1n,
+  );
+  const weak = assume_machine_difference(
+    machine_fact_domain(ranges),
+    value,
+    right,
+    0n,
+  );
+  const joined = join_machine_domains(strict, weak);
+  assert_equals(
+    implies_machine_difference(joined, value, right, 0n),
+    true,
+  );
+  assert_equals(
+    implies_machine_difference(joined, value, right, -1n),
+    false,
+  );
+  const dropped = join_machine_domains(
+    strict,
+    machine_fact_domain(ranges),
+  );
+  assert_equals(
+    implies_machine_difference(dropped, value, right, 0n),
+    false,
+  );
+});
+
+Deno.test("machine difference joins preserve direct-edge provenance", () => {
+  const input = "difference:join-provenance:input" as ValueId;
+  const offset = "difference:join-provenance:offset" as ValueId;
+  const middle = "difference:join-provenance:middle" as ValueId;
+  const upper = "difference:join-provenance:upper" as ValueId;
+  let domain = machine_fact_domain(
+    new Map([
+      [input, { width: 3, signed: true }],
+      [offset, { width: 3, signed: true }],
+      [value, { width: 3, signed: true }],
+      [middle, { width: 3, signed: true }],
+      [upper, { width: 3, signed: true }],
+    ]),
+  );
+  domain = assume_machine_difference(domain, value, middle, 0n);
+  domain = assume_machine_difference(domain, middle, upper, 0n);
+  domain = join_machine_domains(domain, domain);
+  assert_equals(
+    implies_machine_difference(domain, value, upper, 0n),
+    true,
+  );
+  domain = assume_machine_fact(domain, {
+    tag: "equal",
+    value: input,
+    expected: 1n,
+  });
+  domain = assume_machine_fact(domain, {
+    tag: "equal",
+    value: offset,
+    expected: 1n,
+  });
+  domain = transfer_machine_offset(
+    domain,
+    "add",
+    input,
+    offset,
+    middle,
+  );
+  assert_equals(
+    implies_machine_difference(domain, value, upper, 0n),
+    false,
+  );
+});
+
+Deno.test("machine difference joins discard nonconvex endpoints", () => {
+  const right = "difference:join-nonconvex:right" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: false }],
+    [right, { width: 3, signed: false }],
+  ]);
+  const points: readonly (readonly [bigint, bigint])[] = [
+    [1n, 0n],
+    [2n, 1n],
+    [5n, 4n],
+  ];
+  const paths = points.map(([left_value, right_value]) => {
+    let domain = machine_fact_domain(ranges);
+    domain = assume_machine_fact(domain, {
+      tag: "equal",
+      value,
+      expected: left_value,
+    });
+    domain = assume_machine_fact(domain, {
+      tag: "equal",
+      value: right,
+      expected: right_value,
+    });
+    domain = assume_machine_difference(domain, value, right, 1n);
+    domain = assume_machine_difference(domain, right, value, -1n);
+    return domain;
+  });
+  const first = paths[0];
+  const second = paths[1];
+  const third = paths[2];
+  if (first === undefined || second === undefined || third === undefined) {
+    throw new Error("Missing machine difference join path.");
+  }
+  let joined = join_machine_domains(first, second);
+  joined = join_machine_domains(joined, third);
+  assert_equals(
+    implies_machine_difference(joined, value, right, 1n),
+    false,
+  );
+  joined = assume_machine_fact(joined, {
+    tag: "equal",
+    value,
+    expected: 3n,
+  });
+  assert_equals(joined.reachable, true);
+  assert_equals(
+    implies_machine_difference(joined, right, value, -1n),
+    false,
+  );
+});
+
+Deno.test("machine differences honor the structural term budget", () => {
+  const values = Array.from(
+    { length: 65 },
+    (_, index) => `difference:budget:${index}` as ValueId,
+  );
+  let domain = machine_fact_domain(
+    new Map(values.map((term) => [term, { width: 3, signed: false }])),
+  );
+  for (let index = 1; index < 64; index += 1) {
+    const left = values[index - 1];
+    const right = values[index];
+    if (left === undefined || right === undefined) {
+      throw new Error(`Missing difference budget term ${index}.`);
+    }
+    domain = assume_machine_difference(domain, left, right, 0n);
+  }
+  const previous = domain;
+  const final_left = values[63];
+  const final_right = values[64];
+  if (final_left === undefined || final_right === undefined) {
+    throw new Error("Missing final difference budget terms.");
+  }
+  domain = assume_machine_difference(domain, final_left, final_right, 0n);
+  assert_equals(domain === previous, true);
+  assert_equals(
+    implies_machine_difference(domain, final_left, final_right, 0n),
+    false,
+  );
+});
+
+Deno.test("machine difference snapshots do not expose mutable rows", () => {
+  const right = "difference:immutable:right" as ValueId;
+  const domain = assume_machine_difference(
+    machine_fact_domain(
+      new Map([
+        [value, { width: 3, signed: true }],
+        [right, { width: 3, signed: true }],
+      ]),
+    ),
+    value,
+    right,
+    0n,
+  );
+  domain.differences.forEach((bounds) => {
+    assert_throws(
+      () => (bounds as Map<ValueId, bigint>).set(right, -7n),
+      "set is not a function",
+    );
+  });
+  domain.difference_assumptions.forEach((bounds) => {
+    assert_throws(
+      () => (bounds as Map<ValueId, bigint>).set(right, -7n),
+      "set is not a function",
+    );
+  });
+  assert_equals(
+    implies_machine_difference(domain, value, right, 0n),
+    true,
+  );
+});
+
+Deno.test("machine transfers discard relations for rebuilt values", () => {
+  const input = "difference:transfer:input" as ValueId;
+  const offset = "difference:transfer:offset" as ValueId;
+  const result = "difference:transfer:result" as ValueId;
+  const right = "difference:transfer:right" as ValueId;
+  let domain = machine_fact_domain(
+    new Map([
+      [input, { width: 3, signed: true }],
+      [offset, { width: 3, signed: true }],
+      [result, { width: 3, signed: true }],
+      [right, { width: 3, signed: true }],
+    ]),
+  );
+  domain = assume_machine_difference(domain, result, right, 0n);
+  domain = assume_machine_fact(domain, {
+    tag: "equal",
+    value: input,
+    expected: 1n,
+  });
+  domain = assume_machine_fact(domain, {
+    tag: "equal",
+    value: offset,
+    expected: 1n,
+  });
+  domain = transfer_machine_offset(
+    domain,
+    "add",
+    input,
+    offset,
+    result,
+  );
+  assert_equals(
+    implies_machine_difference(domain, result, right, 0n),
+    false,
+  );
+});
+
+Deno.test("machine difference closure is exhaustive for three-bit integers", () => {
+  const middle = "difference:exhaustive:middle" as ValueId;
+  const upper = "difference:exhaustive:upper" as ValueId;
+  for (const signed of [false, true]) {
+    const range = { width: 3, signed };
+    const bounds = machine_range(range);
+    for (
+      let first_maximum = -8n;
+      first_maximum <= 6n;
+      first_maximum += 1n
+    ) {
+      for (
+        let second_maximum = -8n;
+        second_maximum <= 6n;
+        second_maximum += 1n
+      ) {
+        let domain = machine_fact_domain(
+          new Map([
+            [value, range],
+            [middle, range],
+            [upper, range],
+          ]),
+        );
+        domain = assume_machine_difference(
+          domain,
+          value,
+          middle,
+          first_maximum,
+        );
+        domain = assume_machine_difference(
+          domain,
+          middle,
+          upper,
+          second_maximum,
+        );
+        if (!domain.reachable) continue;
+        const implied = first_maximum + second_maximum;
+        assert_equals(
+          implies_machine_difference(
+            domain,
+            value,
+            upper,
+            implied,
+          ),
+          true,
+        );
+        for (
+          let left_value = bounds.minimum;
+          left_value <= bounds.maximum;
+          left_value += 1n
+        ) {
+          for (
+            let middle_value = bounds.minimum;
+            middle_value <= bounds.maximum;
+            middle_value += 1n
+          ) {
+            if (left_value - middle_value > first_maximum) continue;
+            for (
+              let upper_value = bounds.minimum;
+              upper_value <= bounds.maximum;
+              upper_value += 1n
+            ) {
+              if (middle_value - upper_value > second_maximum) continue;
+              assert_equals(left_value - upper_value <= implied, true);
+            }
+          }
+        }
+      }
+    }
+  }
 });
 
 Deno.test("machine bitmasks reduce scalar facts in either assumption order", () => {
