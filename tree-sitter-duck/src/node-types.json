@@ -5879,12 +5879,32 @@
     "type": "prefix_proof_term",
     "named": true,
     "fields": {
+      "argument": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proposition_term",
+            "named": true
+          }
+        ]
+      },
       "body": {
         "multiple": false,
         "required": false,
         "types": [
           {
             "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "evidence_name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -6002,6 +6022,26 @@
         ]
       },
       "right_name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "witness": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proposition_term",
+            "named": true
+          }
+        ]
+      },
+      "witness_name": {
         "multiple": false,
         "required": false,
         "types": [
@@ -8816,6 +8856,14 @@
     "named": false
   },
   {
+    "type": "exists_elim",
+    "named": false
+  },
+  {
+    "type": "exists_intro",
+    "named": false
+  },
+  {
     "type": "extend",
     "named": false
   },
@@ -8837,6 +8885,10 @@
   },
   {
     "type": "forall",
+    "named": false
+  },
+  {
+    "type": "forall_apply",
     "named": false
   },
   {

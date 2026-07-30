@@ -66,14 +66,6 @@ Deno.test("format_text round trips prefix refinement signatures", () => {
       "let keep = value => value;\n",
   );
   assert_equals(format_text(formatted), formatted);
-
-  const wide = "type choose = " +
-    "(choice: Proof True or True) -> Proof True or True\n" +
-    "let choose = choice => " +
-    "by or_cases(choice, left => or_left(left), " +
-    "right => or_right(right));\n";
-  const wide_formatted = format_text(wide);
-  assert_equals(format_text(wide_formatted), wide_formatted);
 });
 
 Deno.test("format_text round trips direct proof declarations", () => {
@@ -106,6 +98,50 @@ Deno.test("format_text round trips propositional proof terms", () => {
       "let implication = () => by evidence => evidence;\n",
   );
   assert_equals(format_text(formatted), formatted);
+
+  const wide = "type choose = " +
+    "(choice: Proof True or True) -> Proof True or True\n" +
+    "let choose = choice => " +
+    "by or_cases(choice, left => or_left(left), " +
+    "right => or_right(right));\n";
+  const wide_formatted = format_text(wide);
+  assert_equals(format_text(wide_formatted), wide_formatted);
+});
+
+Deno.test("format_text round trips quantified proof terms", () => {
+  const source = "type specialize=" +
+    "(universal:Proof forall(value:I32).value=value,value:I32)" +
+    "->Proof value=value\n" +
+    "let specialize=(universal,value)=>" +
+    "by forall_apply(universal,value);\n" +
+    "type open=(existence:Proof exists(value:I32).True)->Proof True\n" +
+    "let open=existence=>by exists_elim(" +
+    "existence,witness,evidence=>evidence);\n";
+  const formatted = format_text(source);
+
+  assert_equals(
+    formatted,
+    "type specialize = (\n" +
+      "  universal: Proof forall (value: I32).value = value,\n" +
+      "  value: I32,\n" +
+      ") -> Proof value = value\n" +
+      "let specialize = (universal, value) => " +
+      "by forall_apply(universal, value);\n" +
+      "type open = " +
+      "(existence: Proof exists (value: I32).True) -> Proof True\n" +
+      "let open =\n" +
+      "  existence => " +
+      "by exists_elim(existence, witness, evidence => evidence);\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+
+  const wide = "type repack = " +
+    "(package: Proof exists (value: I32). value = value) -> " +
+    "Proof exists (copy: I32). copy = copy\n" +
+    "let repack = package => by exists_elim(" +
+    "package, witness, evidence => exists_intro(witness, evidence));\n";
+  const wide_formatted = format_text(wide);
+  assert_equals(format_text(wide_formatted), wide_formatted);
 });
 
 Deno.test("format_text normalizes expressions inside template literals", () => {

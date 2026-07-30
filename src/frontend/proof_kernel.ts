@@ -196,6 +196,42 @@ export function check_proposition_formation(
   return stable;
 }
 
+export function instantiate_proposition(
+  proposition: Proposition,
+  argument: KernelTerm,
+): Proposition {
+  const budget: SnapshotBudget = { nodes: 0 };
+  const stable_proposition = snapshot_proposition(
+    proposition,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    budget,
+  );
+  const stable_argument = snapshot_kernel_term(argument);
+  charge_kernel_term(stable_argument, budget);
+  return freeze_proposition(
+    substitute_proposition_variable(
+      stable_proposition,
+      stable_argument,
+      0,
+      budget,
+    ),
+  );
+}
+
+export function lift_proposition(proposition: Proposition): Proposition {
+  const budget: SnapshotBudget = { nodes: 0 };
+  const stable = snapshot_proposition(
+    proposition,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    budget,
+  );
+  return freeze_proposition(
+    shift_proposition_variables(stable, 1, 0, budget),
+  );
+}
+
 function proposition_equal_at(
   left: Proposition,
   right: Proposition,

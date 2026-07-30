@@ -107,12 +107,32 @@ export type PrefixProofTerm =
     span: PrefixSpan;
   }
   | {
+    tag: "forall_apply";
+    proof: PrefixProofTerm;
+    argument: PrefixTerm;
+    span: PrefixSpan;
+  }
+  | {
+    tag: "exists_intro";
+    witness: PrefixTerm;
+    proof: PrefixProofTerm;
+    span: PrefixSpan;
+  }
+  | {
     tag: "or_cases";
     proof: PrefixProofTerm;
     left_name: string;
     left_body: PrefixProofTerm;
     right_name: string;
     right_body: PrefixProofTerm;
+    span: PrefixSpan;
+  }
+  | {
+    tag: "exists_elim";
+    proof: PrefixProofTerm;
+    witness_name: string;
+    evidence_name: string;
+    body: PrefixProofTerm;
     span: PrefixSpan;
   };
 
@@ -902,6 +922,68 @@ function snapshot_proof_term(
         ),
         right_body: snapshot_proof_term(
           own_value<PrefixProofTerm>(proof, "right_body"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (tag === "forall_apply") {
+      return Object.freeze({
+        tag,
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        argument: snapshot_term(
+          own_value<PrefixTerm>(proof, "argument"),
+          new WeakSet<object>(),
+          0,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (tag === "exists_intro") {
+      return Object.freeze({
+        tag,
+        witness: snapshot_term(
+          own_value<PrefixTerm>(proof, "witness"),
+          new WeakSet<object>(),
+          0,
+          budget,
+        ),
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (tag === "exists_elim") {
+      return Object.freeze({
+        tag,
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        witness_name: require_text(
+          own_value<string>(proof, "witness_name"),
+          "Prefix existential witness binder",
+        ),
+        evidence_name: require_text(
+          own_value<string>(proof, "evidence_name"),
+          "Prefix existential evidence binder",
+        ),
+        body: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "body"),
           active,
           depth + 1,
           budget,

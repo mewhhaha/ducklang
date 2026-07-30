@@ -268,6 +268,70 @@ Deno.test("prefix signature snapshots reject cyclic proof binders", () => {
   );
 });
 
+Deno.test("prefix proof snapshots reject cyclic quantified witnesses", () => {
+  const witness: PrefixTerm = {
+    text: "(value)",
+    references: ["value"],
+    shape: {
+      tag: "name",
+      name: "value",
+    },
+    span: { start: 20, end: 27 },
+  };
+  witness.shape = { tag: "parenthesized", value: witness };
+  const proof: PrefixProofTerm = {
+    tag: "exists_intro",
+    witness,
+    proof: { tag: "true_intro", span: { start: 29, end: 39 } },
+    span: { start: 15, end: 40 },
+  };
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({ callable_proof_body: proof })],
+      ),
+    "Prefix term cannot be cyclic",
+  );
+});
+
+Deno.test("prefix proof snapshots seal quantified arguments", () => {
+  const argument: PrefixTerm = {
+    text: "value",
+    references: ["value"],
+    shape: { tag: "name", name: "value" },
+    span: { start: 30, end: 35 },
+  };
+  const proof: PrefixProofTerm = {
+    tag: "forall_apply",
+    proof: {
+      tag: "name",
+      name: "universal",
+      span: { start: 15, end: 24 },
+    },
+    argument,
+    span: { start: 15, end: 36 },
+  };
+  const index = checked_value(
+    associate_prefix_signatures(
+      [signature()],
+      [definition({ callable_proof_body: proof })],
+    ),
+  );
+  if (index === undefined) throw new Error("Expected associated signature.");
+  argument.shape = { tag: "name", name: "changed" };
+  const associated = [...index.values()][0];
+  const body = associated?.definition.callable_proof_body;
+
+  assert_equals(body?.tag, "forall_apply");
+  if (body?.tag !== "forall_apply") {
+    throw new Error("Expected snapshotted universal application.");
+  }
+  assert_equals(body.argument.shape, { tag: "name", name: "value" });
+  assert_equals(Object.isFrozen(body.argument), true);
+});
+
 Deno.test("prefix signature snapshots seal disjunction case binders", () => {
   const proof: PrefixProofTerm = {
     tag: "or_cases",
@@ -312,6 +376,55 @@ Deno.test("prefix signature snapshots seal disjunction case binders", () => {
   assert_equals(
     associated.definition.callable_proof_body.left_body.tag,
     "name",
+  );
+});
+
+Deno.test("quantified proof snapshots share one structural node budget", () => {
+  let inner: PrefixProofTerm = {
+    tag: "true_intro",
+    span: { start: 15, end: 25 },
+  };
+  for (let depth = 0; depth < 12; depth += 1) {
+    inner = {
+      tag: "and_intro",
+      left: inner,
+      right: inner,
+      span: { start: 15, end: 25 },
+    };
+  }
+  let argument: PrefixTerm = {
+    text: "value",
+    references: ["value"],
+    shape: { tag: "name", name: "value" },
+    span: { start: 30, end: 35 },
+  };
+  for (let depth = 0; depth < 13; depth += 1) {
+    argument = {
+      text: "value + value",
+      references: ["value"],
+      shape: {
+        tag: "binary",
+        operator: "+",
+        left: argument,
+        right: argument,
+      },
+      span: { start: 30, end: 43 },
+    };
+  }
+  const proof: PrefixProofTerm = {
+    tag: "forall_apply",
+    proof: inner,
+    argument,
+    span: { start: 15, end: 44 },
+  };
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({ callable_proof_body: proof })],
+      ),
+    "snapshot exceeded 20000 nodes",
   );
 });
 

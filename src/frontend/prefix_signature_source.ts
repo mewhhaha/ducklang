@@ -557,6 +557,79 @@ function proof_term_from_node(
       span,
     };
   }
+  const forall_apply_node = node.children.find((child) =>
+    child.kind === '"forall_apply"'
+  );
+  if (forall_apply_node !== undefined) {
+    const proof_node = nested[0];
+    const argument_node = node.children.find((child) =>
+      child.kind === "prefix_proposition_term"
+    );
+    if (proof_node === undefined || argument_node === undefined) {
+      return undefined;
+    }
+    const proof = proof_term_from_node(proof_node, source);
+    if (proof === undefined) return undefined;
+    return {
+      tag: "forall_apply",
+      proof,
+      argument: term_from_node(argument_node, source),
+      span,
+    };
+  }
+  const exists_intro_node = node.children.find((child) =>
+    child.kind === '"exists_intro"'
+  );
+  if (exists_intro_node !== undefined) {
+    const witness_node = node.children.find((child) =>
+      child.kind === "prefix_proposition_term"
+    );
+    const proof_node = nested[0];
+    if (witness_node === undefined || proof_node === undefined) {
+      return undefined;
+    }
+    const proof = proof_term_from_node(proof_node, source);
+    if (proof === undefined) return undefined;
+    return {
+      tag: "exists_intro",
+      witness: term_from_node(witness_node, source),
+      proof,
+      span,
+    };
+  }
+  const exists_elim_node = node.children.find((child) =>
+    child.kind === '"exists_elim"'
+  );
+  if (exists_elim_node !== undefined) {
+    const names = node.children.filter((child) => child.kind === "identifier");
+    const proof_node = nested[0];
+    const witness_name_node = names[0];
+    const evidence_name_node = names[1];
+    const body_node = nested[1];
+    if (
+      proof_node === undefined || witness_name_node === undefined ||
+      evidence_name_node === undefined || body_node === undefined
+    ) {
+      return undefined;
+    }
+    const proof = proof_term_from_node(proof_node, source);
+    const body = proof_term_from_node(body_node, source);
+    if (proof === undefined || body === undefined) return undefined;
+    return {
+      tag: "exists_elim",
+      proof,
+      witness_name: source.slice(
+        witness_name_node.start,
+        witness_name_node.end,
+      ),
+      evidence_name: source.slice(
+        evidence_name_node.start,
+        evidence_name_node.end,
+      ),
+      body,
+      span,
+    };
+  }
   const arrow_node = node.children.find((child) => child.kind === '"=>"');
   if (arrow_node !== undefined) {
     const name_node = node.children.find((child) =>

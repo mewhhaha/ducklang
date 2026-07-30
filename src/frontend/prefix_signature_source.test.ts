@@ -264,3 +264,38 @@ Deno.test("prefix source extraction retains propositional proof binders", () => 
   assert_equals(lambda.name, "evidence");
   assert_equals(lambda.body.tag, "name");
 });
+
+Deno.test("prefix source extraction retains quantified proof terms", () => {
+  const metadata = extract_prefix_source_metadata(parse_duck_source(
+    "let specialize = (universal, value) => " +
+      "by forall_apply(universal, value);\n" +
+      "let pack = (value, evidence) => " +
+      "by exists_intro(value, evidence);\n" +
+      "let open = existence => " +
+      "by exists_elim(existence, witness, evidence => evidence);\n",
+  ));
+  const specialize = metadata.definitions[0]?.callable_proof_body;
+  const pack = metadata.definitions[1]?.callable_proof_body;
+  const open = metadata.definitions[2]?.callable_proof_body;
+
+  assert_equals(specialize?.tag, "forall_apply");
+  if (specialize?.tag !== "forall_apply") {
+    throw new Error("Expected universal application.");
+  }
+  assert_equals(specialize.argument.shape, {
+    tag: "name",
+    name: "value",
+  });
+  assert_equals(pack?.tag, "exists_intro");
+  if (pack?.tag !== "exists_intro") {
+    throw new Error("Expected existential introduction.");
+  }
+  assert_equals(pack.witness.shape, { tag: "name", name: "value" });
+  assert_equals(open?.tag, "exists_elim");
+  if (open?.tag !== "exists_elim") {
+    throw new Error("Expected existential elimination.");
+  }
+  assert_equals(open.witness_name, "witness");
+  assert_equals(open.evidence_name, "evidence");
+  assert_equals(open.body.tag, "name");
+});

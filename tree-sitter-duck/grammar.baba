@@ -525,6 +525,37 @@ prefix_proof_term = (
                          (",")?
                          ")"
                        )
+                     | (
+                         "forall_apply"
+                         "("
+                         proof:(prefix_proof_term)
+                         ","
+                         argument:(prefix_proposition_term)
+                         (",")?
+                         ")"
+                       )
+                     | (
+                         "exists_intro"
+                         "("
+                         witness:(prefix_proposition_term)
+                         ","
+                         proof:(prefix_proof_term)
+                         (",")?
+                         ")"
+                       )
+                     | (
+                         "exists_elim"
+                         "("
+                         proof:(prefix_proof_term)
+                         ","
+                         witness_name:(identifier)
+                         ","
+                         evidence_name:(identifier)
+                         "=>"
+                         body:(prefix_proof_term)
+                         (",")?
+                         ")"
+                       )
                      | name:(identifier)
                      | "refl"
                      | "true_intro"

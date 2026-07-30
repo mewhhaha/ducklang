@@ -222,6 +222,40 @@ Deno.test("Baba parses direct propositional proof terms", () => {
   assert_equals(parsed.cst.tree.includes('"or_cases"'), true);
 });
 
+Deno.test("Baba parses direct quantified proof terms", () => {
+  const parsed = parse_duck_source(
+    "let introduce = () => by value => refl;\n" +
+      "let specialize = (universal, value) => " +
+      "by forall_apply(universal, value);\n" +
+      "let pack = (value, evidence) => " +
+      "by exists_intro(value, evidence);\n" +
+      "let open = existence => " +
+      "by exists_elim(existence, witness, evidence => evidence);\n" +
+      "let named = () => by forall_apply_extra;\n" +
+      "let packed = () => by exists_intro_value;\n" +
+      "let opened = () => by exists_elim_thing;\n",
+  );
+
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(parsed.cst.tree.includes('"forall_apply"'), true);
+  assert_equals(parsed.cst.tree.includes('"exists_intro"'), true);
+  assert_equals(parsed.cst.tree.includes('"exists_elim"'), true);
+  for (
+    const name of [
+      "forall_apply_extra",
+      "exists_intro_value",
+      "exists_elim_thing",
+    ]
+  ) {
+    assert_equals(
+      parsed.tokens.some((token) =>
+        token.kind === "identifier" && token.text === name
+      ),
+      true,
+    );
+  }
+});
+
 Deno.test("Baba reserves Proof without splitting longer type names", () => {
   const parsed = parse_duck_source(
     "type boxed = () -> ProofBox\n" +

@@ -85,6 +85,12 @@ Deno.test("Duck compiler erases checked proof declarations", async () => {
     "type merge = (choice: Proof True or True) -> Proof True\n" +
     "let merge = choice => " +
     "by or_cases(choice, left => left, right => right);\n" +
+    "type universal = () -> " +
+    "Proof forall (value: I32). value = value\n" +
+    "let universal = () => by value => refl;\n" +
+    "type witness = (value: I32) -> " +
+    "Proof exists (found: I32). found = value\n" +
+    "let witness = actual => by exists_intro(actual, refl);\n" +
     "42\n";
   const plain_source = "42\n";
   const proof_module = encode_duck_module(proof_source);

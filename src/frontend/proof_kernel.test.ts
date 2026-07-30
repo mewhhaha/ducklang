@@ -3,6 +3,8 @@ import {
   certificate_establishes,
   check_certificate,
   check_proof,
+  instantiate_proposition,
+  lift_proposition,
   type ProofTerm,
   type Proposition,
   proposition_equal,
@@ -561,6 +563,36 @@ Deno.test("kernel introduces and applies universal proofs", () => {
     universal,
     { tag: "forall", domain: value_type, body: bound_identity },
     safe_options,
+  );
+});
+
+Deno.test("kernel proposition transforms snapshot quantified inputs", () => {
+  const bound_identity: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+
+  assert_equals(
+    instantiate_proposition(bound_identity, constant("x")),
+    equal(constant("x"), constant("x")),
+  );
+  assert_equals(
+    lift_proposition(bound_identity),
+    {
+      tag: "equal",
+      type: value_type,
+      left: { tag: "var", index: 1 },
+      right: { tag: "var", index: 1 },
+    },
+  );
+
+  const cyclic = { tag: "not" } as Proposition;
+  (cyclic as Extract<Proposition, { tag: "not" }>).proposition = cyclic;
+  assert_throws(
+    () => lift_proposition(cyclic),
+    "Proposition graph must be acyclic",
   );
 });
 

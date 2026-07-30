@@ -1421,7 +1421,7 @@ Deno.test("invalid direct propositional proof terms fail before Core", () => {
       [
         "type bad = () -> Proof True\n" +
         "let bad = () => by evidence => evidence;\n42\n",
-        "Proof lambda requires an implication or negation goal",
+        "Proof lambda requires an implication, negation, or universal goal",
       ],
       [
         "type bad = (evidence: Proof True) -> Proof True\n" +
@@ -1461,6 +1461,208 @@ Deno.test("invalid direct propositional proof terms fail before Core", () => {
       ),
       true,
     );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("direct quantified proof terms produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type all_reflexive = " +
+      "() -> Proof forall (value: I32). value = value\n" +
+      "let all_reflexive = () => by value => refl;\n42\n",
+      "type specialize = " +
+      "(universal: Proof forall (value: I32). value = value, value: I32) -> " +
+      "Proof value = value\n" +
+      "let specialize = (all, actual) => " +
+      "by forall_apply(all, actual);\n42\n",
+      "type positional_specialize = " +
+      "(left: I32, right: I32, " +
+      "universal: Proof forall (value: I32). value = value) -> " +
+      "Proof left = left\n" +
+      "let positional_specialize = (right, actual, all) => " +
+      "by forall_apply(all, right);\n42\n",
+      "type specialize_literal = " +
+      "(universal: Proof forall (value: I32). value = value) -> " +
+      "Proof 0 = 0i32\n" +
+      "let specialize_literal = all => by forall_apply(all, 0);\n42\n",
+      "type witness = " +
+      "(value: I32) -> Proof exists (found: I32). found = value\n" +
+      "let witness = actual => by exists_intro(actual, refl);\n42\n",
+      "type literal_witness = " +
+      "() -> Proof exists (found: I32). found = 0\n" +
+      "let literal_witness = () => by exists_intro(0i32, refl);\n42\n",
+      "type unpack = " +
+      "(existence: Proof exists (value: I32). True) -> Proof True\n" +
+      "let unpack = package => " +
+      "by exists_elim(package, witness, evidence => evidence);\n42\n",
+      "type repack = " +
+      "(package: Proof exists (value: I32). value = value) -> " +
+      "Proof exists (copy: I32). copy = copy\n" +
+      "let repack = package => " +
+      "by exists_elim(" +
+      "package, witness, evidence => exists_intro(witness, evidence));\n" +
+      "42\n",
+      "type retain_universal = " +
+      "(outer: I32, evidence: Proof outer = outer) -> " +
+      "Proof forall (inner: I32). outer = outer\n" +
+      "let retain_universal = (outer, retained) => " +
+      "by inner => retained;\n42\n",
+      "type retain_existential = " +
+      "(package: Proof exists (value: I32). True, " +
+      "outer: I32, evidence: Proof outer = outer) -> Proof outer = outer\n" +
+      "let retain_existential = (package, outer, retained) => " +
+      "by exists_elim(package, witness, opened => retained);\n42\n",
+      "type nested_universal = " +
+      "() -> Proof forall (left: I32). forall (right: I32). left = left\n" +
+      "let nested_universal = () => by left => right => refl;\n42\n",
+      "type specialize_exists = " +
+      "(universal: Proof forall (value: I32). " +
+      "exists (witness: I32). value = value, actual: I32) -> " +
+      "Proof exists (witness: I32). actual = actual\n" +
+      "let specialize_exists = (universal, actual) => " +
+      "by forall_apply(universal, actual);\n42\n",
+      "type eliminate_under_universal = " +
+      "(package: Proof exists (value: I32). True) -> " +
+      "Proof forall (other: I32). True\n" +
+      "let eliminate_under_universal = package => " +
+      "by exists_elim(package, witness, evidence => other => evidence);\n" +
+      "42\n",
+      "type shadow_universal = " +
+      "(outer: I32) -> Proof forall (outer: I32). outer = outer\n" +
+      "let shadow_universal = actual => by actual => refl;\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("invalid direct quantified proof terms fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = " +
+        "(evidence: Proof True, value: I32) -> Proof value = value\n" +
+        "let bad = (evidence, value) => " +
+        "by forall_apply(evidence, value);\n42\n",
+        "forall_apply requires a universal proof",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by exists_intro(0, true_intro);\n42\n",
+        "exists_intro requires an existential goal",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => " +
+        "by exists_elim(evidence, witness, opened => opened);\n42\n",
+        "exists_elim requires an existential proof",
+      ],
+      [
+        "type bad = " +
+        "(universal: Proof forall (value: I32). True) -> Proof True\n" +
+        "let bad = universal => by forall_apply(universal, missing);\n42\n",
+        "Unsupported universal argument missing",
+      ],
+      [
+        "type bad = " +
+        "(universal: Proof forall (value: I32). True, text: Text) -> " +
+        "Proof True\n" +
+        "let bad = (universal, text) => " +
+        "by forall_apply(universal, text);\n42\n",
+        "universal argument text has type Text, expected I32",
+      ],
+      [
+        "type bad = " +
+        "(text: Text) -> Proof exists (value: I32). True\n" +
+        "let bad = text => by exists_intro(text, true_intro);\n42\n",
+        "existential witness text has type Text, expected I32",
+      ],
+      [
+        "type bad = " +
+        "(package: Proof exists (value: I32). False) -> Proof True\n" +
+        "let bad = package => " +
+        "by exists_elim(package, witness, impossible => witness);\n42\n",
+        "Unknown proof evidence witness",
+      ],
+      [
+        "type bad = " +
+        "(package: Proof exists (value: I32). False) -> Proof True\n" +
+        "let bad = package => " +
+        "by exists_elim(package, witness, impossible => missing);\n42\n",
+        "Unknown proof evidence missing",
+      ],
+      [
+        "type bad = " +
+        "(package: Proof exists (value: I32). False) -> Proof False\n" +
+        "let bad = package => " +
+        "by exists_elim(package, witness, impossible => true_intro);\n42\n",
+        "Proof establishes True, not False",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "fact predicate = value => True;\n" +
+        "type bad = " +
+        "(outer: I32, evidence: Proof predicate(outer)) -> " +
+        "Proof forall (inner: I32). predicate(inner)\n" +
+        "let bad = (outer, evidence) => by inner => evidence;\n42\n",
+        "cannot quantify over an opaque holds proposition",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "fact predicate = value => True;\n" +
+        "type bad = " +
+        "(universal: Proof forall (value: I32). predicate(value)) -> " +
+        "Proof True\n" +
+        "let bad = universal => by true_intro;\n42\n",
+        "cannot quantify over an opaque holds proposition",
+      ],
+      [
+        "type bad = " +
+        "() -> Proof forall (value: I32). value + 0 = value\n" +
+        "let bad = () => by value => refl;\n42\n",
+        "cannot quantify over an opaque equal proposition",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("incomplete quantified proofs preserve unaffected semantics", () => {
+  for (
+    const source of [
+      "let broken = () => by forall_apply(proof, );\n" +
+      "let kept = 42;\nkept\n",
+      "let broken = () => by exists_intro(value, );\n" +
+      "let kept = 42;\nkept\n",
+      "let broken = () => " +
+      "by exists_elim(package, witness, evidence => );\n" +
+      "let kept = 42;\nkept\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("Baba parser rejected MISSING")
+      ),
+      true,
+    );
+    assert_equals(analysis.symbols.has("kept"), true);
     assert_equals(checked_value(lower_duck_source(analysis)), undefined);
   }
 });
@@ -1648,7 +1850,7 @@ Deno.test("proof atoms preserve literal contents during kernel checking", () => 
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
-Deno.test("proof atoms preserve quantified variable identity", () => {
+Deno.test("quantified opaque proof atoms fail closed", () => {
   const source = "type predicate = (value: I32) -> Prop\n" +
     "fact predicate = value => True;\n" +
     "type bad = " +
@@ -1660,8 +1862,9 @@ Deno.test("proof atoms preserve quantified variable identity", () => {
   assert_equals(
     analysis.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2605" &&
-      diagnostic.message.includes('["var",1]') &&
-      diagnostic.message.includes('["var",0]')
+      diagnostic.message.includes(
+        "cannot quantify over an opaque holds proposition",
+      )
     ),
     true,
   );
