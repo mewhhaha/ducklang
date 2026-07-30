@@ -89,6 +89,10 @@ export type MachineDifference = {
   right: ValueId;
   maximum: bigint;
 };
+export type MachineDisequality = {
+  left: ValueId;
+  right: ValueId;
+};
 type MachineWitnessSearch =
   | { tag: "found"; value: bigint }
   | { tag: "none" }
@@ -106,6 +110,7 @@ export class MachineFactDomain {
   readonly exclusions: ReadonlyMap<ValueId, readonly bigint[]>;
   readonly congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>;
   readonly bitmasks: ReadonlyMap<ValueId, MachineBitmask>;
+  readonly disequalities: ReadonlyMap<ValueId, readonly ValueId[]>;
   readonly difference_assumptions: ReadonlyMap<
     ValueId,
     ReadonlyMap<ValueId, bigint>
@@ -124,6 +129,7 @@ export class MachineFactDomain {
     exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
     congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
     bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+    disequalities: ReadonlyMap<ValueId, readonly ValueId[]>,
     difference_assumptions: ReadonlyMap<
       ValueId,
       ReadonlyMap<ValueId, bigint>
@@ -142,10 +148,26 @@ export class MachineFactDomain {
     this.exclusions = snapshot_machine_exclusions(exclusions);
     this.congruences = snapshot_machine_congruences(congruences);
     this.bitmasks = snapshot_machine_bitmasks(bitmasks);
+    this.disequalities = snapshot_machine_disequalities(disequalities);
     this.difference_assumptions = snapshot_machine_differences(
       difference_assumptions,
     );
     this.differences = snapshot_machine_differences(differences);
+    const relational_values = machine_difference_values(
+      this.difference_assumptions,
+    );
+    for (const [left, rights] of this.disequalities) {
+      relational_values.add(left);
+      for (const right of rights) relational_values.add(right);
+    }
+    if (
+      relational_values.size >
+        proof_limits.maximum_relational_terms_per_function
+    ) {
+      throw new Error(
+        `Machine relational term budget exceeded: ${relational_values.size}.`,
+      );
+    }
     Object.freeze(this);
     TRUSTED_MACHINE_DOMAINS.add(this);
   }
@@ -325,6 +347,7 @@ export function machine_fact_domain(
     immutable_map<ValueId, readonly bigint[]>([]),
     immutable_map<ValueId, readonly MachineCongruence[]>([]),
     immutable_map<ValueId, MachineBitmask>([]),
+    immutable_map<ValueId, readonly ValueId[]>([]),
     immutable_map<ValueId, ReadonlyMap<ValueId, bigint>>([]),
     immutable_map<ValueId, ReadonlyMap<ValueId, bigint>>([]),
   );
@@ -390,7 +413,7 @@ export function assume_machine_difference(
   ) {
     return domain;
   }
-  const values = machine_difference_values(domain.difference_assumptions);
+  const values = machine_relational_values(domain);
   values.add(left);
   values.add(right);
   if (
@@ -438,6 +461,14 @@ export function assume_machine_difference(
   ) {
     return unreachable_machine_domain(domain, left);
   }
+  if (
+    !machine_disequalities_allow_differences(
+      domain.disequalities,
+      closed,
+    )
+  ) {
+    return unreachable_machine_domain(domain, left);
+  }
   return new MachineFactDomain(
     MACHINE_DOMAIN_TOKEN,
     true,
@@ -447,6 +478,7 @@ export function assume_machine_difference(
     domain.exclusions,
     domain.congruences,
     domain.bitmasks,
+    domain.disequalities,
     assumptions,
     closed,
   );
@@ -524,6 +556,257 @@ export function machine_differences(
   return Object.freeze(differences);
 }
 
+export function assume_machine_equality(
+  domain: MachineFactDomain,
+  left: ValueId,
+  right: ValueId,
+): MachineFactDomain {
+  assert_machine_domain(domain);
+  const left_range = domain.ranges.get(left);
+  const right_range = domain.ranges.get(right);
+  if (left_range === undefined || right_range === undefined) {
+    throw new Error(
+      `Machine equality ${left}, ${right} is missing a range.`,
+    );
+  }
+  if (
+    left_range.width !== right_range.width ||
+    left_range.signed !== right_range.signed
+  ) {
+    throw new Error(
+      `Machine equality ${left}, ${right} has incompatible ranges.`,
+    );
+  }
+  if (!domain.reachable) return domain;
+  if (left === right) return domain;
+  if (implies_machine_disequality(domain, left, right)) {
+    return unreachable_machine_domain(domain, left);
+  }
+  const direct_forward = domain.difference_assumptions.get(left)?.get(right);
+  const direct_reverse = domain.difference_assumptions.get(right)?.get(left);
+  if (
+    direct_forward !== undefined && direct_forward <= 0n &&
+    direct_reverse !== undefined && direct_reverse <= 0n
+  ) {
+    return domain;
+  }
+  const values = machine_relational_values(domain);
+  values.add(left);
+  values.add(right);
+  if (
+    values.size > proof_limits.maximum_relational_terms_per_function
+  ) {
+    return domain;
+  }
+  const assumptions = mutable_machine_differences(
+    domain.difference_assumptions,
+  );
+  set_machine_difference(assumptions, left, right, 0n);
+  set_machine_difference(assumptions, right, left, 0n);
+  const difference_values = machine_difference_values(assumptions);
+  const closed = close_machine_differences(assumptions, difference_values);
+  for (const value of difference_values) {
+    const self = closed.get(value)?.get(value);
+    if (self !== undefined && self < 0n) {
+      return unreachable_machine_domain(domain, value);
+    }
+  }
+  if (
+    !machine_differences_allow_facts(
+      closed,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      domain.bitmasks,
+    ) ||
+    !machine_disequalities_allow_differences(
+      domain.disequalities,
+      closed,
+    )
+  ) {
+    return unreachable_machine_domain(domain, left);
+  }
+  return new MachineFactDomain(
+    MACHINE_DOMAIN_TOKEN,
+    true,
+    domain.facts,
+    domain.ranges,
+    domain.evidence,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+    domain.disequalities,
+    assumptions,
+    closed,
+  );
+}
+
+export function implies_machine_equality(
+  domain: MachineFactDomain,
+  left: ValueId,
+  right: ValueId,
+): boolean {
+  return implies_machine_difference(domain, left, right, 0n) &&
+    implies_machine_difference(domain, right, left, 0n);
+}
+
+export function assume_machine_disequality(
+  domain: MachineFactDomain,
+  left: ValueId,
+  right: ValueId,
+): MachineFactDomain {
+  assert_machine_domain(domain);
+  const left_range = domain.ranges.get(left);
+  const right_range = domain.ranges.get(right);
+  if (left_range === undefined || right_range === undefined) {
+    throw new Error(
+      `Machine disequality ${left}, ${right} is missing a range.`,
+    );
+  }
+  if (
+    left_range.width !== right_range.width ||
+    left_range.signed !== right_range.signed
+  ) {
+    throw new Error(
+      `Machine disequality ${left}, ${right} has incompatible ranges.`,
+    );
+  }
+  if (!domain.reachable) return domain;
+  if (implies_machine_equality(domain, left, right)) {
+    return unreachable_machine_domain(domain, left);
+  }
+  if (machine_values_are_disequal(domain.disequalities, left, right)) {
+    return domain;
+  }
+  const values = machine_relational_values(domain);
+  values.add(left);
+  values.add(right);
+  if (
+    values.size > proof_limits.maximum_relational_terms_per_function
+  ) {
+    return domain;
+  }
+  const disequalities = new Map(domain.disequalities);
+  const [ordered_left, ordered_right] = ordered_machine_values(left, right);
+  const known = disequalities.get(ordered_left);
+  let rights: ValueId[] = [];
+  if (known !== undefined) rights = [...known];
+  rights.push(ordered_right);
+  rights.sort(compare_value_ids);
+  disequalities.set(ordered_left, Object.freeze(rights));
+  return new MachineFactDomain(
+    MACHINE_DOMAIN_TOKEN,
+    true,
+    domain.facts,
+    domain.ranges,
+    domain.evidence,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+    disequalities,
+    domain.difference_assumptions,
+    domain.differences,
+  );
+}
+
+export function implies_machine_disequality(
+  domain: MachineFactDomain,
+  left: ValueId,
+  right: ValueId,
+): boolean {
+  assert_machine_domain(domain);
+  const left_range = domain.ranges.get(left);
+  const right_range = domain.ranges.get(right);
+  if (left_range === undefined || right_range === undefined) {
+    throw new Error(
+      `Machine disequality ${left}, ${right} is missing a range.`,
+    );
+  }
+  if (
+    left_range.width !== right_range.width ||
+    left_range.signed !== right_range.signed
+  ) {
+    throw new Error(
+      `Machine disequality ${left}, ${right} has incompatible ranges.`,
+    );
+  }
+  if (!domain.reachable || left === right) return false;
+  if (machine_values_are_disequal(domain.disequalities, left, right)) {
+    return true;
+  }
+  for (const [known_left, known_rights] of domain.disequalities) {
+    for (const known_right of known_rights) {
+      if (
+        machine_values_are_equal_under_differences(
+          domain.differences,
+          known_left,
+          left,
+        ) &&
+        machine_values_are_equal_under_differences(
+          domain.differences,
+          known_right,
+          right,
+        )
+      ) {
+        return true;
+      }
+      if (
+        machine_values_are_equal_under_differences(
+          domain.differences,
+          known_left,
+          right,
+        ) &&
+        machine_values_are_equal_under_differences(
+          domain.differences,
+          known_right,
+          left,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  if (
+    implies_machine_difference(domain, left, right, -1n) ||
+    implies_machine_difference(domain, right, left, -1n)
+  ) {
+    return true;
+  }
+  const left_bounds = machine_difference_fact_bounds(
+    left,
+    domain.facts,
+    domain.ranges,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+  );
+  const right_bounds = machine_difference_fact_bounds(
+    right,
+    domain.facts,
+    domain.ranges,
+    domain.exclusions,
+    domain.congruences,
+    domain.bitmasks,
+  );
+  if (left_bounds === undefined || right_bounds === undefined) return false;
+  return left_bounds.maximum < right_bounds.minimum ||
+    right_bounds.maximum < left_bounds.minimum;
+}
+
+export function machine_disequalities(
+  domain: MachineFactDomain,
+): readonly MachineDisequality[] {
+  assert_machine_domain(domain);
+  const disequalities: MachineDisequality[] = [];
+  for (const [left, rights] of domain.disequalities) {
+    for (const right of rights) {
+      disequalities.push(Object.freeze({ left, right }));
+    }
+  }
+  return Object.freeze(disequalities);
+}
+
 export function assume_machine_congruence(
   domain: MachineFactDomain,
   value: ValueId,
@@ -598,13 +881,28 @@ export function assume_machine_congruence(
       domain.bitmasks,
     )
   ) {
-    const retained = without_machine_difference_value(domain, value);
+    const retained = retain_machine_equalities_for_nonconvex_value(
+      domain,
+      value,
+    );
     difference_assumptions = retained.assumptions;
     differences = retained.differences;
   }
   if (
     !machine_differences_allow_facts(
       differences,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      congruences,
+      domain.bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, value);
+  }
+  if (
+    !machine_disequalities_allow_facts(
+      domain.disequalities,
       domain.facts,
       domain.ranges,
       domain.exclusions,
@@ -623,6 +921,7 @@ export function assume_machine_congruence(
     domain.exclusions,
     congruences,
     domain.bitmasks,
+    domain.disequalities,
     difference_assumptions,
     differences,
   );
@@ -783,13 +1082,28 @@ export function assume_machine_bitmask(
       bitmasks,
     )
   ) {
-    const retained = without_machine_difference_value(domain, value);
+    const retained = retain_machine_equalities_for_nonconvex_value(
+      domain,
+      value,
+    );
     difference_assumptions = retained.assumptions;
     differences = retained.differences;
   }
   if (
     !machine_differences_allow_facts(
       differences,
+      domain.facts,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, value);
+  }
+  if (
+    !machine_disequalities_allow_facts(
+      domain.disequalities,
       domain.facts,
       domain.ranges,
       domain.exclusions,
@@ -808,6 +1122,7 @@ export function assume_machine_bitmask(
     domain.exclusions,
     domain.congruences,
     bitmasks,
+    domain.disequalities,
     difference_assumptions,
     differences,
   );
@@ -874,6 +1189,7 @@ function replace_machine_fact(
     exclusions,
     congruences,
     bitmasks,
+    without_machine_disequality_value(domain.disequalities, value),
     retained_differences.assumptions,
     retained_differences.differences,
   );
@@ -950,6 +1266,18 @@ export function assume_machine_fact(
   ) {
     return unreachable_machine_domain(domain, proposition.value);
   }
+  if (
+    !machine_disequalities_allow_facts(
+      domain.disequalities,
+      result,
+      domain.ranges,
+      domain.exclusions,
+      domain.congruences,
+      domain.bitmasks,
+    )
+  ) {
+    return unreachable_machine_domain(domain, proposition.value);
+  }
   const evidence = new Map(domain.evidence);
   const prior = evidence.get(proposition.value);
   const current_evidence: FactEvidence[] = [];
@@ -966,6 +1294,7 @@ export function assume_machine_fact(
     domain.exclusions,
     domain.congruences,
     domain.bitmasks,
+    domain.disequalities,
     domain.difference_assumptions,
     domain.differences,
   );
@@ -1128,7 +1457,7 @@ export function exclude_machine_fact(
         domain.bitmasks,
       )
     ) {
-      const retained = without_machine_difference_value(
+      const retained = retain_machine_equalities_for_nonconvex_value(
         domain,
         proposition.value,
       );
@@ -1144,6 +1473,7 @@ export function exclude_machine_fact(
       exclusions,
       domain.congruences,
       domain.bitmasks,
+      domain.disequalities,
       difference_assumptions,
       differences,
     );
@@ -1196,6 +1526,18 @@ export function exclude_machine_fact(
     if (
       !machine_differences_allow_facts(
         updated.differences,
+        updated.facts,
+        updated.ranges,
+        updated.exclusions,
+        updated.congruences,
+        updated.bitmasks,
+      )
+    ) {
+      return unreachable_machine_domain(updated, proposition.value);
+    }
+    if (
+      !machine_disequalities_allow_facts(
+        updated.disequalities,
         updated.facts,
         updated.ranges,
         updated.exclusions,
@@ -1354,6 +1696,7 @@ export function join_machine_domains(
     exclusions,
     congruences,
     bitmasks,
+    joined_machine_disequalities(left, right),
     joined_differences.assumptions,
     joined_differences.differences,
   );
@@ -1430,6 +1773,22 @@ function joined_machine_bitmasks(
   return joined;
 }
 
+function joined_machine_disequalities(
+  left: MachineFactDomain,
+  right: MachineFactDomain,
+): ReadonlyMap<ValueId, readonly ValueId[]> {
+  const joined = new Map<ValueId, readonly ValueId[]>();
+  for (const [value, left_rights] of left.disequalities) {
+    const right_rights = right.disequalities.get(value);
+    if (right_rights === undefined) continue;
+    const shared = left_rights.filter((candidate) =>
+      right_rights.includes(candidate)
+    );
+    if (shared.length > 0) joined.set(value, Object.freeze(shared));
+  }
+  return joined;
+}
+
 function joined_machine_differences(
   left: MachineFactDomain,
   right: MachineFactDomain,
@@ -1451,7 +1810,16 @@ function joined_machine_differences(
       set_machine_difference(assumptions, from, to, maximum);
     }
   }
-  for (const value of machine_difference_values(assumptions)) {
+  const common_values = machine_difference_values(assumptions);
+  let common_differences = new Map<ValueId, Map<ValueId, bigint>>();
+  if (common_values.size > 0) {
+    common_differences = close_machine_differences(
+      assumptions,
+      common_values,
+    );
+  }
+  const nonconvex_values = new Set<ValueId>();
+  for (const value of common_values) {
     if (
       !machine_value_has_nonconvex_domain(
         value,
@@ -1464,11 +1832,15 @@ function joined_machine_differences(
     ) {
       continue;
     }
-    assumptions.delete(value);
-    for (const bounds of assumptions.values()) bounds.delete(value);
+    nonconvex_values.add(value);
   }
-  const values = machine_difference_values(assumptions);
-  if (values.size === 0) {
+  if (nonconvex_values.size > 0) {
+    return retain_machine_equalities_for_nonconvex_values(
+      assumptions,
+      nonconvex_values,
+    );
+  }
+  if (common_values.size === 0) {
     return {
       assumptions,
       differences: new Map(),
@@ -1476,7 +1848,7 @@ function joined_machine_differences(
   }
   return {
     assumptions,
-    differences: close_machine_differences(assumptions, values),
+    differences: common_differences,
   };
 }
 
@@ -1500,6 +1872,17 @@ function machine_difference_values(
   for (const [left, bounds] of differences) {
     values.add(left);
     for (const right of bounds.keys()) values.add(right);
+  }
+  return values;
+}
+
+function machine_relational_values(
+  domain: MachineFactDomain,
+): Set<ValueId> {
+  const values = machine_difference_values(domain.difference_assumptions);
+  for (const [left, rights] of domain.disequalities) {
+    values.add(left);
+    for (const right of rights) values.add(right);
   }
   return values;
 }
@@ -1541,6 +1924,125 @@ function without_machine_difference_value(
     assumptions,
     differences: close_machine_differences(assumptions, values),
   };
+}
+
+function retain_machine_equalities_for_nonconvex_value(
+  domain: MachineFactDomain,
+  value: ValueId,
+): {
+  assumptions: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+} {
+  return retain_machine_equalities_for_nonconvex_values(
+    domain.difference_assumptions,
+    new Set([value]),
+  );
+}
+
+function retain_machine_equalities_for_nonconvex_values(
+  original_assumptions: ReadonlyMap<
+    ValueId,
+    ReadonlyMap<ValueId, bigint>
+  >,
+  nonconvex_values: ReadonlySet<ValueId>,
+): {
+  assumptions: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>;
+} {
+  const assumptions = mutable_machine_differences(original_assumptions);
+  for (const value of nonconvex_values) {
+    assumptions.delete(value);
+    for (const bounds of assumptions.values()) bounds.delete(value);
+  }
+  const relational_values = [
+    ...machine_difference_values(original_assumptions),
+  ].sort(compare_value_ids);
+  for (
+    let left_index = 0;
+    left_index < relational_values.length;
+    left_index += 1
+  ) {
+    const left = relational_values[left_index];
+    if (left === undefined) continue;
+    for (
+      let right_index = left_index + 1;
+      right_index < relational_values.length;
+      right_index += 1
+    ) {
+      const right = relational_values[right_index];
+      if (right === undefined) continue;
+      if (
+        !nonconvex_values.has(left) && !nonconvex_values.has(right)
+      ) {
+        continue;
+      }
+      const forward = original_assumptions.get(left)?.get(right);
+      const reverse = original_assumptions.get(right)?.get(left);
+      if (
+        forward === undefined || forward > 0n ||
+        reverse === undefined || reverse > 0n
+      ) {
+        continue;
+      }
+      set_machine_difference(assumptions, left, right, 0n);
+      set_machine_difference(assumptions, right, left, 0n);
+    }
+  }
+  const values = machine_difference_values(assumptions);
+  if (values.size === 0) {
+    return {
+      assumptions,
+      differences: new Map(),
+    };
+  }
+  return {
+    assumptions,
+    differences: close_machine_differences(assumptions, values),
+  };
+}
+
+function without_machine_disequality_value(
+  disequalities: ReadonlyMap<ValueId, readonly ValueId[]>,
+  value: ValueId,
+): ReadonlyMap<ValueId, readonly ValueId[]> {
+  const retained = new Map<ValueId, readonly ValueId[]>();
+  for (const [left, rights] of disequalities) {
+    if (left === value) continue;
+    const remaining = rights.filter((right) => right !== value);
+    if (remaining.length > 0) {
+      retained.set(left, Object.freeze(remaining));
+    }
+  }
+  return retained;
+}
+
+function ordered_machine_values(
+  left: ValueId,
+  right: ValueId,
+): readonly [ValueId, ValueId] {
+  if (compare_value_ids(left, right) <= 0) return [left, right];
+  return [right, left];
+}
+
+function machine_values_are_disequal(
+  disequalities: ReadonlyMap<ValueId, readonly ValueId[]>,
+  left: ValueId,
+  right: ValueId,
+): boolean {
+  const [ordered_left, ordered_right] = ordered_machine_values(left, right);
+  return disequalities.get(ordered_left)?.includes(ordered_right) === true;
+}
+
+function machine_values_are_equal_under_differences(
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>,
+  left: ValueId,
+  right: ValueId,
+): boolean {
+  if (left === right) return true;
+  const forward = differences.get(left)?.get(right);
+  const reverse = differences.get(right)?.get(left);
+  return forward !== undefined && forward <= 0n &&
+    reverse !== undefined && reverse <= 0n;
 }
 
 function machine_value_has_nonconvex_domain(
@@ -1612,6 +2114,65 @@ function machine_differences_allow_facts(
       );
       if (right_bounds === undefined) return false;
       if (left_bounds.minimum - right_bounds.maximum > maximum) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function machine_disequalities_allow_differences(
+  disequalities: ReadonlyMap<ValueId, readonly ValueId[]>,
+  differences: ReadonlyMap<ValueId, ReadonlyMap<ValueId, bigint>>,
+): boolean {
+  for (const [left, rights] of disequalities) {
+    for (const right of rights) {
+      const forward = differences.get(left)?.get(right);
+      const reverse = differences.get(right)?.get(left);
+      if (
+        forward !== undefined && forward <= 0n &&
+        reverse !== undefined && reverse <= 0n
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function machine_disequalities_allow_facts(
+  disequalities: ReadonlyMap<ValueId, readonly ValueId[]>,
+  facts: FactEnvironment,
+  ranges: ReadonlyMap<ValueId, MachineInteger>,
+  exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
+  congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
+  bitmasks: ReadonlyMap<ValueId, MachineBitmask>,
+): boolean {
+  for (const [left, rights] of disequalities) {
+    const left_bounds = machine_difference_fact_bounds(
+      left,
+      facts,
+      ranges,
+      exclusions,
+      congruences,
+      bitmasks,
+    );
+    if (left_bounds === undefined) return false;
+    for (const right of rights) {
+      const right_bounds = machine_difference_fact_bounds(
+        right,
+        facts,
+        ranges,
+        exclusions,
+        congruences,
+        bitmasks,
+      );
+      if (right_bounds === undefined) return false;
+      if (
+        left_bounds.minimum === left_bounds.maximum &&
+        right_bounds.minimum === right_bounds.maximum &&
+        left_bounds.minimum === right_bounds.minimum
+      ) {
         return false;
       }
     }
@@ -1819,6 +2380,7 @@ function clone_machine_domain(domain: MachineFactDomain): MachineFactDomain {
     exclusions,
     congruences,
     bitmasks,
+    domain.disequalities,
     domain.difference_assumptions,
     domain.differences,
   );
@@ -1915,6 +2477,24 @@ function snapshot_machine_bitmasks(
   return immutable_map(snapshots);
 }
 
+function snapshot_machine_disequalities(
+  disequalities: ReadonlyMap<ValueId, readonly ValueId[]>,
+): ReadonlyMap<ValueId, readonly ValueId[]> {
+  const snapshots = new Map<ValueId, readonly ValueId[]>();
+  const ordered_left = [...disequalities.keys()].sort(compare_value_ids);
+  for (const left of ordered_left) {
+    const rights = disequalities.get(left);
+    if (rights === undefined) {
+      throw new Error(`Machine disequality ${left} lost its right values.`);
+    }
+    snapshots.set(
+      left,
+      Object.freeze([...rights].sort(compare_value_ids)),
+    );
+  }
+  return immutable_map(snapshots);
+}
+
 function snapshot_machine_differences(
   differences: ReadonlyMap<
     ValueId,
@@ -1967,6 +2547,7 @@ function unreachable_machine_domain(
     domain.exclusions,
     domain.congruences,
     domain.bitmasks,
+    domain.disequalities,
     domain.difference_assumptions,
     domain.differences,
   );

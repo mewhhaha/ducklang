@@ -1963,13 +1963,14 @@ function prefix_machine_requirement(
   }
   if (
     left_value !== undefined && right_value !== undefined &&
-    proposition.tag === "equal" && left_value === right_value
+    (proposition.tag === "equal" || proposition.tag === "not_equal")
   ) {
+    let tag: "equality" | "disequality" = "disequality";
+    if (proposition.tag === "equal") tag = "equality";
     return {
-      tag: "difference",
+      tag,
       left: left_value,
       right: right_value,
-      maximum: 0n,
     };
   }
   if (

@@ -4,6 +4,8 @@ import {
   assume_machine_bitmask,
   assume_machine_congruence,
   assume_machine_difference,
+  assume_machine_disequality,
+  assume_machine_equality,
   assume_machine_fact,
   assume_state,
   establish_fact,
@@ -15,6 +17,8 @@ import {
   implies_machine_bitmask,
   implies_machine_congruence,
   implies_machine_difference,
+  implies_machine_disequality,
+  implies_machine_equality,
   implies_machine_fact,
   join_facts,
   join_machine_domains,
@@ -22,6 +26,7 @@ import {
   machine_bitmask,
   machine_congruences,
   machine_differences,
+  machine_disequalities,
   machine_excludes_equal,
   machine_fact_domain,
   machine_fact_evidence,
@@ -703,6 +708,257 @@ Deno.test("machine differences close transitively and detect negative cycles", (
   );
 });
 
+Deno.test("machine equalities close transitively and contradict disequalities", () => {
+  const middle = "equality:middle" as ValueId;
+  const right = "equality:right" as ValueId;
+  const separate = "equality:separate" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: false }],
+    [middle, { width: 3, signed: false }],
+    [right, { width: 3, signed: false }],
+    [separate, { width: 3, signed: false }],
+  ]);
+  let equal = machine_fact_domain(ranges);
+  equal = assume_machine_equality(equal, value, middle);
+  equal = assume_machine_equality(equal, middle, right);
+  assert_equals(implies_machine_equality(equal, value, right), true);
+  assert_equals(implies_machine_disequality(equal, value, right), false);
+  assert_equals(
+    assume_machine_disequality(equal, value, right).reachable,
+    false,
+  );
+
+  let disequal = machine_fact_domain(ranges);
+  disequal = assume_machine_disequality(disequal, value, right);
+  assert_equals(implies_machine_disequality(disequal, right, value), true);
+  assert_equals(machine_disequalities(disequal), [{
+    left: right,
+    right: value,
+  }]);
+  assert_equals(
+    assume_machine_equality(disequal, right, value).reachable,
+    false,
+  );
+
+  let substituted = machine_fact_domain(ranges);
+  substituted = assume_machine_disequality(substituted, middle, separate);
+  substituted = assume_machine_equality(substituted, value, middle);
+  assert_equals(
+    implies_machine_disequality(substituted, value, separate),
+    true,
+  );
+});
+
+Deno.test("machine equalities survive nonconvex refinements in either order", () => {
+  const right = "equality:nonconvex:right" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: false }],
+    [right, { width: 3, signed: false }],
+  ]);
+  for (const relation_first of [false, true]) {
+    for (const refinement of ["congruence", "bitmask", "exclusion"]) {
+      let domain = machine_fact_domain(ranges);
+      if (relation_first) {
+        domain = assume_machine_equality(domain, value, right);
+      }
+      if (refinement === "congruence") {
+        domain = assume_machine_congruence(domain, value, 2n, 0n);
+      } else if (refinement === "bitmask") {
+        domain = assume_machine_bitmask(domain, value, 0b001n, 0n);
+      } else {
+        domain = exclude_machine_fact(domain, {
+          tag: "equal",
+          value,
+          expected: 1n,
+        });
+      }
+      if (!relation_first) {
+        domain = assume_machine_equality(domain, value, right);
+      }
+      assert_equals(domain.reachable, true);
+      assert_equals(implies_machine_equality(domain, value, right), true);
+    }
+  }
+  let equal = assume_machine_equality(
+    machine_fact_domain(ranges),
+    value,
+    right,
+  );
+  equal = assume_machine_congruence(equal, value, 2n, 0n);
+  assert_equals(
+    implies_machine_equality(
+      join_machine_domains(equal, equal),
+      value,
+      right,
+    ),
+    true,
+  );
+  assert_equals(
+    implies_machine_equality(
+      join_machine_domains(equal, machine_fact_domain(ranges)),
+      value,
+      right,
+    ),
+    false,
+  );
+});
+
+Deno.test("nonconvex equalities retain direct join provenance", () => {
+  const middle_left = "equality:join:middle-left" as ValueId;
+  const middle_right = "equality:join:middle-right" as ValueId;
+  const right = "equality:join:right" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: false }],
+    [middle_left, { width: 3, signed: false }],
+    [middle_right, { width: 3, signed: false }],
+    [right, { width: 3, signed: false }],
+  ]);
+  let left = machine_fact_domain(ranges);
+  left = assume_machine_equality(left, value, middle_left);
+  left = assume_machine_equality(left, middle_left, right);
+  left = assume_machine_bitmask(left, value, 0b001n, 0n);
+  let other = machine_fact_domain(ranges);
+  other = assume_machine_equality(other, value, middle_right);
+  other = assume_machine_equality(other, middle_right, right);
+  other = assume_machine_bitmask(other, value, 0b001n, 0n);
+  assert_equals(implies_machine_equality(left, value, right), true);
+  assert_equals(implies_machine_equality(other, value, right), true);
+  assert_equals(
+    implies_machine_equality(
+      join_machine_domains(left, other),
+      value,
+      right,
+    ),
+    false,
+  );
+  const explicit = assume_machine_equality(left, value, right);
+  let direct = assume_machine_equality(
+    machine_fact_domain(ranges),
+    value,
+    right,
+  );
+  direct = assume_machine_bitmask(direct, value, 0b001n, 0n);
+  assert_equals(
+    implies_machine_equality(
+      join_machine_domains(explicit, direct),
+      value,
+      right,
+    ),
+    true,
+  );
+});
+
+Deno.test("machine disequalities reduce against scalar facts", () => {
+  const right = "disequality:scalar:right" as ValueId;
+  const ranges = new Map([
+    [value, { width: 3, signed: true }],
+    [right, { width: 3, signed: true }],
+  ]);
+  for (const relation_first of [false, true]) {
+    let domain = machine_fact_domain(ranges);
+    if (relation_first) {
+      domain = assume_machine_disequality(domain, value, right);
+    }
+    domain = assume_machine_fact(domain, {
+      tag: "equal",
+      value,
+      expected: 1n,
+    });
+    domain = assume_machine_fact(domain, {
+      tag: "equal",
+      value: right,
+      expected: 1n,
+    });
+    if (!relation_first) {
+      domain = assume_machine_disequality(domain, value, right);
+    }
+    assert_equals(domain.reachable, false);
+  }
+
+  let disjoint = machine_fact_domain(ranges);
+  disjoint = assume_machine_fact(disjoint, {
+    tag: "less_than",
+    value,
+    bound: 0n,
+  });
+  disjoint = assume_machine_fact(disjoint, {
+    tag: "greater_equal",
+    value: right,
+    bound: 0n,
+  });
+  assert_equals(implies_machine_disequality(disjoint, value, right), true);
+});
+
+Deno.test("machine disequality joins and rebuilt values preserve identity", () => {
+  const input = "disequality:join:input" as ValueId;
+  const offset = "disequality:join:offset" as ValueId;
+  const right = "disequality:join:right" as ValueId;
+  const ranges = new Map([
+    [input, { width: 3, signed: true }],
+    [offset, { width: 3, signed: true }],
+    [value, { width: 3, signed: true }],
+    [right, { width: 3, signed: true }],
+  ]);
+  const excluded = assume_machine_disequality(
+    machine_fact_domain(ranges),
+    value,
+    right,
+  );
+  excluded.disequalities.forEach((rights) => {
+    assert_equals(Object.isFrozen(rights), true);
+    assert_throws(
+      () => (rights as ValueId[]).push(value),
+      "Cannot add property",
+    );
+  });
+  assert_throws(
+    () =>
+      (excluded.disequalities as Map<ValueId, readonly ValueId[]>).set(
+        value,
+        [right],
+      ),
+    "set is not a function",
+  );
+  assert_equals(
+    implies_machine_disequality(
+      join_machine_domains(excluded, excluded),
+      value,
+      right,
+    ),
+    true,
+  );
+  assert_equals(
+    implies_machine_disequality(
+      join_machine_domains(excluded, machine_fact_domain(ranges)),
+      value,
+      right,
+    ),
+    false,
+  );
+
+  let rebuilt = assume_machine_fact(excluded, {
+    tag: "equal",
+    value: input,
+    expected: 1n,
+  });
+  rebuilt = assume_machine_fact(rebuilt, {
+    tag: "equal",
+    value: offset,
+    expected: 1n,
+  });
+  rebuilt = transfer_machine_offset(
+    rebuilt,
+    "add",
+    input,
+    offset,
+    value,
+  );
+  assert_equals(
+    implies_machine_disequality(rebuilt, value, right),
+    false,
+  );
+});
+
 Deno.test("machine differences reduce against scalar facts in either order", () => {
   const right = "difference:scalar:right" as ValueId;
   for (const relation_first of [false, true]) {
@@ -1123,6 +1379,74 @@ Deno.test("machine differences honor the structural term budget", () => {
     implies_machine_difference(domain, final_left, final_right, 0n),
     false,
   );
+});
+
+Deno.test("machine relation kinds share one structural term budget", () => {
+  const values = Array.from(
+    { length: 66 },
+    (_, index) => `relation-budget:${index}` as ValueId,
+  );
+  const ranges = new Map(
+    values.map((candidate) => [
+      candidate,
+      { width: 3, signed: false },
+    ]),
+  );
+  const anchor = values[0];
+  if (anchor === undefined) throw new Error("Expected relation anchor.");
+  let disequalities = machine_fact_domain(ranges);
+  for (let index = 1; index < 64; index += 1) {
+    const candidate = values[index];
+    if (candidate === undefined) {
+      throw new Error(`Expected relation budget value ${index}.`);
+    }
+    disequalities = assume_machine_disequality(
+      disequalities,
+      anchor,
+      candidate,
+    );
+  }
+  const difference_left = values[64];
+  const difference_right = values[65];
+  if (difference_left === undefined || difference_right === undefined) {
+    throw new Error("Expected difference budget endpoints.");
+  }
+  const rejected_difference = assume_machine_difference(
+    disequalities,
+    difference_left,
+    difference_right,
+    0n,
+  );
+  assert_equals(
+    implies_machine_difference(
+      rejected_difference,
+      difference_left,
+      difference_right,
+      0n,
+    ),
+    false,
+  );
+
+  let differences = machine_fact_domain(ranges);
+  for (let index = 1; index < 64; index += 1) {
+    const previous = values[index - 1];
+    const candidate = values[index];
+    if (previous === undefined || candidate === undefined) {
+      throw new Error(`Expected affine budget value ${index}.`);
+    }
+    differences = assume_machine_difference(
+      differences,
+      previous,
+      candidate,
+      0n,
+    );
+  }
+  const rejected_disequality = assume_machine_disequality(
+    differences,
+    difference_left,
+    difference_right,
+  );
+  assert_equals(machine_disequalities(rejected_disequality), []);
 });
 
 Deno.test("machine difference snapshots do not expose mutable rows", () => {

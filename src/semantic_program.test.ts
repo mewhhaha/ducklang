@@ -2398,6 +2398,194 @@ Deno.test("ordered value comparisons establish exact branch evidence", () => {
   }
 });
 
+Deno.test("value equality comparisons establish both branch polarities", () => {
+  const branch_cases = [
+    {
+      condition: "a == b",
+      true_requirement: "left = right",
+      false_requirement: "left != right",
+    },
+    {
+      condition: "a != b",
+      true_requirement: "left != right",
+      false_requirement: "left = right",
+    },
+  ];
+  for (const value_type of ["I32", "U32"]) {
+    for (const branch_case of branch_cases) {
+      for (
+        const [requirement, then_branch, else_branch] of [
+          [branch_case.true_requirement, "consume (a, b)", "a"],
+          [branch_case.false_requirement, "a", "consume (a, b)"],
+        ]
+      ) {
+        let literal_suffix = "";
+        if (value_type === "U32") literal_suffix = "u32";
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(left: ${value_type}, right: ${value_type}, ` +
+            `evidence: Proof ${requirement}) -> ${value_type}\n` +
+            "let consume = (a, b, evidence) => a;\n" +
+            "type guarded = " +
+            `(left: ${value_type}, right: ${value_type}) -> ${value_type}\n` +
+            "let guarded = (a, b) => " +
+            `if ${branch_case.condition} then ${then_branch} ` +
+            `else ${else_branch} end;\n` +
+            `guarded (5${literal_suffix}, 5${literal_suffix})\n`,
+        ));
+        assert_equals(analysis.diagnostics, []);
+        assert_equals(analysis.proofs.size, 1);
+        assert_equals(
+          [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+          "machine_fact",
+        );
+        assert_equals(
+          checked_value(lower_duck_source(analysis)) !== undefined,
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("value equalities compose and transport disequality", () => {
+  for (
+    const [second_condition, requirement] of [
+      ["b == c", "left = right"],
+      ["b != c", "left != right"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(left: I32, right: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (a, b, evidence) => a;\n" +
+        "type guarded = (left: I32, middle: I32, right: I32) -> I32\n" +
+        "let guarded = (a, b, c) => " +
+        "if a == b then " +
+        `if ${second_condition} then consume (a, c) else a end ` +
+        "else a end;\n" +
+        "guarded (5, 5, 5)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("reduced scalar endpoints certify value disequality", () => {
+  const cases = [
+    {
+      body: "do\n" +
+        "  let masked = @bit_and(a, -1i32);\n" +
+        "  if masked == 5i32 then " +
+        "if b == 0i32 then consume (a, b) else a end else a end\n" +
+        "end",
+      call: "guarded (5, 0)\n",
+    },
+    {
+      body: "if a >= 0 then if a <= 2 then " +
+        "if a != 0 then if a != 1 then " +
+        "if b == 0 then consume (a, b) else a end " +
+        "else a end else a end else a end else a end",
+      call: "guarded (2, 0)\n",
+    },
+    {
+      body: "if a >= 0 && a <= 7 && a % 8 == 7 && b == 0 " +
+        "then consume (a, b) else a end",
+      call: "guarded (7, 0)\n",
+    },
+  ];
+  for (const case_ of cases) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left != right) -> I32\n" +
+        "let consume = (left, right, evidence) => right;\n" +
+        "type guarded = (left: I32, right: I32) -> I32\n" +
+        `let guarded = (a, b) => ${case_.body};\n` +
+        case_.call,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("value equality survives nonconvex facts in either order", () => {
+  for (
+    const condition of [
+      "a % 2 == 0 && b % 2 == 0 && a == b",
+      "a == b && a % 2 == 0 && b % 2 == 0",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+        "let consume = (left, right, evidence) => right;\n" +
+        "type guarded = (left: I32, right: I32) -> I32\n" +
+        "let guarded = (a, b) => " +
+        `if ${condition} then consume (a, b) else a end;\n` +
+        "guarded (4, 4)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("value equality evidence rejects opposite branches", () => {
+  for (
+    const [condition, true_requirement, false_requirement] of [
+      ["a == b", "left != right", "left = right"],
+      ["a != b", "left = right", "left != right"],
+    ]
+  ) {
+    for (
+      const [requirement, then_branch, else_branch] of [
+        [true_requirement, "consume (a, b)", "a"],
+        [false_requirement, "a", "consume (a, b)"],
+      ]
+    ) {
+      const analysis = analyze_duck_source(parse_duck_source(
+        "type consume = " +
+          `(left: I32, right: I32, evidence: Proof ${requirement}) -> I32\n` +
+          "let consume = (a, b, evidence) => a;\n" +
+          "type guarded = (left: I32, right: I32) -> I32\n" +
+          "let guarded = (a, b) => " +
+          `if ${condition} then ${then_branch} else ${else_branch} end;\n` +
+          "42\n",
+      ));
+      assert_equals(
+        analysis.diagnostics.some((diagnostic) =>
+          diagnostic.code === "DUCK2604"
+        ),
+        true,
+      );
+      assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+    }
+  }
+});
+
 Deno.test("ordered value comparisons compose through affine certificates", () => {
   for (const value_type of ["I32", "U32"]) {
     let literal_suffix = "";

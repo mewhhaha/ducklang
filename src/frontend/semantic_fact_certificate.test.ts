@@ -1478,6 +1478,160 @@ Deno.test("semantic machine certificates independently close affine comparisons"
   );
 });
 
+Deno.test("semantic machine certificates close equality classes and transport disequality", () => {
+  const builder = new SemanticCfgBuilder("equality-certificate");
+  const entry = builder.add_block(origin);
+  const after_first = builder.add_block("equality-first:1:2:0" as never);
+  const after_second = builder.add_block("equality-second:2:3:0" as never);
+  const established = builder.add_block("equality-third:3:4:0" as never);
+  const fallback = builder.add_block("equality-fallback:4:5:0" as never);
+  const left = "equality-certificate-left" as ValueId;
+  const middle = "equality-certificate-middle" as ValueId;
+  const right = "equality-certificate-right" as ValueId;
+  const separate = "equality-certificate-separate" as ValueId;
+  for (const parameter of [left, middle, right, separate]) {
+    builder.add_parameter(parameter, i32_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+  }
+  const first_condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 5 },
+    { tag: "primitive", name: "i32.eq" },
+    [left, middle],
+    [bool_type],
+  )[0];
+  if (first_condition === undefined) {
+    throw new Error("Expected first equality comparison.");
+  }
+  builder.connect(entry, after_first);
+  builder.connect(entry, fallback);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition: first_condition,
+    when_true: after_first,
+    when_false: fallback,
+  });
+  const second_condition = builder.add_node(
+    after_first,
+    "equality-first:1:2:0" as never,
+    { start: 6, end: 11 },
+    { tag: "primitive", name: "i32.eq" },
+    [middle, right],
+    [bool_type],
+  )[0];
+  if (second_condition === undefined) {
+    throw new Error("Expected second equality comparison.");
+  }
+  builder.connect(after_first, after_second);
+  builder.connect(after_first, fallback);
+  builder.terminate(after_first, {
+    tag: "branch",
+    condition: second_condition,
+    when_true: after_second,
+    when_false: fallback,
+  });
+  const third_condition = builder.add_node(
+    after_second,
+    "equality-second:2:3:0" as never,
+    { start: 12, end: 18 },
+    { tag: "primitive", name: "i32.ne" },
+    [right, separate],
+    [bool_type],
+  )[0];
+  if (third_condition === undefined) {
+    throw new Error("Expected disequality comparison.");
+  }
+  builder.connect(after_second, established);
+  builder.connect(after_second, fallback);
+  builder.terminate(after_second, {
+    tag: "branch",
+    condition: third_condition,
+    when_true: established,
+    when_false: fallback,
+  });
+  const call_span = { start: 19, end: 30 };
+  const call = builder.add_node(
+    established,
+    "equality-third:3:4:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [left, separate],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected equality call.");
+  builder.terminate(established, { tag: "return", value: call });
+  const zero = builder.add_node(
+    fallback,
+    "equality-fallback:4:5:0" as never,
+    { start: 31, end: 32 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (zero === undefined) throw new Error("Expected equality fallback.");
+  builder.terminate(fallback, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const equality: SemanticMachineRequirement = {
+    tag: "equality",
+    left,
+    right,
+  };
+  const equality_certificate = infer_semantic_machine_certificate(
+    control_flow,
+    call_span,
+    equality,
+  );
+  if (equality_certificate === undefined) {
+    throw new Error("Expected inferred equality certificate.");
+  }
+  assert_equals(
+    verify_semantic_machine_certificate(
+      equality_certificate,
+      control_flow,
+      call_span,
+      equality,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(equality_certificate.requirement), true);
+
+  const disequality: SemanticMachineRequirement = {
+    tag: "disequality",
+    left,
+    right: separate,
+  };
+  const disequality_certificate = infer_semantic_machine_certificate(
+    control_flow,
+    call_span,
+    disequality,
+  );
+  if (disequality_certificate === undefined) {
+    throw new Error("Expected inferred disequality certificate.");
+  }
+  assert_equals(
+    verify_semantic_machine_certificate(
+      disequality_certificate,
+      control_flow,
+      call_span,
+      disequality,
+    ),
+    true,
+  );
+  assert_equals(
+    verify_semantic_machine_certificate(
+      equality_certificate,
+      control_flow,
+      call_span,
+      disequality,
+    ),
+    false,
+  );
+});
+
 Deno.test("semantic machine certificates reject comparison primitives that mismatch operand types", () => {
   for (const primitive of ["i32.lt_u", "i64.lt_s", "duck.lt_s"]) {
     const builder = new SemanticCfgBuilder(

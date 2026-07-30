@@ -44,6 +44,16 @@ export type SemanticMachineRequirement =
     left: ValueId;
     right: ValueId;
     maximum: bigint;
+  }
+  | {
+    tag: "equality";
+    left: ValueId;
+    right: ValueId;
+  }
+  | {
+    tag: "disequality";
+    left: ValueId;
+    right: ValueId;
   };
 
 export type SemanticMachineCertificate = {
@@ -756,7 +766,11 @@ function verify_semantic_paths(
     goal_value = requirement_value(requirement);
     goal_range = ranges.get(goal_value);
     if (goal_range === undefined) return "rejected";
-    if (requirement.tag === "difference") {
+    if (
+      requirement.tag === "difference" ||
+      requirement.tag === "equality" ||
+      requirement.tag === "disequality"
+    ) {
       const right_range = ranges.get(requirement.right);
       if (
         right_range === undefined ||
@@ -1028,6 +1042,16 @@ function snapshot_machine_requirement(
       maximum: requirement.maximum,
     });
   }
+  if (
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
+    return Object.freeze({
+      tag: requirement.tag,
+      left: requirement.left,
+      right: requirement.right,
+    });
+  }
   return Object.freeze({
     tag: "fact",
     proposition: Object.freeze({ ...requirement.proposition }),
@@ -1056,6 +1080,13 @@ function same_machine_requirement(
     return left.left === right.left &&
       left.right === right.right &&
       left.maximum === right.maximum;
+  }
+  if (
+    (left.tag === "equality" || left.tag === "disequality") &&
+    left.tag === right.tag &&
+    (right.tag === "equality" || right.tag === "disequality")
+  ) {
+    return left.left === right.left && left.right === right.right;
   }
   if (left.tag !== "fact" || right.tag !== "fact") return false;
   if (
@@ -1113,7 +1144,13 @@ function machine_ranges(
 
 function requirement_value(requirement: SemanticMachineRequirement): ValueId {
   if (requirement.tag === "fact") return requirement.proposition.value;
-  if (requirement.tag === "difference") return requirement.left;
+  if (
+    requirement.tag === "difference" ||
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
+    return requirement.left;
+  }
   return requirement.value;
 }
 
@@ -1520,12 +1557,26 @@ function aliased_machine_requirement(
   requirement: SemanticMachineRequirement,
   aliases: ReadonlyMap<ValueId, ValueId>,
 ): SemanticMachineRequirement {
-  if (requirement.tag === "difference") {
+  if (
+    requirement.tag === "difference" ||
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
     const left = resolved_alias(requirement.left, aliases);
     const right = resolved_alias(requirement.right, aliases);
     if (left === undefined || right === undefined) return requirement;
     if (left === requirement.left && right === requirement.right) {
       return requirement;
+    }
+    if (
+      requirement.tag === "equality" ||
+      requirement.tag === "disequality"
+    ) {
+      return {
+        tag: requirement.tag,
+        left,
+        right,
+      };
     }
     return {
       tag: "difference",
@@ -1679,6 +1730,15 @@ function verified_comparison_requirement(
     producers,
   );
   if (constant_requirement !== undefined) return constant_requirement;
+  if (relation === "equal" || relation === "not_equal") {
+    let tag: "equality" | "disequality" = "disequality";
+    if (relation === "equal") tag = "equality";
+    return {
+      tag,
+      left: expected_left,
+      right: expected_right,
+    };
+  }
   if (relation !== "less" && relation !== "less_equal") return undefined;
   let maximum = 0n;
   if (relation === "less") maximum = -1n;
@@ -2170,7 +2230,13 @@ function interval_from_premises(
   const exclusions = new Set<bigint>();
   for (const premise of premises) {
     if (requirement_value(premise) !== value) continue;
-    if (premise.tag === "difference") continue;
+    if (
+      premise.tag === "difference" ||
+      premise.tag === "equality" ||
+      premise.tag === "disequality"
+    ) {
+      continue;
+    }
     if (premise.tag === "exclusion") {
       exclusions.add(premise.expected);
       continue;
@@ -2206,15 +2272,30 @@ function interval_from_premises(
     const size = maximum - minimum + 1n;
     if (
       size > 0n &&
-      size <= BigInt(proof_limits.maximum_exclusions_per_value)
+      size <= BigInt(proof_limits.maximum_exclusions_per_value + 1)
     ) {
-      let exhausted = true;
+      let remaining: bigint | undefined;
       for (let candidate = minimum; candidate <= maximum; candidate += 1n) {
         if (exclusions.has(candidate)) continue;
-        exhausted = false;
-        break;
+        if (remaining !== undefined) {
+          remaining = undefined;
+          break;
+        }
+        remaining = candidate;
       }
-      if (exhausted) contradiction = true;
+      if (remaining !== undefined) {
+        minimum = remaining;
+        maximum = remaining;
+      } else {
+        let exhausted = true;
+        for (let candidate = minimum; candidate <= maximum; candidate += 1n) {
+          if (!exclusions.has(candidate)) {
+            exhausted = false;
+            break;
+          }
+        }
+        if (exhausted) contradiction = true;
+      }
     }
   }
   return { minimum, maximum, exclusions, contradiction };
@@ -2308,9 +2389,14 @@ function verified_difference_closure(
 } | undefined {
   const values = new Set<ValueId>(additional_values);
   for (const premise of premises) {
-    if (premise.tag !== "difference") continue;
-    values.add(premise.left);
-    values.add(premise.right);
+    if (
+      premise.tag === "difference" ||
+      premise.tag === "equality" ||
+      premise.tag === "disequality"
+    ) {
+      values.add(premise.left);
+      values.add(premise.right);
+    }
   }
   if (
     values.size > proof_limits.maximum_relational_terms_per_function
@@ -2336,20 +2422,36 @@ function verified_difference_closure(
     if (interval.contradiction) {
       return { bounds, contradiction: true };
     }
+    const reduced = verified_reduced_scalar_bounds(
+      premises,
+      value,
+      range,
+    );
+    let minimum = interval.minimum;
+    let maximum = interval.maximum;
+    if (reduced !== undefined) {
+      minimum = reduced.minimum;
+      maximum = reduced.maximum;
+    }
     set_verified_difference(
       bounds,
       value,
       VERIFIED_DIFFERENCE_ZERO,
-      interval.maximum,
+      maximum,
     );
     set_verified_difference(
       bounds,
       VERIFIED_DIFFERENCE_ZERO,
       value,
-      -interval.minimum,
+      -minimum,
     );
   }
   for (const premise of premises) {
+    if (premise.tag === "equality") {
+      set_verified_difference(bounds, premise.left, premise.right, 0n);
+      set_verified_difference(bounds, premise.right, premise.left, 0n);
+      continue;
+    }
     if (premise.tag !== "difference") continue;
     if (typeof premise.maximum !== "bigint") return undefined;
     const left_range = ranges.get(premise.left);
@@ -2411,15 +2513,20 @@ function set_verified_difference(
   row.set(right, maximum);
 }
 
-function verified_difference_implies(
+function verified_relation_implies(
   premises: readonly SemanticMachineRequirement[],
   requirement: Extract<
     SemanticMachineRequirement,
-    { tag: "difference" }
+    { tag: "difference" | "equality" | "disequality" }
   >,
   ranges: ReadonlyMap<ValueId, IntegerType>,
 ): boolean {
-  if (typeof requirement.maximum !== "bigint") return false;
+  if (
+    requirement.tag === "difference" &&
+    typeof requirement.maximum !== "bigint"
+  ) {
+    return false;
+  }
   const left_range = ranges.get(requirement.left);
   const right_range = ranges.get(requirement.right);
   if (
@@ -2434,8 +2541,67 @@ function verified_difference_implies(
     [requirement.left, requirement.right],
   );
   if (closure === undefined || closure.contradiction) return false;
-  const known = closure.bounds.get(requirement.left)?.get(requirement.right);
-  return known !== undefined && known <= requirement.maximum;
+  const forward = closure.bounds.get(requirement.left)?.get(requirement.right);
+  const reverse = closure.bounds.get(requirement.right)?.get(requirement.left);
+  if (requirement.tag === "difference") {
+    return forward !== undefined && forward <= requirement.maximum;
+  }
+  if (requirement.tag === "equality") {
+    return forward !== undefined && forward <= 0n &&
+      reverse !== undefined && reverse <= 0n;
+  }
+  if (
+    (forward !== undefined && forward <= -1n) ||
+    (reverse !== undefined && reverse <= -1n)
+  ) {
+    return true;
+  }
+  for (const premise of premises) {
+    if (premise.tag !== "disequality") continue;
+    if (
+      verified_values_are_equal(
+        closure.bounds,
+        premise.left,
+        requirement.left,
+      ) &&
+      verified_values_are_equal(
+        closure.bounds,
+        premise.right,
+        requirement.right,
+      )
+    ) {
+      return true;
+    }
+    if (
+      verified_values_are_equal(
+        closure.bounds,
+        premise.left,
+        requirement.right,
+      ) &&
+      verified_values_are_equal(
+        closure.bounds,
+        premise.right,
+        requirement.left,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function verified_values_are_equal(
+  bounds: ReadonlyMap<
+    VerifiedDifferenceTerm,
+    ReadonlyMap<VerifiedDifferenceTerm, bigint>
+  >,
+  left: ValueId,
+  right: ValueId,
+): boolean {
+  const forward = bounds.get(left)?.get(right);
+  const reverse = bounds.get(right)?.get(left);
+  return forward !== undefined && forward <= 0n &&
+    reverse !== undefined && reverse <= 0n;
 }
 
 function premises_are_contradictory(
@@ -2444,10 +2610,30 @@ function premises_are_contradictory(
 ): boolean {
   const closure = verified_difference_closure(premises, ranges, []);
   if (closure?.contradiction) return true;
+  if (closure !== undefined) {
+    for (const premise of premises) {
+      if (
+        premise.tag === "disequality" &&
+        verified_values_are_equal(
+          closure.bounds,
+          premise.left,
+          premise.right,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
   const values = new Set<ValueId>();
   for (const premise of premises) {
     values.add(requirement_value(premise));
-    if (premise.tag === "difference") values.add(premise.right);
+    if (
+      premise.tag === "difference" ||
+      premise.tag === "equality" ||
+      premise.tag === "disequality"
+    ) {
+      values.add(premise.right);
+    }
   }
   for (const value of values) {
     const range = ranges.get(value);
@@ -2542,24 +2728,7 @@ function verified_reduced_product_has_witness(
   range: IntegerType,
 ): boolean | undefined {
   const modulus = 1n << BigInt(range.width);
-  const unsigned_intervals: { minimum: bigint; maximum: bigint }[] = [];
-  if (!range.signed || interval.minimum >= 0n) {
-    unsigned_intervals.push({
-      minimum: interval.minimum,
-      maximum: interval.maximum,
-    });
-  } else if (interval.maximum < 0n) {
-    unsigned_intervals.push({
-      minimum: interval.minimum + modulus,
-      maximum: interval.maximum + modulus,
-    });
-  } else {
-    unsigned_intervals.push({
-      minimum: interval.minimum + modulus,
-      maximum: modulus - 1n,
-    });
-    unsigned_intervals.push({ minimum: 0n, maximum: interval.maximum });
-  }
+  const unsigned_intervals = verified_unsigned_intervals(interval, range);
   let steps = 0;
   for (const bounds of unsigned_intervals) {
     let lower = bounds.minimum;
@@ -2590,6 +2759,32 @@ function verified_reduced_product_has_witness(
     }
   }
   return false;
+}
+
+function verified_unsigned_intervals(
+  interval: IntervalState,
+  range: IntegerType,
+): readonly { minimum: bigint; maximum: bigint }[] {
+  if (!range.signed || interval.minimum >= 0n) {
+    return [{
+      minimum: interval.minimum,
+      maximum: interval.maximum,
+    }];
+  }
+  const modulus = 1n << BigInt(range.width);
+  if (interval.maximum < 0n) {
+    return [{
+      minimum: interval.minimum + modulus,
+      maximum: interval.maximum + modulus,
+    }];
+  }
+  return [
+    {
+      minimum: interval.minimum + modulus,
+      maximum: modulus - 1n,
+    },
+    { minimum: 0n, maximum: interval.maximum },
+  ];
 }
 
 function minimum_verified_bitmask_value(
@@ -2633,6 +2828,147 @@ function minimum_verified_bitmask_value(
   return search(width - 1, false);
 }
 
+function maximum_verified_bitmask_value(
+  upper: bigint,
+  bitmask: VerifiedBitmaskState,
+  width: number,
+): bigint | undefined {
+  const equal = new Map<number, bigint | undefined>();
+  const less = new Map<number, bigint | undefined>();
+  const search = (
+    bit: number,
+    already_less: boolean,
+  ): bigint | undefined => {
+    if (bit < 0) return 0n;
+    let memo = equal;
+    if (already_less) memo = less;
+    if (memo.has(bit)) return memo.get(bit);
+    const bit_value = 1n << BigInt(bit);
+    let upper_digit = 0n;
+    if ((upper & bit_value) !== 0n) upper_digit = 1n;
+    for (const digit of [1n, 0n]) {
+      if (digit === 0n && (bitmask.known_one & bit_value) !== 0n) {
+        continue;
+      }
+      if (digit === 1n && (bitmask.known_zero & bit_value) !== 0n) {
+        continue;
+      }
+      if (!already_less && digit > upper_digit) continue;
+      const suffix = search(
+        bit - 1,
+        already_less || digit < upper_digit,
+      );
+      if (suffix === undefined) continue;
+      const result = digit * bit_value + suffix;
+      memo.set(bit, result);
+      return result;
+    }
+    memo.set(bit, undefined);
+    return undefined;
+  };
+  return search(width - 1, false);
+}
+
+function verified_reduced_scalar_bounds(
+  premises: readonly SemanticMachineRequirement[],
+  value: ValueId,
+  range: IntegerType,
+): { minimum: bigint; maximum: bigint } | undefined {
+  const interval = interval_from_premises(premises, value, range);
+  if (interval.contradiction) return undefined;
+  const bitmask = bitmask_from_premises(premises, value, range);
+  if (
+    bitmask.malformed ||
+    (bitmask.known_zero & bitmask.known_one) !== 0n
+  ) {
+    return undefined;
+  }
+  const congruence = congruence_from_premises(premises, value);
+  if (congruence.malformed || congruence.contradiction) return undefined;
+  const unsigned_intervals = verified_unsigned_intervals(interval, range);
+  const modulus = 1n << BigInt(range.width);
+  let minimum: bigint | undefined;
+  let steps = 0;
+  for (const bounds of unsigned_intervals) {
+    let lower = bounds.minimum;
+    while (lower <= bounds.maximum) {
+      const bits = minimum_verified_bitmask_value(
+        lower,
+        bitmask,
+        range.width,
+      );
+      if (bits === undefined || bits > bounds.maximum) break;
+      if (steps + range.width > proof_limits.compiler_search_steps) {
+        return undefined;
+      }
+      steps += range.width;
+      let candidate = bits;
+      if (range.signed) {
+        const sign = 1n << BigInt(range.width - 1);
+        if (bits >= sign) candidate -= modulus;
+      }
+      let matches_congruence = true;
+      if (congruence.congruence !== undefined) {
+        matches_congruence = canonical_verified_residue(
+          candidate,
+          congruence.congruence.modulus,
+        ) === congruence.congruence.residue;
+      }
+      if (
+        matches_congruence &&
+        !interval.exclusions.has(candidate)
+      ) {
+        minimum = candidate;
+        break;
+      }
+      lower = bits + 1n;
+    }
+    if (minimum !== undefined) break;
+  }
+  if (minimum === undefined) return undefined;
+
+  let maximum: bigint | undefined;
+  steps = 0;
+  for (const bounds of [...unsigned_intervals].reverse()) {
+    let upper = bounds.maximum;
+    while (upper >= bounds.minimum) {
+      const bits = maximum_verified_bitmask_value(
+        upper,
+        bitmask,
+        range.width,
+      );
+      if (bits === undefined || bits < bounds.minimum) break;
+      if (steps + range.width > proof_limits.compiler_search_steps) {
+        return undefined;
+      }
+      steps += range.width;
+      let candidate = bits;
+      if (range.signed) {
+        const sign = 1n << BigInt(range.width - 1);
+        if (bits >= sign) candidate -= modulus;
+      }
+      let matches_congruence = true;
+      if (congruence.congruence !== undefined) {
+        matches_congruence = canonical_verified_residue(
+          candidate,
+          congruence.congruence.modulus,
+        ) === congruence.congruence.residue;
+      }
+      if (
+        matches_congruence &&
+        !interval.exclusions.has(candidate)
+      ) {
+        maximum = candidate;
+        break;
+      }
+      upper = bits - 1n;
+    }
+    if (maximum !== undefined) break;
+  }
+  if (maximum === undefined) return undefined;
+  return { minimum, maximum };
+}
+
 function interval_implies_requirement(
   interval: IntervalState,
   requirement: SemanticMachineRequirement,
@@ -2642,8 +2978,12 @@ function interval_implies_requirement(
   ranges: ReadonlyMap<ValueId, IntegerType>,
 ): boolean {
   if (interval.contradiction) return true;
-  if (requirement.tag === "difference") {
-    return verified_difference_implies(premises, requirement, ranges);
+  if (
+    requirement.tag === "difference" ||
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
+    return verified_relation_implies(premises, requirement, ranges);
   }
   const bitmask = bitmask_from_premises(premises, value, range);
   if (

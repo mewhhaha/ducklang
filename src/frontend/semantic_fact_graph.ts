@@ -7,11 +7,15 @@ import {
   assume_machine_bitmask,
   assume_machine_congruence,
   assume_machine_difference,
+  assume_machine_disequality,
+  assume_machine_equality,
   assume_machine_fact,
   exclude_machine_fact,
   implies_machine_bitmask,
   implies_machine_congruence,
   implies_machine_difference,
+  implies_machine_disequality,
+  implies_machine_equality,
   implies_machine_fact,
   machine_excludes_equal,
   machine_fact_domain,
@@ -388,7 +392,11 @@ function requirement_has_range(
   if (requirement.tag === "fact") {
     return ranges.has(requirement.proposition.value);
   }
-  if (requirement.tag === "difference") {
+  if (
+    requirement.tag === "difference" ||
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
     const left = ranges.get(requirement.left);
     const right = ranges.get(requirement.right);
     return left !== undefined && right !== undefined &&
@@ -715,12 +723,26 @@ function aliased_machine_requirement(
   requirement: SemanticMachineRequirement,
   aliases: ReadonlyMap<ValueId, ValueId>,
 ): SemanticMachineRequirement {
-  if (requirement.tag === "difference") {
+  if (
+    requirement.tag === "difference" ||
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
     const left = resolved_alias(requirement.left, aliases);
     const right = resolved_alias(requirement.right, aliases);
     if (left === undefined || right === undefined) return requirement;
     if (left === requirement.left && right === requirement.right) {
       return requirement;
+    }
+    if (
+      requirement.tag === "equality" ||
+      requirement.tag === "disequality"
+    ) {
+      return {
+        tag: requirement.tag,
+        left,
+        right,
+      };
     }
     return {
       tag: "difference",
@@ -768,7 +790,13 @@ function requirement_value(
   requirement: SemanticMachineRequirement,
 ): ValueId {
   if (requirement.tag === "fact") return requirement.proposition.value;
-  if (requirement.tag === "difference") return requirement.left;
+  if (
+    requirement.tag === "difference" ||
+    requirement.tag === "equality" ||
+    requirement.tag === "disequality"
+  ) {
+    return requirement.left;
+  }
   return requirement.value;
 }
 
@@ -893,6 +921,15 @@ function semantic_comparison_requirement(
     producers,
   );
   if (constant_requirement !== undefined) return constant_requirement;
+  if (relation === "equal" || relation === "not_equal") {
+    let tag: "equality" | "disequality" = "disequality";
+    if (relation === "equal") tag = "equality";
+    return {
+      tag,
+      left: expected_left,
+      right: expected_right,
+    };
+  }
   if (relation !== "less" && relation !== "less_equal") return undefined;
   let maximum = 0n;
   if (relation === "less") maximum = -1n;
@@ -1338,6 +1375,20 @@ function assume_machine_requirement(
       requirement.maximum,
     );
   }
+  if (requirement.tag === "equality") {
+    return assume_machine_equality(
+      domain,
+      requirement.left,
+      requirement.right,
+    );
+  }
+  if (requirement.tag === "disequality") {
+    return assume_machine_disequality(
+      domain,
+      requirement.left,
+      requirement.right,
+    );
+  }
   return exclude_machine_fact(domain, {
     tag: "equal",
     value: requirement.value,
@@ -1374,6 +1425,20 @@ function machine_requirement_holds(
       requirement.left,
       requirement.right,
       requirement.maximum,
+    );
+  }
+  if (requirement.tag === "equality") {
+    return implies_machine_equality(
+      domain,
+      requirement.left,
+      requirement.right,
+    );
+  }
+  if (requirement.tag === "disequality") {
+    return implies_machine_disequality(
+      domain,
+      requirement.left,
+      requirement.right,
     );
   }
   return machine_excludes_equal(
