@@ -1,6 +1,7 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import {
   assume_fact,
+  assume_machine_bitmask,
   assume_machine_congruence,
   assume_machine_fact,
   assume_state,
@@ -10,11 +11,13 @@ import {
   exclude_state,
   type FactEnvironment,
   implies_fact,
+  implies_machine_bitmask,
   implies_machine_congruence,
   implies_machine_fact,
   join_facts,
   join_machine_domains,
   join_states,
+  machine_bitmask,
   machine_congruences,
   machine_excludes_equal,
   machine_fact_domain,
@@ -23,6 +26,7 @@ import {
   meet_facts,
   normalize_machine_integer,
   reachable_state,
+  transfer_machine_bitwise,
   transfer_machine_offset,
   unreachable_state,
   widen_facts,
@@ -631,6 +635,450 @@ Deno.test("machine congruence normalization is assumption-order independent", ()
     () => assume_machine_congruence(forward, value, 0n, 0n),
     "Machine congruence modulus must be positive: 0.",
   );
+});
+
+Deno.test("machine bitmasks reduce scalar facts in either assumption order", () => {
+  for (const bitmask_first of [false, true]) {
+    let domain = machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    );
+    if (bitmask_first) {
+      domain = assume_machine_bitmask(domain, value, 0b100n, 0b001n);
+    }
+    domain = assume_machine_fact(domain, {
+      tag: "greater_equal",
+      value,
+      bound: 4n,
+    });
+    if (!bitmask_first) {
+      domain = assume_machine_bitmask(domain, value, 0b100n, 0b001n);
+    }
+    assert_equals(domain.reachable, false);
+  }
+
+  let singleton = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  singleton = assume_machine_bitmask(singleton, value, 0b100n, 0b001n);
+  singleton = assume_machine_fact(singleton, {
+    tag: "less_equal",
+    value,
+    bound: 1n,
+  });
+  assert_equals(
+    implies_machine_fact(singleton, {
+      tag: "equal",
+      value,
+      expected: 1n,
+    }),
+    true,
+  );
+  assert_equals(
+    implies_machine_bitmask(singleton, value, 0b110n, 0b001n),
+    true,
+  );
+  assert_equals(machine_excludes_equal(singleton, value, 3n), true);
+
+  let power_of_two = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  power_of_two = assume_machine_bitmask(
+    power_of_two,
+    value,
+    0b001n,
+    0b010n,
+  );
+  assert_equals(
+    implies_machine_congruence(power_of_two, value, 4n, 2n),
+    true,
+  );
+  assert_equals(
+    implies_machine_congruence(power_of_two, value, 8n, 2n),
+    false,
+  );
+  const fully_known = assume_machine_bitmask(
+    machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    ),
+    value,
+    0b110n,
+    0b001n,
+  );
+  assert_equals(
+    implies_machine_congruence(fully_known, value, 9n, 1n),
+    true,
+  );
+
+  const contradictory = assume_machine_bitmask(
+    machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    ),
+    value,
+    0b001n,
+    0b001n,
+  );
+  assert_equals(contradictory.reachable, false);
+  for (const bitmask_first of [false, true]) {
+    let parity_conflict = machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    );
+    if (bitmask_first) {
+      parity_conflict = assume_machine_bitmask(
+        parity_conflict,
+        value,
+        0b001n,
+        0n,
+      );
+    }
+    parity_conflict = assume_machine_congruence(
+      parity_conflict,
+      value,
+      2n,
+      1n,
+    );
+    if (!bitmask_first) {
+      parity_conflict = assume_machine_bitmask(
+        parity_conflict,
+        value,
+        0b001n,
+        0n,
+      );
+    }
+    assert_equals(parity_conflict.reachable, false);
+
+    let singleton_conflict = machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    );
+    if (bitmask_first) {
+      singleton_conflict = assume_machine_bitmask(
+        singleton_conflict,
+        value,
+        0n,
+        0b100n,
+      );
+    }
+    singleton_conflict = assume_machine_congruence(
+      singleton_conflict,
+      value,
+      8n,
+      3n,
+    );
+    if (!bitmask_first) {
+      singleton_conflict = assume_machine_bitmask(
+        singleton_conflict,
+        value,
+        0n,
+        0b100n,
+      );
+    }
+    assert_equals(singleton_conflict.reachable, false);
+
+    let non_power_conflict = machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    );
+    if (bitmask_first) {
+      non_power_conflict = assume_machine_bitmask(
+        non_power_conflict,
+        value,
+        0b011n,
+        0n,
+      );
+    }
+    non_power_conflict = assume_machine_congruence(
+      non_power_conflict,
+      value,
+      3n,
+      2n,
+    );
+    if (!bitmask_first) {
+      non_power_conflict = assume_machine_bitmask(
+        non_power_conflict,
+        value,
+        0b011n,
+        0n,
+      );
+    }
+    assert_equals(non_power_conflict.reachable, false);
+  }
+  assert_throws(
+    () =>
+      assume_machine_bitmask(
+        machine_fact_domain(
+          new Map([[value, { width: 3, signed: false }]]),
+        ),
+        value,
+        0b1000n,
+        0n,
+      ),
+    "Machine bitmask 8/0 exceeds U3.",
+  );
+});
+
+Deno.test("machine bitmask reduction accounts for finite exclusions", () => {
+  for (const exclusion_first of [false, true]) {
+    let domain = machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    );
+    if (exclusion_first) {
+      domain = exclude_machine_fact(domain, {
+        tag: "equal",
+        value,
+        expected: 1n,
+      });
+      domain = exclude_machine_fact(domain, {
+        tag: "equal",
+        value,
+        expected: 3n,
+      });
+    }
+    domain = assume_machine_bitmask(domain, value, 0b100n, 0b001n);
+    if (!exclusion_first) {
+      domain = exclude_machine_fact(domain, {
+        tag: "equal",
+        value,
+        expected: 1n,
+      });
+      domain = exclude_machine_fact(domain, {
+        tag: "equal",
+        value,
+        expected: 3n,
+      });
+    }
+    assert_equals(domain.reachable, false);
+  }
+
+  let reduced = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  reduced = assume_machine_bitmask(reduced, value, 0b011n, 0n);
+  reduced = assume_machine_congruence(reduced, value, 3n, 1n);
+  assert_equals(reduced.reachable, true);
+  const narrowed = assume_machine_fact(reduced, {
+    tag: "less_equal",
+    value,
+    bound: 3n,
+  });
+  assert_equals(narrowed.reachable, false);
+  const excluded = exclude_machine_fact(reduced, {
+    tag: "equal",
+    value,
+    expected: 4n,
+  });
+  assert_equals(excluded.reachable, false);
+});
+
+Deno.test("machine bitmask assumptions are exhaustive for three-bit integers", () => {
+  for (const signed of [false, true]) {
+    const range = machine_range({ width: 3, signed });
+    for (let known_zero = 0n; known_zero <= 0b111n; known_zero += 1n) {
+      for (let known_one = 0n; known_one <= 0b111n; known_one += 1n) {
+        const domain = assume_machine_bitmask(
+          machine_fact_domain(
+            new Map([[value, { width: 3, signed }]]),
+          ),
+          value,
+          known_zero,
+          known_one,
+        );
+        const compatible = (known_zero & known_one) === 0n;
+        assert_equals(domain.reachable, compatible);
+        if (!compatible) continue;
+        assert_equals(
+          implies_machine_bitmask(
+            domain,
+            value,
+            known_zero,
+            known_one,
+          ),
+          true,
+        );
+        for (
+          let concrete = range.minimum;
+          concrete <= range.maximum;
+          concrete += 1n
+        ) {
+          let bits = concrete;
+          if (bits < 0n) bits += 8n;
+          const matches = (bits & known_zero) === 0n &&
+            (bits & known_one) === known_one;
+          assert_equals(
+            machine_excludes_equal(domain, value, concrete),
+            !matches,
+          );
+        }
+      }
+    }
+  }
+});
+
+Deno.test("machine bitmask joins retain exactly the path-independent bits", () => {
+  for (const signed of [false, true]) {
+    const range = machine_range({ width: 3, signed });
+    const cases: ReturnType<typeof machine_fact_domain>[] = [];
+    for (let known_zero = 0n; known_zero <= 0b111n; known_zero += 1n) {
+      for (let known_one = 0n; known_one <= 0b111n; known_one += 1n) {
+        if ((known_zero & known_one) !== 0n) continue;
+        cases.push(
+          assume_machine_bitmask(
+            machine_fact_domain(
+              new Map([[value, { width: 3, signed }]]),
+            ),
+            value,
+            known_zero,
+            known_one,
+          ),
+        );
+      }
+    }
+    for (const left of cases) {
+      for (const right of cases) {
+        const joined = join_machine_domains(left, right);
+        const reversed = join_machine_domains(right, left);
+        assert_equals(
+          machine_bitmask(joined, value),
+          machine_bitmask(reversed, value),
+        );
+        const joined_mask = machine_bitmask(joined, value);
+        const left_mask = machine_bitmask(left, value);
+        const right_mask = machine_bitmask(right, value);
+        for (
+          let concrete = range.minimum;
+          concrete <= range.maximum;
+          concrete += 1n
+        ) {
+          let bits = concrete;
+          if (bits < 0n) bits += 8n;
+          const belongs_to_left = (bits & left_mask.known_zero) === 0n &&
+            (bits & left_mask.known_one) === left_mask.known_one;
+          const belongs_to_right = (bits & right_mask.known_zero) === 0n &&
+            (bits & right_mask.known_one) === right_mask.known_one;
+          if (!belongs_to_left && !belongs_to_right) continue;
+          assert_equals((bits & joined_mask.known_zero) === 0n, true);
+          assert_equals(
+            (bits & joined_mask.known_one) === joined_mask.known_one,
+            true,
+          );
+        }
+      }
+    }
+  }
+});
+
+Deno.test("machine bitwise transfer preserves known zero and one bits", () => {
+  const left = "bitmask-left" as ValueId;
+  const right = "bitmask-right" as ValueId;
+  const result = "bitmask-result" as ValueId;
+  const ranges = new Map([
+    [left, { width: 3, signed: false }],
+    [right, { width: 3, signed: false }],
+    [result, { width: 3, signed: false }],
+  ]);
+  let domain = machine_fact_domain(ranges);
+  domain = assume_machine_bitmask(domain, left, 0b100n, 0b001n);
+  domain = assume_machine_bitmask(domain, right, 0b010n, 0b100n);
+  assert_equals(
+    machine_bitmask(
+      transfer_machine_bitwise(domain, "and", left, right, result),
+      result,
+    ),
+    { known_zero: 0b110n, known_one: 0n },
+  );
+  assert_equals(
+    machine_bitmask(
+      transfer_machine_bitwise(domain, "or", left, right, result),
+      result,
+    ),
+    { known_zero: 0n, known_one: 0b101n },
+  );
+  assert_equals(
+    machine_bitmask(
+      transfer_machine_bitwise(domain, "xor", left, right, result),
+      result,
+    ),
+    { known_zero: 0n, known_one: 0b100n },
+  );
+});
+
+Deno.test("machine bitwise transfer is exhaustive for three-bit integers", () => {
+  const left = "bitmask-exhaustive-left" as ValueId;
+  const right = "bitmask-exhaustive-right" as ValueId;
+  const result = "bitmask-exhaustive-result" as ValueId;
+  for (const signed of [false, true]) {
+    const type = { width: 3 as const, signed };
+    const range = machine_range(type);
+    const ranges = new Map([
+      [left, type],
+      [right, type],
+      [result, type],
+    ]);
+    for (
+      let left_value = range.minimum;
+      left_value <= range.maximum;
+      left_value += 1n
+    ) {
+      for (
+        let right_value = range.minimum;
+        right_value <= range.maximum;
+        right_value += 1n
+      ) {
+        let domain = machine_fact_domain(ranges);
+        domain = assume_machine_fact(domain, {
+          tag: "equal",
+          value: left,
+          expected: left_value,
+        });
+        domain = assume_machine_fact(domain, {
+          tag: "equal",
+          value: right,
+          expected: right_value,
+        });
+        for (const operation of ["and", "or", "xor"] as const) {
+          let concrete = left_value & right_value;
+          if (operation === "or") concrete = left_value | right_value;
+          if (operation === "xor") concrete = left_value ^ right_value;
+          concrete = normalize_machine_integer(concrete, type);
+          const transferred = transfer_machine_bitwise(
+            domain,
+            operation,
+            left,
+            right,
+            result,
+          );
+          assert_equals(
+            implies_machine_fact(transferred, {
+              tag: "equal",
+              value: result,
+              expected: concrete,
+            }),
+            true,
+          );
+        }
+      }
+    }
+  }
+});
+
+Deno.test("machine bitmask snapshots are immutable", () => {
+  const domain = assume_machine_bitmask(
+    machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    ),
+    value,
+    0b100n,
+    0b001n,
+  );
+  assert_equals(Object.isFrozen(machine_bitmask(domain, value)), true);
+  domain.bitmasks.forEach((_bitmask, key, map) => {
+    assert_equals(key, value);
+    assert_throws(
+      () =>
+        (map as Map<ValueId, { known_zero: bigint; known_one: bigint }>).set(
+          value,
+          { known_zero: 0n, known_one: 0n },
+        ),
+      "set is not a function",
+    );
+  });
 });
 
 Deno.test("machine offset transfer retains only non-wrapping intervals", () => {
