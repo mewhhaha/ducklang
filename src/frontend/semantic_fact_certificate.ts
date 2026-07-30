@@ -26,7 +26,13 @@ import type { SourceSpan } from "./syntax.ts";
 
 export type SemanticMachineRequirement =
   | { tag: "fact"; proposition: FactProposition }
-  | { tag: "exclusion"; value: ValueId; expected: bigint };
+  | { tag: "exclusion"; value: ValueId; expected: bigint }
+  | {
+    tag: "bitmask";
+    value: ValueId;
+    known_zero: bigint;
+    known_one: bigint;
+  };
 
 export type SemanticMachineCertificate = {
   tag: "machine_fact";
@@ -117,6 +123,12 @@ type IntervalState = {
   maximum: bigint;
   exclusions: Set<bigint>;
   contradiction: boolean;
+};
+
+type VerifiedBitmaskState = {
+  known_zero: bigint;
+  known_one: bigint;
+  malformed: boolean;
 };
 
 export function semantic_machine_certificate(
@@ -813,7 +825,15 @@ function verify_semantic_paths(
       );
       if (interval.contradiction) break;
       feasible_paths += 1;
-      if (!interval_implies_requirement(interval, requirement)) {
+      if (
+        !interval_implies_requirement(
+          interval,
+          requirement,
+          path_premises,
+          path_goal_value,
+          path_goal_range,
+        )
+      ) {
         return "rejected";
       }
       break;
@@ -884,6 +904,22 @@ function verify_semantic_paths(
             premises.push(aliased_machine_requirement(premise, aliases));
           }
         }
+        const bitmask_premise = verified_bitmask_requirement(
+          comparison,
+          branch_value,
+          ranges,
+          producers,
+          aliases,
+        );
+        if (bitmask_premise !== undefined) {
+          if (bounded_offset !== undefined) {
+            premises.push(bitmask_premise);
+          } else {
+            premises.push(
+              aliased_machine_requirement(bitmask_premise, aliases),
+            );
+          }
+        }
       }
       if (
         !enqueue_verification_state(
@@ -918,6 +954,14 @@ function snapshot_machine_requirement(
       expected: requirement.expected,
     });
   }
+  if (requirement.tag === "bitmask") {
+    return Object.freeze({
+      tag: "bitmask",
+      value: requirement.value,
+      known_zero: requirement.known_zero,
+      known_one: requirement.known_one,
+    });
+  }
   return Object.freeze({
     tag: "fact",
     proposition: Object.freeze({ ...requirement.proposition }),
@@ -931,6 +975,11 @@ function same_machine_requirement(
   if (left.tag !== right.tag) return false;
   if (left.tag === "exclusion" && right.tag === "exclusion") {
     return left.value === right.value && left.expected === right.expected;
+  }
+  if (left.tag === "bitmask" && right.tag === "bitmask") {
+    return left.value === right.value &&
+      left.known_zero === right.known_zero &&
+      left.known_one === right.known_one;
   }
   if (left.tag !== "fact" || right.tag !== "fact") return false;
   if (
@@ -1087,6 +1136,14 @@ function verified_repeating_call_requirement(
       producers,
     );
     if (premise !== undefined) premises.push(premise);
+    const bitmask_premise = verified_bitmask_requirement(
+      comparison,
+      branch_value,
+      ranges,
+      producers,
+      new Map(),
+    );
+    if (bitmask_premise !== undefined) premises.push(bitmask_premise);
   }
   if (premises_are_contradictory(premises, ranges)) return false;
   const goal_value = requirement_value(requirement);
@@ -1098,7 +1155,13 @@ function verified_repeating_call_requirement(
     goal_range,
   );
   if (interval.contradiction) return false;
-  return interval_implies_requirement(interval, requirement);
+  return interval_implies_requirement(
+    interval,
+    requirement,
+    premises,
+    goal_value,
+    goal_range,
+  );
 }
 
 function verified_block_dominators(
@@ -1379,6 +1442,14 @@ function aliased_machine_requirement(
       expected: requirement.expected,
     };
   }
+  if (requirement.tag === "bitmask") {
+    return {
+      tag: "bitmask",
+      value: resolved,
+      known_zero: requirement.known_zero,
+      known_one: requirement.known_one,
+    };
+  }
   return {
     tag: "fact",
     proposition: {
@@ -1497,6 +1568,124 @@ function verified_comparison_requirement(
     ranges,
     producers,
   );
+}
+
+function verified_bitmask_requirement(
+  comparison: SemanticNode,
+  branch_value: boolean,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): SemanticMachineRequirement | undefined {
+  const equality = verified_comparison_requirement(
+    comparison,
+    branch_value,
+    ranges,
+    producers,
+  );
+  if (
+    equality?.tag !== "fact" ||
+    equality.proposition.tag !== "equal"
+  ) {
+    return undefined;
+  }
+  const result = resolved_alias(equality.proposition.value, aliases);
+  if (result === undefined) return undefined;
+  const operation = producers.get(result);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.inputs.length !== 2 ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== result
+  ) {
+    return undefined;
+  }
+  const result_range = ranges.get(result);
+  let val_type: "i32" | "i64" | undefined;
+  if (result_range !== undefined) {
+    val_type = integer_val_type(result_range);
+  }
+  if (result_range === undefined || val_type === undefined) return undefined;
+  let bitwise: "and" | "or" | "xor";
+  if (operation.operation.name === val_type + ".and") {
+    bitwise = "and";
+  } else if (operation.operation.name === val_type + ".or") {
+    bitwise = "or";
+  } else if (operation.operation.name === val_type + ".xor") {
+    bitwise = "xor";
+  } else {
+    return undefined;
+  }
+  const left = operation.inputs[0];
+  const right = operation.inputs[1];
+  if (left === undefined || right === undefined) return undefined;
+  const left_range = ranges.get(left);
+  const right_range = ranges.get(right);
+  if (
+    left_range === undefined || right_range === undefined ||
+    !same_integer_type(left_range, result_range) ||
+    !same_integer_type(right_range, result_range)
+  ) {
+    return undefined;
+  }
+  const left_constant = verified_integer_constant(left, producers);
+  const right_constant = verified_integer_constant(right, producers);
+  let value: ValueId;
+  let mask: bigint;
+  if (right_constant !== undefined) {
+    value = left;
+    mask = normalize_integer(right_range, right_constant);
+  } else if (left_constant !== undefined) {
+    value = right;
+    mask = normalize_integer(left_range, left_constant);
+  } else {
+    return undefined;
+  }
+  const modulus = 1n << BigInt(result_range.width);
+  const width_mask = modulus - 1n;
+  let mask_bits = mask;
+  if (mask_bits < 0n) mask_bits += modulus;
+  const expected = normalize_integer(
+    result_range,
+    equality.proposition.expected,
+  );
+  let expected_bits = expected;
+  if (expected_bits < 0n) expected_bits += modulus;
+  let known_zero: bigint;
+  let known_one: bigint;
+  if (bitwise === "and") {
+    if ((expected_bits & (width_mask ^ mask_bits)) !== 0n) {
+      return {
+        tag: "bitmask",
+        value,
+        known_zero: 1n,
+        known_one: 1n,
+      };
+    }
+    known_one = expected_bits;
+    known_zero = mask_bits ^ expected_bits;
+  } else if (bitwise === "or") {
+    if ((mask_bits & expected_bits) !== mask_bits) {
+      return {
+        tag: "bitmask",
+        value,
+        known_zero: 1n,
+        known_one: 1n,
+      };
+    }
+    const variable_bits = width_mask ^ mask_bits;
+    known_one = expected_bits & variable_bits;
+    known_zero = variable_bits ^ known_one;
+  } else {
+    known_one = expected_bits ^ mask_bits;
+    known_zero = width_mask ^ known_one;
+  }
+  return {
+    tag: "bitmask",
+    value,
+    known_zero,
+    known_one,
+  };
 }
 
 function verified_range_requirement(
@@ -1797,6 +1986,7 @@ function interval_from_premises(
       exclusions.add(premise.expected);
       continue;
     }
+    if (premise.tag === "bitmask") continue;
     const proposition = premise.proposition;
     if (proposition.tag === "equal") {
       if (proposition.expected > minimum) minimum = proposition.expected;
@@ -1841,6 +2031,42 @@ function interval_from_premises(
   return { minimum, maximum, exclusions, contradiction };
 }
 
+function bitmask_from_premises(
+  premises: readonly SemanticMachineRequirement[],
+  value: ValueId,
+  range: IntegerType,
+): VerifiedBitmaskState {
+  const width_mask = (1n << BigInt(range.width)) - 1n;
+  let known_zero = 0n;
+  let known_one = 0n;
+  let malformed = false;
+  for (const premise of premises) {
+    if (premise.tag !== "bitmask" || premise.value !== value) continue;
+    if (
+      premise.known_zero < 0n || premise.known_one < 0n ||
+      premise.known_zero > width_mask || premise.known_one > width_mask
+    ) {
+      malformed = true;
+      continue;
+    }
+    known_zero |= premise.known_zero;
+    known_one |= premise.known_one;
+  }
+  return { known_zero, known_one, malformed };
+}
+
+function verified_value_matches_bitmask(
+  value: bigint,
+  bitmask: VerifiedBitmaskState,
+  range: IntegerType,
+): boolean {
+  const normalized = normalize_integer(range, value);
+  let bits = normalized;
+  if (bits < 0n) bits += 1n << BigInt(range.width);
+  return (bits & bitmask.known_zero) === 0n &&
+    (bits & bitmask.known_one) === bitmask.known_one;
+}
+
 function premises_are_contradictory(
   premises: readonly SemanticMachineRequirement[],
   ranges: ReadonlyMap<ValueId, IntegerType>,
@@ -1849,7 +2075,21 @@ function premises_are_contradictory(
   for (const value of values) {
     const range = ranges.get(value);
     if (range === undefined) continue;
-    if (interval_from_premises(premises, value, range).contradiction) {
+    const interval = interval_from_premises(premises, value, range);
+    if (interval.contradiction) {
+      return true;
+    }
+    const bitmask = bitmask_from_premises(premises, value, range);
+    if (
+      bitmask.malformed ||
+      (bitmask.known_zero & bitmask.known_one) !== 0n
+    ) {
+      return true;
+    }
+    if (
+      interval.minimum === interval.maximum &&
+      !verified_value_matches_bitmask(interval.minimum, bitmask, range)
+    ) {
       return true;
     }
   }
@@ -1859,27 +2099,69 @@ function premises_are_contradictory(
 function interval_implies_requirement(
   interval: IntervalState,
   requirement: SemanticMachineRequirement,
+  premises: readonly SemanticMachineRequirement[],
+  value: ValueId,
+  range: IntegerType,
 ): boolean {
   if (interval.contradiction) return true;
+  const bitmask = bitmask_from_premises(premises, value, range);
+  if (
+    bitmask.malformed ||
+    (bitmask.known_zero & bitmask.known_one) !== 0n
+  ) {
+    return false;
+  }
+  let minimum = interval.minimum;
+  let maximum = interval.maximum;
+  const width_mask = (1n << BigInt(range.width)) - 1n;
+  if ((bitmask.known_zero | bitmask.known_one) === width_mask) {
+    let exact = bitmask.known_one;
+    if (range.signed) {
+      const sign = 1n << BigInt(range.width - 1);
+      if (exact >= sign) exact -= width_mask + 1n;
+    }
+    if (
+      exact < minimum || exact > maximum ||
+      interval.exclusions.has(exact)
+    ) {
+      return false;
+    }
+    minimum = exact;
+    maximum = exact;
+  }
   if (requirement.tag === "exclusion") {
-    return requirement.expected < interval.minimum ||
-      requirement.expected > interval.maximum ||
-      interval.exclusions.has(requirement.expected);
+    if (
+      requirement.expected < minimum ||
+      requirement.expected > maximum ||
+      interval.exclusions.has(requirement.expected)
+    ) {
+      return true;
+    }
+    return !verified_value_matches_bitmask(
+      requirement.expected,
+      bitmask,
+      range,
+    );
+  }
+  if (requirement.tag === "bitmask") {
+    return (bitmask.known_zero & requirement.known_zero) ===
+        requirement.known_zero &&
+      (bitmask.known_one & requirement.known_one) === requirement.known_one;
   }
   const proposition = requirement.proposition;
   if (proposition.tag === "equal") {
-    return interval.minimum === proposition.expected &&
-      interval.maximum === proposition.expected &&
+    return minimum === proposition.expected &&
+      maximum === proposition.expected &&
       !interval.exclusions.has(proposition.expected);
   }
   if (proposition.tag === "less_than") {
-    return interval.maximum < proposition.bound;
+    return maximum < proposition.bound;
   }
   if (proposition.tag === "less_equal") {
-    return interval.maximum <= proposition.bound;
+    return maximum <= proposition.bound;
   }
   if (proposition.tag === "greater_than") {
-    return interval.minimum > proposition.bound;
+    return minimum > proposition.bound;
   }
-  return interval.minimum >= proposition.bound;
+  return minimum >= proposition.bound;
 }

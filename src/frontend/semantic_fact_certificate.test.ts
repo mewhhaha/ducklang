@@ -1671,6 +1671,163 @@ Deno.test("semantic machine certificates preserve path facts through numeric phi
   }
 });
 
+Deno.test("semantic machine certificates independently verify bitwise branches", () => {
+  const scenarios: {
+    primitive: string;
+    mask: number;
+    expected: number;
+    requirement: (value: ValueId) => SemanticMachineRequirement;
+    proved: boolean;
+  }[] = [
+    {
+      primitive: "i32.and",
+      mask: 1,
+      expected: 1,
+      requirement: (value) => ({ tag: "exclusion", value, expected: 2n }),
+      proved: true,
+    },
+    {
+      primitive: "i32.or",
+      mask: 1,
+      expected: 1,
+      requirement: (value) => ({ tag: "exclusion", value, expected: 2n }),
+      proved: true,
+    },
+    {
+      primitive: "i32.xor",
+      mask: 1,
+      expected: 3,
+      requirement: (value) => ({
+        tag: "fact",
+        proposition: { tag: "equal", value, expected: 2n },
+      }),
+      proved: true,
+    },
+    {
+      primitive: "i32.add",
+      mask: 1,
+      expected: 3,
+      requirement: (value) => ({
+        tag: "fact",
+        proposition: { tag: "equal", value, expected: 2n },
+      }),
+      proved: false,
+    },
+  ];
+  for (const [index, scenario] of scenarios.entries()) {
+    const builder = new SemanticCfgBuilder(`bitwise-certificate-${index}`);
+    const entry = builder.add_block(origin);
+    const when_true = builder.add_block(
+      `bitwise-true:${index}:1:0` as never,
+    );
+    const when_false = builder.add_block(
+      `bitwise-false:${index}:2:0` as never,
+    );
+    const value = `bitwise-parameter-${index}` as ValueId;
+    builder.add_parameter(value, i32_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+    const mask = builder.add_node(
+      entry,
+      origin,
+      { start: 2, end: 3 },
+      { tag: "constant", value: scenario.mask },
+      [],
+      [i32_type],
+    )[0];
+    if (mask === undefined) throw new Error("Expected bitwise mask.");
+    const result = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 3 },
+      { tag: "primitive", name: scenario.primitive },
+      [value, mask],
+      [i32_type],
+    )[0];
+    if (result === undefined) throw new Error("Expected bitwise result.");
+    let compared = result;
+    if (index === 0) {
+      const masked = builder.add_node(
+        entry,
+        origin,
+        { start: 3, end: 4 },
+        { tag: "primitive", name: "bind:masked" },
+        [result],
+        [i32_type],
+      )[0];
+      if (masked === undefined) throw new Error("Expected bitwise alias.");
+      compared = masked;
+    }
+    const expected = builder.add_node(
+      entry,
+      origin,
+      { start: 4, end: 5 },
+      { tag: "constant", value: scenario.expected },
+      [],
+      [i32_type],
+    )[0];
+    if (expected === undefined) throw new Error("Expected bitwise result.");
+    const condition = builder.add_node(
+      entry,
+      origin,
+      { start: 0, end: 5 },
+      { tag: "primitive", name: "i32.eq" },
+      [compared, expected],
+      [bool_type],
+    )[0];
+    if (condition === undefined) throw new Error("Expected bitwise branch.");
+    builder.connect(entry, when_true);
+    builder.connect(entry, when_false);
+    builder.terminate(entry, {
+      tag: "branch",
+      condition,
+      when_true,
+      when_false,
+    });
+    const call_span = { start: 6, end: 12 };
+    const call = builder.add_node(
+      when_true,
+      `bitwise-true:${index}:1:0` as never,
+      call_span,
+      { tag: "call", function_name: "consume" },
+      [value],
+      [i32_type],
+    )[0];
+    if (call === undefined) throw new Error("Expected bitwise call.");
+    builder.terminate(when_true, { tag: "return", value: call });
+    const fallback = builder.add_node(
+      when_false,
+      `bitwise-false:${index}:2:0` as never,
+      { start: 13, end: 14 },
+      { tag: "constant", value: 0 },
+      [],
+      [i32_type],
+    )[0];
+    builder.terminate(when_false, { tag: "return", value: fallback });
+    const control_flow = builder.finish();
+    const requirement = scenario.requirement(value);
+    assert_equals(
+      infer_semantic_machine_certificate(
+        control_flow,
+        call_span,
+        requirement,
+      ) !== undefined,
+      scenario.proved,
+    );
+    assert_equals(
+      verify_semantic_machine_certificate(
+        semantic_machine_certificate(call_span, requirement),
+        control_flow,
+        call_span,
+        requirement,
+      ),
+      scenario.proved,
+    );
+  }
+});
+
 Deno.test("semantic unreachable certificates normalize wrapping comparison constants", () => {
   const builder = new SemanticCfgBuilder("wrapping-constant-certificate");
   const entry = builder.add_block(origin);

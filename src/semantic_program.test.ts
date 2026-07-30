@@ -1487,6 +1487,79 @@ Deno.test("remainder branches establish exact expression evidence", () => {
   }
 });
 
+Deno.test("bitwise branches establish certified machine facts", () => {
+  const odd = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let masked = @bit_and(actual, 1i32);\n" +
+      "  if masked == 1i32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded 3\n",
+  ));
+  assert_equals(odd.diagnostics, []);
+  assert_equals(
+    [...odd.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(odd)) !== undefined, true);
+
+  const exact = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if @bit_xor(actual, 1i32) == 3i32 " +
+      "then consume actual else 0 end;\n" +
+      "guarded 2\n",
+  ));
+  assert_equals(exact.diagnostics, []);
+  assert_equals(
+    [...exact.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(exact)) !== undefined, true);
+
+  const mixed_phi = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32, alternate: I32, choose: Bool) -> I32\n" +
+      "let guarded = (actual, alternate, choose) => do\n" +
+      "  let masked = if choose then @bit_and(actual, 1i32) " +
+      "else alternate end;\n" +
+      "  if masked == 1i32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded (3, 1, false)\n",
+  ));
+  assert_equals(
+    mixed_phi.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+
+  const loop_alias = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type run = (value: I32) -> I32\n" +
+      "let run = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    let masked = @bit_and(actual, 1i32);\n" +
+      "    if masked == 1i32 then consume actual else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "run 3\n",
+  ));
+  assert_equals(
+    loop_alias.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
 Deno.test("remainder branches establish transparent modular facts", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type multiple_of_four = (value: I32) -> Prop\n" +

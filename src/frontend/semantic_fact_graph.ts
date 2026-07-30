@@ -4,8 +4,10 @@ import {
   normalize_integer,
 } from "../integer.ts";
 import {
+  assume_machine_bitmask,
   assume_machine_fact,
   exclude_machine_fact,
+  implies_machine_bitmask,
   implies_machine_fact,
   machine_excludes_equal,
   machine_fact_domain,
@@ -303,8 +305,21 @@ function semantic_cfg_machine_path_result(
         );
         if (branch_requirement !== undefined) {
           branch_domain = assume_machine_requirement(
-            domain,
+            branch_domain,
             aliased_machine_requirement(branch_requirement, aliases),
+          );
+        }
+        const bitmask_requirement = semantic_bitmask_requirement(
+          comparison,
+          branch_value,
+          ranges,
+          producers,
+          aliases,
+        );
+        if (bitmask_requirement !== undefined) {
+          branch_domain = assume_machine_requirement(
+            branch_domain,
+            aliased_machine_requirement(bitmask_requirement, aliases),
           );
         }
       }
@@ -427,8 +442,19 @@ function repeating_call_requirement_holds(
       ranges,
       producers,
     );
-    if (premise === undefined) continue;
-    domain = assume_machine_requirement(domain, premise);
+    if (premise !== undefined) {
+      domain = assume_machine_requirement(domain, premise);
+    }
+    const bitmask_premise = semantic_bitmask_requirement(
+      comparison,
+      branch_value,
+      ranges,
+      producers,
+      new Map(),
+    );
+    if (bitmask_premise !== undefined) {
+      domain = assume_machine_requirement(domain, bitmask_premise);
+    }
   }
   return machine_requirement_holds(domain, requirement);
 }
@@ -551,7 +577,6 @@ function transfer_semantic_node(
     };
   }
   if (
-    bounded_offset !== undefined &&
     node.operation.tag === "primitive" &&
     node.operation.name.startsWith("bind:") &&
     node.inputs.length === 1 &&
@@ -648,6 +673,14 @@ function aliased_machine_requirement(
       tag: "exclusion",
       value: resolved,
       expected: requirement.expected,
+    };
+  }
+  if (requirement.tag === "bitmask") {
+    return {
+      tag: "bitmask",
+      value: resolved,
+      known_zero: requirement.known_zero,
+      known_one: requirement.known_one,
     };
   }
   return {
@@ -786,6 +819,126 @@ function semantic_comparison_requirement(
     ranges,
     producers,
   );
+}
+
+function semantic_bitmask_requirement(
+  comparison: SemanticNode,
+  branch_value: boolean,
+  ranges: ReadonlyMap<ValueId, { signed: boolean; width: number }>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): SemanticMachineRequirement | undefined {
+  const equality = semantic_comparison_requirement(
+    comparison,
+    branch_value,
+    ranges,
+    producers,
+  );
+  if (
+    equality?.tag !== "fact" ||
+    equality.proposition.tag !== "equal"
+  ) {
+    return undefined;
+  }
+  const result = resolved_alias(equality.proposition.value, aliases);
+  if (result === undefined) return undefined;
+  const operation = producers.get(result);
+  if (
+    operation?.operation.tag !== "primitive" ||
+    operation.inputs.length !== 2 ||
+    operation.outputs.length !== 1 ||
+    operation.outputs[0] !== result
+  ) {
+    return undefined;
+  }
+  const result_range = ranges.get(result);
+  let val_type: "i32" | "i64" | undefined;
+  if (result_range !== undefined) {
+    val_type = integer_val_type(result_range);
+  }
+  if (result_range === undefined || val_type === undefined) return undefined;
+  let bitwise: "and" | "or" | "xor";
+  if (operation.operation.name === val_type + ".and") {
+    bitwise = "and";
+  } else if (operation.operation.name === val_type + ".or") {
+    bitwise = "or";
+  } else if (operation.operation.name === val_type + ".xor") {
+    bitwise = "xor";
+  } else {
+    return undefined;
+  }
+  const left = operation.inputs[0];
+  const right = operation.inputs[1];
+  if (left === undefined || right === undefined) return undefined;
+  const left_range = ranges.get(left);
+  const right_range = ranges.get(right);
+  if (
+    left_range === undefined || right_range === undefined ||
+    left_range.width !== result_range.width ||
+    left_range.signed !== result_range.signed ||
+    right_range.width !== result_range.width ||
+    right_range.signed !== result_range.signed
+  ) {
+    return undefined;
+  }
+  const left_constant = produced_integer_constant(left, producers);
+  const right_constant = produced_integer_constant(right, producers);
+  let value: ValueId;
+  let mask: bigint;
+  if (right_constant !== undefined) {
+    value = left;
+    mask = normalize_integer(right_range, right_constant);
+  } else if (left_constant !== undefined) {
+    value = right;
+    mask = normalize_integer(left_range, left_constant);
+  } else {
+    return undefined;
+  }
+  const modulus = 1n << BigInt(result_range.width);
+  const width_mask = modulus - 1n;
+  let mask_bits = mask;
+  if (mask_bits < 0n) mask_bits += modulus;
+  const expected = normalize_integer(
+    result_range,
+    equality.proposition.expected,
+  );
+  let expected_bits = expected;
+  if (expected_bits < 0n) expected_bits += modulus;
+  let known_zero: bigint;
+  let known_one: bigint;
+  if (bitwise === "and") {
+    if ((expected_bits & (width_mask ^ mask_bits)) !== 0n) {
+      return {
+        tag: "bitmask",
+        value,
+        known_zero: 1n,
+        known_one: 1n,
+      };
+    }
+    known_one = expected_bits;
+    known_zero = mask_bits ^ expected_bits;
+  } else if (bitwise === "or") {
+    if ((mask_bits & expected_bits) !== mask_bits) {
+      return {
+        tag: "bitmask",
+        value,
+        known_zero: 1n,
+        known_one: 1n,
+      };
+    }
+    const variable_bits = width_mask ^ mask_bits;
+    known_one = expected_bits & variable_bits;
+    known_zero = variable_bits ^ known_one;
+  } else {
+    known_one = expected_bits ^ mask_bits;
+    known_zero = width_mask ^ known_one;
+  }
+  return {
+    tag: "bitmask",
+    value,
+    known_zero,
+    known_one,
+  };
 }
 
 function semantic_range_requirement(
@@ -1009,6 +1162,14 @@ function assume_machine_requirement(
   if (requirement.tag === "fact") {
     return assume_machine_fact(domain, requirement.proposition);
   }
+  if (requirement.tag === "bitmask") {
+    return assume_machine_bitmask(
+      domain,
+      requirement.value,
+      requirement.known_zero,
+      requirement.known_one,
+    );
+  }
   return exclude_machine_fact(domain, {
     tag: "equal",
     value: requirement.value,
@@ -1022,6 +1183,14 @@ function machine_requirement_holds(
 ): boolean {
   if (requirement.tag === "fact") {
     return implies_machine_fact(domain, requirement.proposition);
+  }
+  if (requirement.tag === "bitmask") {
+    return implies_machine_bitmask(
+      domain,
+      requirement.value,
+      requirement.known_zero,
+      requirement.known_one,
+    );
   }
   return machine_excludes_equal(
     domain,

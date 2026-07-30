@@ -1,6 +1,10 @@
 import { expect } from "../expect.ts";
-import { integer_type_from_name } from "../integer.ts";
-import { specialize_prim_for_integer } from "../op.ts";
+import { integer_type_from_name, integer_val_type } from "../integer.ts";
+import {
+  numeric_builtin_prim,
+  specialize_prim_for_integer,
+  specialize_prim_for_operands,
+} from "../op.ts";
 import type { FrontExpr, Pattern, Source, Stmt } from "./ast.ts";
 import type { BabaCstNode, BabaSourceNodeId } from "./baba_parser.ts";
 import type { BindingEntity, BindingIndex, EntityId } from "./binding_index.ts";
@@ -1320,6 +1324,52 @@ function lower_expression(
     return { tag: "value", block: operands.block, value, type };
   }
   if (expression.tag === "app") {
+    if (
+      expression.func.tag === "var" &&
+      (expression.func.name === "@bit_and" ||
+        expression.func.name === "@bit_or" ||
+        expression.func.name === "@bit_xor") &&
+      expression.args.length === 2
+    ) {
+      const operands = lower_expressions(expression.args, block, context);
+      if (operands.tag === "terminated") return operands;
+      const left = operands.values[0];
+      const right = operands.values[1];
+      expect(left !== undefined, "Bitwise left operand was not lowered.");
+      expect(right !== undefined, "Bitwise right operand was not lowered.");
+      let primitive = numeric_builtin_prim(expression.func.name);
+      expect(primitive !== undefined, "Bitwise builtin lost its primitive.");
+      const left_type = context.value_types.get(left);
+      const right_type = context.value_types.get(right);
+      if (
+        left_type?.tag === "scalar" && right_type?.tag === "scalar" &&
+        left_type.name === right_type.name
+      ) {
+        const integer = integer_type_from_name(left_type.name);
+        if (integer !== undefined) {
+          const val_type = integer_val_type(integer);
+          expect(
+            val_type !== undefined,
+            `Bitwise ${left_type.name} has no runtime value type.`,
+          );
+          primitive = specialize_prim_for_operands(
+            primitive,
+            val_type,
+            val_type,
+          );
+        }
+      }
+      const value = emit_operation(
+        operands.block,
+        expression,
+        { tag: "primitive", name: primitive },
+        operands.values,
+        type,
+        undefined,
+        context,
+      );
+      return { tag: "value", block: operands.block, value, type };
+    }
     const expressions = [expression.func, ...expression.args];
     const operands = lower_expressions(expressions, block, context);
     if (operands.tag === "terminated") return operands;
