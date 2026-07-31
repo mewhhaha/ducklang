@@ -313,6 +313,26 @@ Deno.test("prefix source extraction retains quantified proof terms", () => {
   assert_equals(open.body.tag, "name");
 });
 
+Deno.test("prefix source extraction retains tactic blocks", () => {
+  const source =
+    "type prove = (evidence: Proof True) -> Proof True and True\n" +
+    "let prove = evidence => by { constructor exact evidence assumption };\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  const proof = metadata.definitions[0]?.callable_proof_body;
+  assert_equals(proof?.tag, "tactics");
+  if (proof?.tag !== "tactics") {
+    throw new Error("Expected extracted tactic block.");
+  }
+  assert_equals(
+    proof.commands.map((command) => command.tag),
+    ["constructor", "exact", "assumption"],
+  );
+  const exact = proof.commands[1];
+  assert_equals(exact?.tag, "exact");
+  if (exact?.tag !== "exact") throw new Error("Expected exact tactic.");
+  assert_equals(exact.proof.tag, "name");
+});
+
 Deno.test("prefix source extraction retains equality transformations", () => {
   const metadata = extract_prefix_source_metadata(parse_duck_source(
     "let mapped = equality => by congr(value => value, equality);\n" +

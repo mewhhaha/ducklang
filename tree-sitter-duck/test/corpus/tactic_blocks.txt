@@ -1,0 +1,110 @@
+==================
+Foundational tactic blocks
+==================
+
+type prove = (evidence: Proof True) -> Proof True and True
+let prove = evidence => by {
+  constructor
+  exact evidence
+  assumption
+};
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))
+                      (prefix_and_keyword)
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command)
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier)))
+            (prefix_tactic_command)))))))
+
+==================
+Tactic keywords require boundaries
+==================
+
+type prove = () -> Proof True
+let prove = () => by { exacttrue_intro };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command
+              (ERROR
+                (lowercase_identifier))
+              (prefix_proof_term
+                (MISSING identifier))))))))
+  (expression_statement
+    (postfix_expression
+      (number))))

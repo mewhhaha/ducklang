@@ -5587,10 +5587,20 @@
     "fields": {
       "proof": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "tactics": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_tactic_block",
             "named": true
           }
         ]
@@ -5836,6 +5846,11 @@
         ]
       }
     }
+  },
+  {
+    "type": "prefix_final_tactic_command",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "prefix_implication_proposition",
@@ -6846,6 +6861,52 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "prefix_tactic_block",
+    "named": true,
+    "fields": {
+      "command": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_final_tactic_command",
+            "named": true
+          },
+          {
+            "type": "prefix_tactic_command",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_tactic_command",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "proof": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -8909,6 +8970,10 @@
     "named": false
   },
   {
+    "type": "assumption",
+    "named": false
+  },
+  {
     "type": "break",
     "named": false
   },
@@ -8939,6 +9004,10 @@
   },
   {
     "type": "const",
+    "named": false
+  },
+  {
+    "type": "constructor",
     "named": false
   },
   {
@@ -8979,6 +9048,10 @@
   },
   {
     "type": "end",
+    "named": false
+  },
+  {
+    "type": "exact",
     "named": false
   },
   {
@@ -9066,7 +9139,15 @@
     "named": true
   },
   {
+    "type": "intro",
+    "named": false
+  },
+  {
     "type": "is",
+    "named": false
+  },
+  {
+    "type": "left",
     "named": false
   },
   {
@@ -9195,6 +9276,10 @@
   },
   {
     "type": "return",
+    "named": false
+  },
+  {
+    "type": "right",
     "named": false
   },
   {

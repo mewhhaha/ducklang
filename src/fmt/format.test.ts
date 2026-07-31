@@ -82,6 +82,18 @@ Deno.test("format_text round trips direct proof declarations", () => {
   assert_equals(format_text(formatted), formatted);
 });
 
+Deno.test("format_text round trips tactic blocks", () => {
+  const source = "type keep=()->Proof True implies True\n" +
+    "let keep=()=>by{intro evidence assumption};\n";
+  const formatted = format_text(source);
+  assert_equals(
+    formatted,
+    "type keep = () -> Proof True implies True\n" +
+      "let keep = () => by { intro evidence assumption };\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
 Deno.test("format_text round trips propositional proof terms", () => {
   const source = "type merge=(choice:Proof True or True)->Proof True\n" +
     "let merge=choice=>by or_cases(choice,left=>left,right=>right);\n" +

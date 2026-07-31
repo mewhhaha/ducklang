@@ -5,6 +5,7 @@ skip comment = /\/\/[^\r\n]*/ ;
 contextual _application_space priority 1 = /[ \t]+/ ;
 contextual _condition_application_space priority 1 = /[ \t]+/ ;
 contextual _type_application_space priority 1 = /[ \t]+/ ;
+contextual _tactic_space priority 1 = /[ \t\r\n]+/ ;
 contextual _immediate_type_open priority 3 = /\(/ ;
 contextual _fixity_identifier priority 1 = /(infixl|infixr|infix|prefix)/ ;
 
@@ -513,7 +514,36 @@ prefix_fact_parameters = (
                             )
                         ) ;
 
-prefix_by_proof_expression = ("by" proof:(prefix_proof_term)) ;
+prefix_by_proof_expression = (
+                               "by"
+                               (
+                                 proof:(prefix_proof_term)
+                                 | tactics:(prefix_tactic_block)
+                               )
+                             ) ;
+
+prefix_tactic_block = (
+                        "{"
+                        (command:(prefix_tactic_command))*
+                        (command:(prefix_final_tactic_command))?
+                        "}"
+                      ) ;
+
+prefix_tactic_command = (
+                          ("exact" _tactic_space proof:(prefix_proof_term))
+                          | ("assumption" _tactic_space)
+                          | ("intro" _tactic_space name:(identifier))
+                          | ("constructor" _tactic_space)
+                          | ("left" _tactic_space)
+                          | ("right" _tactic_space)
+                        ) ;
+
+prefix_final_tactic_command = (
+                                "assumption"
+                                | "constructor"
+                                | "left"
+                                | "right"
+                              ) ;
 
 prefix_proof_term = (
                      (

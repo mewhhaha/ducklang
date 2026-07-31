@@ -124,9 +124,9 @@ boundary.end
 
 (source_file
   (binding_statement
-    (identifier)
     (ERROR
       (identifier))
+    (identifier)
     (postfix_expression
       (number)))
   (binding_statement

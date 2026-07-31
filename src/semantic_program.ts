@@ -187,10 +187,13 @@ import {
   type PrefixProposition,
   type PrefixRefinement,
   type PrefixSignature,
+  type PrefixSpan,
+  type PrefixTacticCommand,
   type PrefixTerm,
   type PrefixTypeReference,
 } from "./frontend/prefix_signature.ts";
 import { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
+import { proof_limits } from "./frontend/proof_limits.ts";
 
 export type SemanticSymbolIndex = ReadonlyMap<string, readonly ValueId[]>;
 export type SemanticTypeIndex = ReadonlyMap<ValueId, RepresentationType>;
@@ -5997,6 +6000,9 @@ function elaborate_prefix_proof(
   goal: Proposition,
   context: PrefixKernelProofContext,
 ): Checked<ProofTerm> {
+  if (proof.tag === "tactics") {
+    return elaborate_prefix_tactics(proof.commands, proof.span, goal, context);
+  }
   if (proof.tag === "name") {
     const index = context.proof_indices.get(proof.name);
     if (index !== undefined) return ok({ tag: "assumption", index });
@@ -6421,6 +6427,240 @@ function elaborate_prefix_proof(
   return synthesize_prefix_proof(proof, context).map(
     (synthesized) => synthesized.term,
   );
+}
+
+type PendingPrefixTacticGoal = {
+  goal: Proposition;
+  context: PrefixKernelProofContext;
+  accept: (proof: ProofTerm) => void;
+};
+
+function elaborate_prefix_tactics(
+  commands: readonly PrefixTacticCommand[],
+  block_span: PrefixSpan,
+  goal: Proposition,
+  context: PrefixKernelProofContext,
+): Checked<ProofTerm> {
+  if (commands.length > proof_limits.compiler_search_steps) {
+    return fail(compiler_diagnostic(
+      diagnostic_codes.prefix_proof_invalid,
+      "Tactic block exceeds the compiler proof-search step budget of " +
+        proof_limits.compiler_search_steps.toString() + ".",
+      block_span,
+    ));
+  }
+  let completed: ProofTerm | undefined;
+  const pending: PendingPrefixTacticGoal[] = [{
+    goal,
+    context,
+    accept: (proof) => {
+      completed = proof;
+    },
+  }];
+  for (const command of commands) {
+    const current = pending.shift();
+    if (current === undefined) {
+      return fail(compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Tactic ${command.tag} has no remaining goal.`,
+        command.span,
+      ));
+    }
+    if (command.tag === "exact") {
+      const exact = elaborate_prefix_proof(
+        command.proof,
+        current.goal,
+        current.context,
+      );
+      const term = checked_value(exact);
+      if (term === undefined) return exact;
+      current.accept(term);
+      continue;
+    }
+    if (command.tag === "assumption") {
+      let selected_index: number | undefined;
+      const environment = KernelEnvironment.from(current.context.declarations);
+      const term_context = snapshot_kernel_context(
+        current.context.term_context,
+      );
+      for (
+        const [name, index] of current.context.proof_indices
+      ) {
+        const proposition = current.context.proof_propositions.get(name);
+        if (
+          proposition === undefined ||
+          !proposition_equal(proposition, current.goal, {
+            environment,
+            term_context,
+          })
+        ) {
+          continue;
+        }
+        if (selected_index === undefined || index < selected_index) {
+          selected_index = index;
+        }
+      }
+      if (selected_index === undefined) {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "assumption found no hypothesis matching the current goal.",
+          command.span,
+        ));
+      }
+      current.accept({ tag: "assumption", index: selected_index });
+      continue;
+    }
+    if (command.tag === "intro") {
+      if (current.goal.tag === "forall") {
+        const domain = current.goal.domain;
+        const body_goal = current.goal.body;
+        const body_context = extend_prefix_term_context(
+          current.context,
+          command.name,
+          domain,
+        );
+        pending.unshift({
+          goal: body_goal,
+          context: body_context,
+          accept: (body) =>
+            current.accept({
+              tag: "forall_intro",
+              domain,
+              body,
+            }),
+        });
+        continue;
+      }
+      if (current.goal.tag === "implies") {
+        const premise = current.goal.premise;
+        pending.unshift({
+          goal: current.goal.conclusion,
+          context: extend_prefix_proof_context(
+            current.context,
+            command.name,
+            premise,
+          ),
+          accept: (body) =>
+            current.accept({
+              tag: "implies_intro",
+              premise,
+              body,
+            }),
+        });
+        continue;
+      }
+      if (current.goal.tag === "not") {
+        const premise = current.goal.proposition;
+        pending.unshift({
+          goal: { tag: "false" },
+          context: extend_prefix_proof_context(
+            current.context,
+            command.name,
+            premise,
+          ),
+          accept: (body) =>
+            current.accept({
+              tag: "not_intro",
+              premise,
+              body,
+            }),
+        });
+        continue;
+      }
+      return fail(compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "intro requires an implication, negation, or universal goal.",
+        command.span,
+      ));
+    }
+    if (command.tag === "constructor") {
+      if (current.goal.tag === "true") {
+        current.accept({ tag: "true_intro" });
+        continue;
+      }
+      if (current.goal.tag !== "and") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "constructor requires a True or conjunction goal.",
+          command.span,
+        ));
+      }
+      let left: ProofTerm | undefined;
+      let right: ProofTerm | undefined;
+      const complete = () => {
+        if (left === undefined || right === undefined) return;
+        current.accept({ tag: "and_intro", left, right });
+      };
+      pending.unshift(
+        {
+          goal: current.goal.left,
+          context: current.context,
+          accept: (proof) => {
+            left = proof;
+            complete();
+          },
+        },
+        {
+          goal: current.goal.right,
+          context: current.context,
+          accept: (proof) => {
+            right = proof;
+            complete();
+          },
+        },
+      );
+      continue;
+    }
+    if (command.tag === "left" || command.tag === "right") {
+      if (current.goal.tag !== "or") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          `${command.tag} requires a disjunction goal.`,
+          command.span,
+        ));
+      }
+      const left_goal = current.goal.left;
+      const right_goal = current.goal.right;
+      const choose_left = command.tag === "left";
+      let selected_goal = right_goal;
+      if (choose_left) selected_goal = left_goal;
+      pending.unshift({
+        goal: selected_goal,
+        context: current.context,
+        accept: (proof) => {
+          if (choose_left) {
+            current.accept({
+              tag: "or_left",
+              proof,
+              other: right_goal,
+            });
+            return;
+          }
+          current.accept({
+            tag: "or_right",
+            other: left_goal,
+            proof,
+          });
+        },
+      });
+      continue;
+    }
+    throw new Error("Invalid prefix tactic command.");
+  }
+  if (pending.length > 0) {
+    let goal_suffix = "s";
+    if (pending.length === 1) goal_suffix = "";
+    return fail(compiler_diagnostic(
+      diagnostic_codes.prefix_proof_invalid,
+      `Tactic block leaves ${pending.length.toString()} unresolved goal${goal_suffix}.`,
+      block_span,
+    ));
+  }
+  expect(
+    completed !== undefined,
+    "Completed tactic block lost its proof term.",
+  );
+  return ok(completed);
 }
 
 type SynthesizedPrefixProof = {

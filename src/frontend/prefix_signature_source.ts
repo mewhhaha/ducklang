@@ -9,6 +9,7 @@ import {
   type PrefixSignatureParameter,
   type PrefixSignatureResult,
   type PrefixSpan,
+  type PrefixTacticCommand,
   type PrefixTerm,
   type PrefixTypeReference,
 } from "./prefix_signature.ts";
@@ -526,11 +527,69 @@ function proof_body_from_node(
     proof_expression = nested;
   }
   if (proof_expression.kind !== "prefix_by_proof_expression") return undefined;
+  const tactic_node = proof_expression.children.find((child) =>
+    child.kind === "prefix_tactic_block"
+  );
+  if (tactic_node !== undefined) {
+    const commands: PrefixTacticCommand[] = [];
+    for (const child of tactic_node.children) {
+      if (
+        child.kind !== "prefix_tactic_command" &&
+        child.kind !== "prefix_final_tactic_command"
+      ) continue;
+      const command = tactic_command_from_node(child, source);
+      if (command === undefined) return undefined;
+      commands.push(command);
+    }
+    return {
+      tag: "tactics",
+      commands,
+      span: { start: tactic_node.start, end: tactic_node.end },
+    };
+  }
   const proof_node = proof_expression.children.find((child) =>
     child.kind === "prefix_proof_term"
   );
   if (proof_node === undefined) return undefined;
   return proof_term_from_node(proof_node, source);
+}
+
+function tactic_command_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixTacticCommand | undefined {
+  const span = { start: node.start, end: node.end };
+  const exact = node.children.find((child) => child.kind === '"exact"');
+  if (exact !== undefined) {
+    const proof_node = node.children.find((child) =>
+      child.kind === "prefix_proof_term"
+    );
+    if (proof_node === undefined) return undefined;
+    const proof = proof_term_from_node(proof_node, source);
+    if (proof === undefined) return undefined;
+    return { tag: "exact", proof, span };
+  }
+  const intro = node.children.find((child) => child.kind === '"intro"');
+  if (intro !== undefined) {
+    const name = node.children.find((child) => child.kind === "identifier");
+    if (name === undefined) return undefined;
+    return {
+      tag: "intro",
+      name: source.slice(name.start, name.end),
+      span,
+    };
+  }
+  for (
+    const tag of ["assumption", "constructor", "left", "right"] as const
+  ) {
+    if (
+      node.children.some((child) => child.kind === `"${tag}"`) ||
+      source.slice(node.start, node.end).trim() === tag
+    ) {
+      return { tag, span };
+    }
+  }
+  return undefined;
 }
 
 function proof_term_from_node(

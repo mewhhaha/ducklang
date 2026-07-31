@@ -1347,6 +1347,57 @@ Deno.test("direct proof hypotheses alpha rename and compose", () => {
   );
 });
 
+Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = () -> Proof True implies True\n" +
+      "let identity = () => by { intro evidence assumption };\n" +
+      "type both = " +
+      "(left: Proof True, right: Proof True) -> Proof True and True\n" +
+      "let both = (left, right) => " +
+      "by { constructor exact left exact right };\n" +
+      "type choose_left = (evidence: Proof True) -> Proof True or False\n" +
+      "let choose_left = evidence => by { left assumption };\n" +
+      "type choose_right = (evidence: Proof True) -> Proof False or True\n" +
+      "let choose_right = evidence => by { right exact evidence };\n" +
+      "type negate_false = () -> Proof not False\n" +
+      "let negate_false = () => by { intro impossible assumption };\n" +
+      "type all_reflexive = " +
+      "() -> Proof forall (value: I32). value = value\n" +
+      "let all_reflexive = () => by { intro value exact refl };\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 6);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("tactic blocks report the command that cannot solve its goal", () => {
+  for (
+    const [body, message] of [
+      ["by { assumption }", "assumption found no hypothesis"],
+      ["by { intro evidence }", "intro requires an implication"],
+      ["by { constructor }", "constructor requires a True or conjunction"],
+      ["by { left }", "left requires a disjunction"],
+      ["by { exact true_intro assumption }", "has no remaining goal"],
+      ["by {}", "leaves 1 unresolved goal"],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type broken = () -> Proof False\n" +
+        `let broken = () => ${body};\n42\n`,
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
 Deno.test("runtime callables erase explicit proof parameters from Core", () => {
   const proved = analyze_duck_source(parse_duck_source(
     "type identity = " +

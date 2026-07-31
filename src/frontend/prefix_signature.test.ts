@@ -6,6 +6,7 @@ import {
   type PrefixProofTerm,
   type PrefixProposition,
   type PrefixSignature,
+  type PrefixTacticCommand,
   type PrefixTerm,
 } from "./prefix_signature.ts";
 
@@ -298,6 +299,73 @@ Deno.test("prefix signature snapshots reject cyclic proof binders", () => {
       ),
     "Prefix proof term cannot be cyclic",
   );
+});
+
+Deno.test("prefix proof snapshots seal tactic commands", () => {
+  const exact: PrefixProofTerm = {
+    tag: "name",
+    name: "evidence",
+    span: { start: 28, end: 36 },
+  };
+  const proof: PrefixProofTerm = {
+    tag: "tactics",
+    commands: [
+      { tag: "intro", name: "evidence", span: { start: 15, end: 29 } },
+      { tag: "exact", proof: exact, span: { start: 30, end: 44 } },
+    ],
+    span: { start: 10, end: 46 },
+  };
+  const index = checked_value(
+    associate_prefix_signatures(
+      [signature()],
+      [definition({ callable_proof_body: proof })],
+    ),
+  );
+  if (index === undefined) throw new Error("Expected associated signature.");
+  (proof.commands as PrefixTacticCommand[])[0] = {
+    tag: "assumption",
+    span: { start: 0, end: 1 },
+  };
+  exact.name = "changed";
+  const body = [...index.values()][0]?.definition.callable_proof_body;
+
+  assert_equals(body?.tag, "tactics");
+  if (body?.tag !== "tactics") throw new Error("Expected tactic snapshot.");
+  assert_equals(body.commands[0]?.tag, "intro");
+  const stable_exact = body.commands[1];
+  assert_equals(stable_exact?.tag, "exact");
+  if (stable_exact?.tag !== "exact") throw new Error("Expected exact tactic.");
+  assert_equals(stable_exact.proof, {
+    tag: "name",
+    name: "evidence",
+    span: { start: 28, end: 36 },
+  });
+  assert_equals(Object.isFrozen(body.commands), true);
+});
+
+Deno.test("prefix tactic commands share the proof snapshot node budget", () => {
+  let enumerated = false;
+  const commands = new Proxy(new Array<PrefixTacticCommand>(20_000), {
+    ownKeys(target) {
+      enumerated = true;
+      return Reflect.ownKeys(target);
+    },
+  });
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({
+          callable_proof_body: {
+            tag: "tactics",
+            commands,
+            span: { start: 0, end: 20_000 },
+          },
+        })],
+      ),
+    "Prefix proof snapshot exceeded 20000 nodes.",
+  );
+  assert_equals(enumerated, false);
 });
 
 Deno.test("prefix proof snapshots reject cyclic quantified witnesses", () => {

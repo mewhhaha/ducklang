@@ -8,6 +8,7 @@ enum TokenType {
   APPLICATION_SPACE,
   CONDITION_APPLICATION_SPACE,
   TYPE_APPLICATION_SPACE,
+  TACTIC_SPACE,
   FIXITY_IDENTIFIER,
   PREFIX_PROOF_KEYWORD,
   PROOF_PREFIXED_IDENTIFIER,
@@ -383,6 +384,19 @@ bool tree_sitter_duck_external_scanner_scan(
       return true;
     }
     return false;
+  }
+
+  if (
+    valid_symbols[TACTIC_SPACE] &&
+    whitespace(lexer->lookahead)
+  ) {
+    do {
+      lexer->advance(lexer, true);
+    } while (whitespace(lexer->lookahead));
+
+    lexer->mark_end(lexer);
+    lexer->result_symbol = TACTIC_SPACE;
+    return true;
   }
 
   if (

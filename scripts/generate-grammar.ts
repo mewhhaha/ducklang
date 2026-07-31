@@ -17,6 +17,7 @@ const scanner_tokens = [
   "_application_space",
   "_condition_application_space",
   "_type_application_space",
+  "_tactic_space",
   "_fixity_identifier",
   "prefix_proof_keyword",
   "proof_prefixed_identifier",

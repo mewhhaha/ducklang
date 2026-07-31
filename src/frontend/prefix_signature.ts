@@ -154,6 +154,19 @@ export type PrefixProofTerm =
     motive: PrefixProposition;
     proof: PrefixProofTerm;
     span: PrefixSpan;
+  }
+  | {
+    tag: "tactics";
+    commands: readonly PrefixTacticCommand[];
+    span: PrefixSpan;
+  };
+
+export type PrefixTacticCommand =
+  | { tag: "exact"; proof: PrefixProofTerm; span: PrefixSpan }
+  | { tag: "intro"; name: string; span: PrefixSpan }
+  | {
+    tag: "assumption" | "constructor" | "left" | "right";
+    span: PrefixSpan;
   };
 
 export type PrefixProposition =
@@ -1082,6 +1095,97 @@ function snapshot_proof_term(
           depth + 1,
           budget,
         ),
+        span,
+      });
+    }
+    if (tag === "tactics") {
+      const commands = own_value<readonly PrefixTacticCommand[]>(
+        proof,
+        "commands",
+      );
+      expect(
+        Array.isArray(commands),
+        "Prefix tactic commands must be an array.",
+      );
+      expect(
+        Object.getPrototypeOf(commands) === Array.prototype,
+        "Prefix tactic commands must be an ordinary array.",
+      );
+      const command_count = own_array_length(
+        commands,
+        "Prefix tactic commands",
+      );
+      expect(
+        command_count <= maximum_prefix_proof_snapshot_nodes - budget.nodes,
+        "Prefix proof snapshot exceeded " +
+          maximum_prefix_proof_snapshot_nodes.toString() + " nodes.",
+      );
+      assert_plain_array(commands, "Prefix tactic commands");
+      const stable_commands: PrefixTacticCommand[] = [];
+      for (let index = 0; index < command_count; index += 1) {
+        budget.nodes += 1;
+        expect(
+          budget.nodes <= maximum_prefix_proof_snapshot_nodes,
+          "Prefix proof snapshot exceeded " +
+            maximum_prefix_proof_snapshot_nodes.toString() + " nodes.",
+        );
+        const command = own_array_value(
+          commands,
+          index,
+          "Prefix tactic commands",
+        );
+        expect(
+          command !== undefined,
+          "Prefix tactic commands cannot contain holes.",
+        );
+        assert_record(command, "Prefix tactic command");
+        const command_span = snapshot_span(
+          own_value<PrefixSpan>(command, "span"),
+        );
+        const command_tag = own_value<PrefixTacticCommand["tag"]>(
+          command,
+          "tag",
+        );
+        if (command_tag === "exact") {
+          stable_commands.push(Object.freeze({
+            tag: command_tag,
+            proof: snapshot_proof_term(
+              own_value<PrefixProofTerm>(command, "proof"),
+              active,
+              depth + 1,
+              budget,
+            ),
+            span: command_span,
+          }));
+          continue;
+        }
+        if (command_tag === "intro") {
+          stable_commands.push(Object.freeze({
+            tag: command_tag,
+            name: require_text(
+              own_value<string>(command, "name"),
+              "Prefix tactic binder",
+            ),
+            span: command_span,
+          }));
+          continue;
+        }
+        if (
+          command_tag === "assumption" || command_tag === "constructor" ||
+          command_tag === "left" || command_tag === "right"
+        ) {
+          stable_commands.push(Object.freeze({
+            tag: command_tag,
+            span: command_span,
+          }));
+          continue;
+        }
+        command_tag satisfies never;
+        throw new Error("Invalid prefix tactic command.");
+      }
+      return Object.freeze({
+        tag,
+        commands: Object.freeze(stable_commands),
         span,
       });
     }

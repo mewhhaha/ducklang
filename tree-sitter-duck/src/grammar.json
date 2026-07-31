@@ -2946,12 +2946,185 @@
           "value": "by"
         },
         {
-          "type": "FIELD",
-          "name": "proof",
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "proof",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
+            },
+            {
+              "type": "FIELD",
+              "name": "tactics",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_tactic_block"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "prefix_tactic_block": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "{"
+        },
+        {
+          "type": "REPEAT",
           "content": {
-            "type": "SYMBOL",
-            "name": "prefix_proof_term"
+            "type": "FIELD",
+            "name": "command",
+            "content": {
+              "type": "SYMBOL",
+              "name": "prefix_tactic_command"
+            }
           }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "command",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_final_tactic_command"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
+    },
+    "prefix_tactic_command": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "exact"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            },
+            {
+              "type": "FIELD",
+              "name": "proof",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "assumption"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "intro"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            },
+            {
+              "type": "FIELD",
+              "name": "name",
+              "content": {
+                "type": "SYMBOL",
+                "name": "identifier"
+              }
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "constructor"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "left"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "right"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
+        }
+      ]
+    },
+    "prefix_final_tactic_command": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "assumption"
+        },
+        {
+          "type": "STRING",
+          "value": "constructor"
+        },
+        {
+          "type": "STRING",
+          "value": "left"
+        },
+        {
+          "type": "STRING",
+          "value": "right"
         }
       ]
     },
@@ -10162,6 +10335,10 @@
     {
       "type": "SYMBOL",
       "name": "_type_application_space"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_tactic_space"
     },
     {
       "type": "SYMBOL",
