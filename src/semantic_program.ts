@@ -116,6 +116,7 @@ import {
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
   semantic_index_is_unreachable,
+  semantic_integer_narrowing_is_disproved,
   semantic_integer_narrowing_is_unreachable,
   semantic_primitive_is_unreachable,
   semantic_slice_is_unreachable,
@@ -138,6 +139,7 @@ import {
   verify_semantic_index_bounds_certificate,
   verify_semantic_index_unreachable,
   verify_semantic_integer_narrowing_certificate,
+  verify_semantic_integer_narrowing_disproved,
   verify_semantic_integer_narrowing_unreachable,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
@@ -2166,17 +2168,30 @@ function validate_integer_narrowing_obligations(
         );
         if (certificate === undefined) {
           let status = "unknown";
-          const producer = producers.get(value);
-          if (producer?.operation.tag === "constant") {
-            const constant = producer.operation.value;
+          if (
+            semantic_integer_narrowing_is_disproved(candidate, node.span)
+          ) {
+            expect(
+              verify_semantic_integer_narrowing_disproved(
+                candidate,
+                node.span,
+              ),
+              "FactGraph and the independent verifier disagree about a disproved integer narrowing.",
+            );
+            status = "disproved";
+          } else {
+            const producer = producers.get(value);
             let integer: bigint | undefined;
-            if (typeof constant === "bigint") {
-              integer = constant;
-            } else if (
-              typeof constant === "number" &&
-              Number.isSafeInteger(constant)
-            ) {
-              integer = BigInt(constant);
+            if (producer?.operation.tag === "constant") {
+              const constant = producer.operation.value;
+              if (typeof constant === "bigint") {
+                integer = constant;
+              } else if (
+                typeof constant === "number" &&
+                Number.isSafeInteger(constant)
+              ) {
+                integer = BigInt(constant);
+              }
             }
             if (
               integer !== undefined &&

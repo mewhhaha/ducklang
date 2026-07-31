@@ -1942,6 +1942,34 @@ Deno.test("integer narrowing requires a proved target range", () => {
     true,
   );
 
+  const branch_disproved = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => " +
+      "if value < -2147483648i64 || value > 2147483647i64 then " +
+      "@integer.narrow(value, I32) else 0 end;\n0\n",
+  ));
+  assert_equals(
+    branch_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let narrow = (outside: Bool) => do " +
+      "let value = if outside then 2147483648i64 else 0i64 end; " +
+      "@integer.narrow(value, I32) end;\n0\n",
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
   const widening = analyze_duck_source(parse_duck_source(
     "@integer.narrow(42, I64)\n",
   ));

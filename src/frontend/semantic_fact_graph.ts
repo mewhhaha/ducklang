@@ -309,6 +309,48 @@ export function semantic_integer_narrowing_is_unreachable(
   ) === "unreachable";
 }
 
+export function semantic_integer_narrowing_is_disproved(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_narrowing_at_span(
+    control_flow,
+    operation_span,
+  );
+  if (
+    target === undefined ||
+    target.node.operation.tag !== "narrow_integer"
+  ) {
+    return false;
+  }
+  const value = target.node.inputs[0];
+  if (value === undefined) return false;
+  const below_target: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "less_than",
+      value,
+      bound: integer_minimum(target.node.operation.target),
+    },
+  };
+  const above_target: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "greater_than",
+      value,
+      bound: integer_maximum(target.node.operation.target),
+    },
+  };
+  return semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    below_target,
+    undefined,
+    above_target,
+  ) === "proved";
+}
+
 export function infer_semantic_slice_bounds_certificate(
   control_flow: SemanticCfg,
   operation_span: SourceSpan,
