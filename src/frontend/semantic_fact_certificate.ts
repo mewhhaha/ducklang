@@ -7,6 +7,7 @@ import {
   integer_type_from_name,
   integer_val_type,
   type IntegerType,
+  machine_integer_type_from_name,
   normalize_integer,
 } from "../integer.ts";
 import type { FactProposition } from "./fact_graph.ts";
@@ -152,10 +153,9 @@ export type SemanticTypeCertificate = {
   requirement: SemanticTypeRequirement;
 };
 
-export type SemanticBoundedOffsetGoal = {
-  tag: "fact";
-  proposition: Exclude<FactProposition, { tag: "equal" }>;
-};
+export type SemanticBoundedOffsetGoal =
+  | { tag: "fact"; proposition: Exclude<FactProposition, { tag: "equal" }> }
+  | Extract<SemanticMachineRequirement, { tag: "difference" }>;
 
 export type SemanticBoundedOffsetRequirement = {
   operation: "add" | "subtract";
@@ -364,6 +364,15 @@ export function semantic_bounded_offset_certificate(
   call_span: SourceSpan,
   requirement: SemanticBoundedOffsetRequirement,
 ): SemanticBoundedOffsetCertificate {
+  let goal: SemanticBoundedOffsetGoal;
+  if (requirement.goal.tag === "difference") {
+    goal = Object.freeze({ ...requirement.goal });
+  } else {
+    goal = Object.freeze({
+      tag: "fact",
+      proposition: Object.freeze({ ...requirement.goal.proposition }),
+    });
+  }
   return Object.freeze({
     tag: "bounded_offset",
     call_span: Object.freeze({
@@ -376,10 +385,7 @@ export function semantic_bounded_offset_certificate(
       offset: requirement.offset,
       result: requirement.result,
       logical_result: requirement.logical_result,
-      goal: Object.freeze({
-        tag: "fact",
-        proposition: Object.freeze({ ...requirement.goal.proposition }),
-      }),
+      goal,
     }),
   });
 }
@@ -778,15 +784,18 @@ export function verify_semantic_bounded_offset_certificate(
   ) {
     return false;
   }
-  const goal_tag = (requirement.goal.proposition as FactProposition).tag;
-  if (
-    requirement.goal.tag !== "fact" ||
-    (goal_tag !== "less_than" &&
-      goal_tag !== "less_equal" &&
-      goal_tag !== "greater_than" &&
-      goal_tag !== "greater_equal") ||
-    requirement.goal.proposition.value !== requirement.logical_result
-  ) {
+  if (requirement.goal.tag === "fact") {
+    const goal_tag = requirement.goal.proposition.tag;
+    if (
+      (goal_tag !== "less_than" &&
+        goal_tag !== "less_equal" &&
+        goal_tag !== "greater_than" &&
+        goal_tag !== "greater_equal") ||
+      requirement.goal.proposition.value !== requirement.logical_result
+    ) {
+      return false;
+    }
+  } else if (requirement.goal.left !== requirement.logical_result) {
     return false;
   }
   const target = unique_semantic_call_at_span(control_flow, call_span);
@@ -811,7 +820,7 @@ export function verify_semantic_bounded_offset_certificate(
     !same_integer_type(input_range, offset_range) ||
     !same_integer_type(input_range, result_range) ||
     !same_integer_type(input_range, logical_result_range) ||
-    (input_range.width !== 32 && input_range.width !== 64)
+    input_range.width < 1 || input_range.width > 64
   ) {
     return false;
   }
@@ -839,31 +848,37 @@ export function verify_semantic_bounded_offset_certificate(
   ) {
     return false;
   }
-  const binding = producers.get(requirement.logical_result);
-  if (
-    binding?.operation.tag !== "primitive" ||
-    !binding.operation.name.startsWith("bind:") ||
-    binding.inputs.length !== 1 ||
-    binding.inputs[0] !== requirement.result ||
-    binding.outputs.length !== 1 ||
-    binding.outputs[0] !== requirement.logical_result
-  ) {
-    return false;
+  let binding: SemanticNode | undefined;
+  if (requirement.logical_result !== requirement.result) {
+    binding = producers.get(requirement.logical_result);
+    if (
+      binding?.operation.tag !== "primitive" ||
+      !binding.operation.name.startsWith("bind:") ||
+      binding.inputs.length !== 1 ||
+      binding.inputs[0] !== requirement.result ||
+      binding.outputs.length !== 1 ||
+      binding.outputs[0] !== requirement.logical_result
+    ) {
+      return false;
+    }
   }
   const offset_node = producers.get(requirement.offset);
   if (offset_node?.operation.tag !== "constant") return false;
   const offset_index = target.block.nodes.indexOf(offset_node);
   const operation_index = target.block.nodes.indexOf(operation);
-  const binding_index = target.block.nodes.indexOf(binding);
+  let binding_index = operation_index;
+  if (binding !== undefined) {
+    binding_index = target.block.nodes.indexOf(binding);
+  }
   const call_index = target.block.nodes.indexOf(target.node);
   if (
     offset_index < 0 ||
     operation_index <= offset_index ||
-    binding_index <= operation_index ||
     call_index <= binding_index
   ) {
     return false;
   }
+  if (binding !== undefined && binding_index <= operation_index) return false;
   const offset = verified_integer_constant(requirement.offset, producers);
   if (
     offset === undefined ||
@@ -2480,6 +2495,7 @@ function verify_semantic_paths(
     const booleans = transferred.booleans;
     const aliases = transferred.aliases;
     const path_premises = transferred.premises;
+    if (transferred.bounded_offset_rejected) return "rejected";
     let reached_call = false;
     for (const node of block.nodes) {
       steps += 1;
@@ -2772,7 +2788,7 @@ function machine_ranges(
   for (const value of control_flow.values) {
     let range: IntegerType | undefined;
     if (value.type.tag === "scalar") {
-      range = integer_type_from_name(value.type.name);
+      range = machine_integer_type_from_name(value.type.name);
     } else if (value.type.tag === "integer") {
       range = {
         signed: value.type.signed,
@@ -3308,10 +3324,12 @@ function transfer_semantic_values(
   booleans: ReadonlyMap<ValueId, boolean>;
   aliases: ReadonlyMap<ValueId, ValueId>;
   premises: readonly SemanticMachineRequirement[];
+  bounded_offset_rejected: boolean;
 } {
   const booleans = new Map(current);
   const aliases = new Map(current_aliases);
   const premises = [...current_premises];
+  let bounded_offset_rejected = false;
   for (const node of block.nodes) {
     if (node === target) break;
     const output = node.outputs[0];
@@ -3351,6 +3369,8 @@ function transfer_semantic_values(
       );
       if (offset_premises !== undefined) {
         premises.push(...offset_premises);
+      } else {
+        bounded_offset_rejected = true;
       }
       continue;
     }
@@ -3371,7 +3391,7 @@ function transfer_semantic_values(
     const incoming_value = resolved_alias(incoming.value, aliases);
     if (incoming_value !== undefined) aliases.set(output, incoming_value);
   }
-  return { booleans, aliases, premises };
+  return { booleans, aliases, premises, bounded_offset_rejected };
 }
 
 function verified_bounded_offset_premises(
@@ -3422,34 +3442,49 @@ function verified_bounded_offset_premises(
   const range_minimum = integer_minimum(result_range);
   const range_maximum = integer_maximum(result_range);
   if (minimum < range_minimum || maximum > range_maximum) return undefined;
+  const transferred: SemanticMachineRequirement[] = [];
   if (minimum === maximum) {
-    return [{
+    transferred.push({
       tag: "fact",
       proposition: {
         tag: "equal",
         value: requirement.result,
         expected: minimum,
       },
-    }];
-  }
-  return [
-    {
+    });
+  } else {
+    transferred.push({
       tag: "fact",
       proposition: {
         tag: "greater_equal",
         value: requirement.result,
         bound: minimum,
       },
-    },
-    {
+    });
+    transferred.push({
       tag: "fact",
       proposition: {
         tag: "less_equal",
         value: requirement.result,
         bound: maximum,
       },
-    },
-  ];
+    });
+  }
+  let difference = offset;
+  if (requirement.operation === "subtract") difference = -offset;
+  transferred.push({
+    tag: "difference",
+    left: requirement.result,
+    right: requirement.input,
+    maximum: difference,
+  });
+  transferred.push({
+    tag: "difference",
+    left: requirement.input,
+    right: requirement.result,
+    maximum: -difference,
+  });
+  return transferred;
 }
 
 function record_value_alias(
@@ -4376,6 +4411,14 @@ function interval_from_premises(
     if (proposition.bound > minimum) minimum = proposition.bound;
   }
   let contradiction = minimum > maximum;
+  while (!contradiction && exclusions.has(minimum)) {
+    minimum += 1n;
+    contradiction = minimum > maximum;
+  }
+  while (!contradiction && exclusions.has(maximum)) {
+    maximum -= 1n;
+    contradiction = minimum > maximum;
+  }
   if (!contradiction && minimum === maximum && exclusions.has(minimum)) {
     contradiction = true;
   }

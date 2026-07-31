@@ -230,6 +230,11 @@ export const diagnostic_registry = {
     "proof_refinement",
     "error",
   ),
+  failed_decreases: diagnostic_definition(
+    "DUCK2608",
+    "proof_refinement",
+    "error",
+  ),
 } as const;
 
 export type DiagnosticName = keyof typeof diagnostic_registry;

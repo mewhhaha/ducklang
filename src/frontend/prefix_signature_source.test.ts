@@ -108,6 +108,30 @@ Deno.test("prefix source extraction retains decreases clauses", () => {
   assert_equals(diagnostics_of(result)[0]?.code, "DUCK2603");
 });
 
+Deno.test("prefix source extraction retains lexicographic decreases metrics", () => {
+  const source = "type walk = (outer: U32, inner: U32) -> U32\n" +
+    "decreases (outer, inner)\n" +
+    "let walk = (outer, inner) => outer;\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  assert_equals(metadata.signatures[0]?.decreases[0]?.shape, {
+    tag: "product",
+    values: [
+      {
+        text: "outer",
+        references: ["outer"],
+        shape: { tag: "name", name: "outer" },
+        span: { start: 55, end: 60 },
+      },
+      {
+        text: "inner",
+        references: ["inner"],
+        shape: { tag: "name", name: "inner" },
+        span: { start: 62, end: 67 },
+      },
+    ],
+  });
+});
+
 Deno.test("prefix source extraction separates block scopes", () => {
   const source = "let outer = do\n" +
     "type inner = (value: I32) -> I32\n" +

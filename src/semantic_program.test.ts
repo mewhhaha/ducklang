@@ -7083,17 +7083,273 @@ Deno.test("decreases clauses require well-formed integer metrics", () => {
     true,
   );
 
-  const recursive = analyze_duck_source(parse_duck_source(
+  const components = Array.from({ length: 17 }, () => "value").join(", ");
+  const oversized = analyze_duck_source(parse_duck_source(
     "type f = (value: I32) -> (result: I32)\n" +
+      `decreases (${components})\n` +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    oversized.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "decreases metric must have between 1 and 16 machine-integer components",
+      )
+    ),
+    true,
+  );
+
+  const recursive_oversized = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      `decreases (${components})\n` +
+      "let rec f = value => f(value);\n",
+  ));
+  assert_equals(
+    recursive_oversized.diagnostics.filter((diagnostic) =>
+      diagnostic.code === "DUCK2608"
+    ).length,
+    1,
+  );
+
+  const recursive = analyze_duck_source(parse_duck_source(
+    "type f = (value: U32) -> (result: U32)\n" +
       "decreases value\n" +
       "let rec f = value => f value;\n",
   ));
   assert_equals(
     recursive.diagnostics.some((diagnostic) =>
-      diagnostic.code === "DUCK2604" &&
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes("cannot prove decreases value < value")
+    ),
+    true,
+  );
+});
+
+Deno.test("recursive decreases checks every machine-integer edge", () => {
+  const unsigned = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0u32 then 0u32 else countdown(value - 1u32) end;\n" +
+      "countdown 3u32\n",
+  ));
+  assert_equals(unsigned.diagnostics, []);
+  assert_equals(unsigned.proofs.size, 1);
+
+  const signed = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: I8) -> (result: I8)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == -128i8 then value else countdown(value - 1i8) end;\n" +
+      "countdown 3i8\n",
+  ));
+  assert_equals(signed.diagnostics, []);
+  assert_equals(signed.proofs.size, 1);
+
+  const default_integer = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: Int) -> (result: Int)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == -2147483648 then value " +
+      "else countdown(value - 1) end;\n" +
+      "countdown 3\n",
+  ));
+  assert_equals(default_integer.diagnostics, []);
+  assert_equals(default_integer.proofs.size, 1);
+
+  const wrapping_default_integer = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: Int) -> (result: Int)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0 then value else countdown(value - 1) end;\n",
+  ));
+  assert_equals(
+    wrapping_default_integer.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes("cannot prove decreases")
+    ),
+    true,
+  );
+
+  const aliased = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0u32 then 0u32 else do " +
+      "let next = countdown; next(value - 1u32) end end;\n" +
+      "countdown 3u32\n",
+  ));
+  assert_equals(aliased.diagnostics, []);
+  assert_equals(aliased.proofs.size, 1);
+
+  for (
+    const recursive_call of [
+      "repeat(value)",
+      "repeat(value + 1u8)",
+      "repeat(value - 1u8)",
+    ]
+  ) {
+    const rejected = analyze_duck_source(parse_duck_source(
+      "type repeat = (value: U8) -> (result: U8)\n" +
+        "decreases value\n" +
+        `let rec repeat = value => ${recursive_call};\n`,
+    ));
+    assert_equals(
+      rejected.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2608" &&
+        diagnostic.message.includes("cannot prove decreases")
+      ),
+      true,
+    );
+  }
+});
+
+Deno.test("mutual decreases checks every recursive group edge", () => {
+  const accepted = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => " +
+      "if value == 0u32 then true else odd(value - 1u32) end\n" +
+      "and odd = value => " +
+      "if value == 0u32 then false else even(value - 1u32) end;\n" +
+      "even 4u32\n",
+  ));
+  assert_equals(accepted.diagnostics, []);
+  assert_equals(accepted.proofs.size, 2);
+
+  const bad_edge = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value - 1u32);\n",
+  ));
+  assert_equals(
+    bad_edge.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes("call to odd cannot prove decreases")
+    ),
+    true,
+  );
+
+  const missing_metric = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value);\n",
+  ));
+  assert_equals(
+    missing_metric.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
       diagnostic.message.includes(
-        "recursive decreases obligations that are not yet checked",
+        "group member odd must declare a prefix signature with decreases",
       )
+    ),
+    true,
+  );
+
+  const missing_signature = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value);\n" +
+      "even 1u32\n",
+  ));
+  assert_equals(
+    missing_signature.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "group member odd must declare a prefix signature with decreases",
+      )
+    ),
+    true,
+  );
+  assert_equals(missing_signature.proofs.size, 0);
+
+  const incompatible_metrics = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases (value, value)\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value);\n",
+  ));
+  assert_equals(
+    incompatible_metrics.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "uses incompatible decreases metric arities 2 and 1",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("decreases uses lexicographic product order", () => {
+  for (
+    const [guard, recursive_call, expected_proofs] of [
+      ["major == 0u32", "walk(major - 1u32, 255u32)", 1],
+      ["minor == 0u32", "walk(major, minor - 1u32)", 2],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type walk = (major: U32, minor: U32) -> (result: U32)\n" +
+        "decreases (major, minor)\n" +
+        "let rec walk = (major, minor) => " +
+        `if ${guard} then major else ${recursive_call} end;\n` +
+        "walk(2u32, 2u32)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, expected_proofs);
+  }
+
+  const rejected = analyze_duck_source(parse_duck_source(
+    "type walk = (major: U32, minor: U32) -> (result: U32)\n" +
+      "decreases (major, minor)\n" +
+      "let rec walk = (major, minor) => " +
+      "if minor == 0u32 then major " +
+      "else walk(major + 1u32, minor - 1u32) end;\n",
+  ));
+  assert_equals(
+    rejected.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "cannot prove decreases (major + 1u32, minor - 1u32) < (major, minor)",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("unreachable recursive edges need no decreases proof", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type unreachable = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec unreachable = value => " +
+      "if false then unreachable(value) else value end;\n" +
+      "unreachable 1u32\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 0);
+});
+
+Deno.test("decreasing recursive callables cannot escape unchecked", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0u32 then 0u32 else countdown(value - 1u32) end;\n" +
+      "let escaped = countdown;\n" +
+      "escaped\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot be used as a runtime value")
     ),
     true,
   );
@@ -7157,7 +7413,7 @@ Deno.test("prefix signatures reject duplicate logical binders", () => {
   );
 });
 
-Deno.test("prefix signatures reject unsupported structural and mutual predeclarations", () => {
+Deno.test("prefix signatures reject structural predeclarations", () => {
   const structural = analyze_duck_source(parse_duck_source(
     "type left = (value: I32) -> (result: I32)\n" +
       'let [left] = [value => "wrong"];\n' +
@@ -7170,20 +7426,24 @@ Deno.test("prefix signatures reject unsupported structural and mutual predeclara
     ),
     true,
   );
+});
 
-  const mutual = analyze_duck_source(parse_duck_source(
+Deno.test("prefix signatures predeclare every mutual callable", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
     "type first = (value: I32) -> (result: I32)\n" +
       "type second = (value: I32) -> (result: I32)\n" +
-      "let rec first = value => first value\n" +
-      'and second = value => "wrong";\n' +
-      "first 1\n",
+      "let rec first = value => if value == 0 then 0 else second(value - 1) end\n" +
+      "and second = value => if value == 0 then 0 else first(value - 1) end;\n" +
+      "first 2\n",
   ));
+  assert_equals(analysis.diagnostics, []);
   assert_equals(
-    mutual.diagnostics.some((diagnostic) =>
-      diagnostic.code === "DUCK2602" &&
-      diagnostic.message.includes("structural or mutual definition")
-    ),
-    true,
+    analysis.types.get(analysis.symbols.get("first")?.[0]!)?.tag,
+    "function",
+  );
+  assert_equals(
+    analysis.types.get(analysis.symbols.get("second")?.[0]!)?.tag,
+    "function",
   );
 });
 

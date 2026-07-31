@@ -3,6 +3,7 @@ import {
   integer_minimum,
   integer_type_from_name,
   integer_val_type,
+  machine_integer_type_from_name,
   normalize_integer,
 } from "../integer.ts";
 import { type Prim, primitive_trap_conditions } from "../op.ts";
@@ -79,6 +80,7 @@ import {
   type SemanticTypeCertificate,
   type SemanticTypeRequirement,
   type SemanticUnreachableCertificate,
+  verify_semantic_bounded_offset_certificate,
 } from "./semantic_fact_certificate.ts";
 import type { ValueId } from "./semantic_identity.ts";
 import type { SourceSpan } from "./syntax.ts";
@@ -1101,17 +1103,21 @@ export function infer_semantic_bounded_offset_certificate(
   call_span: SourceSpan,
   requirement: SemanticBoundedOffsetRequirement,
 ): SemanticBoundedOffsetCertificate | undefined {
+  const certificate = semantic_bounded_offset_certificate(
+    call_span,
+    requirement,
+  );
   if (
-    semantic_cfg_machine_path_result(
+    !verify_semantic_bounded_offset_certificate(
+      certificate,
       control_flow,
       call_span,
-      requirement.goal,
       requirement,
-    ) !== "proved"
+    )
   ) {
     return undefined;
   }
-  return semantic_bounded_offset_certificate(call_span, requirement);
+  return certificate;
 }
 
 export function infer_semantic_remainder_certificate(
@@ -1207,7 +1213,7 @@ function semantic_cfg_machine_path_result_at_target(
   for (const value of control_flow.values) {
     let range: { signed: boolean; width: number } | undefined;
     if (value.type.tag === "scalar") {
-      range = integer_type_from_name(value.type.name);
+      range = machine_integer_type_from_name(value.type.name);
     } else if (value.type.tag === "integer") {
       range = {
         signed: value.type.signed,

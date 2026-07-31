@@ -35,6 +35,7 @@ import {
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
 import {
+  infer_semantic_bounded_offset_certificate,
   infer_semantic_index_bounds_certificate,
   infer_semantic_integer_narrowing_certificate,
   infer_semantic_machine_certificate,
@@ -1127,9 +1128,78 @@ Deno.test("semantic bounded offset certificates verify non-wrapping arithmetic",
   assert_equals(Object.isFrozen(certificate), true);
   assert_equals(Object.isFrozen(certificate.requirement), true);
   assert_equals(Object.isFrozen(certificate.requirement.goal), true);
+  if (certificate.requirement.goal.tag !== "fact") {
+    throw new Error("Expected the bounded offset fact goal.");
+  }
   assert_equals(
     Object.isFrozen(certificate.requirement.goal.proposition),
     true,
+  );
+  const direct_call_control_flow = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (
+          node.operation.tag !== "call" ||
+          node.span.start !== call_span.start ||
+          node.span.end !== call_span.end
+        ) {
+          return node;
+        }
+        return { ...node, inputs: [result] };
+      }),
+    })),
+  };
+  const direct_relation: SemanticBoundedOffsetRequirement = {
+    operation: "add",
+    input,
+    offset,
+    result,
+    logical_result: result,
+    goal: {
+      tag: "difference",
+      left: result,
+      right: input,
+      maximum: 1n,
+    },
+  };
+  const direct_certificate = semantic_bounded_offset_certificate(
+    call_span,
+    direct_relation,
+  );
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      direct_certificate,
+      direct_call_control_flow,
+      call_span,
+      direct_relation,
+    ),
+    true,
+  );
+  assert_equals(
+    infer_semantic_bounded_offset_certificate(
+      direct_call_control_flow,
+      call_span,
+      direct_relation,
+    ),
+    direct_certificate,
+  );
+  const forged_strict_relation = {
+    ...direct_relation,
+    goal: { ...direct_relation.goal, maximum: 0n },
+  };
+  assert_equals(
+    verify_semantic_bounded_offset_certificate(
+      semantic_bounded_offset_certificate(
+        call_span,
+        forged_strict_relation,
+      ),
+      direct_call_control_flow,
+      call_span,
+      forged_strict_relation,
+    ),
+    false,
   );
   const unsigned_control_flow = {
     ...control_flow,

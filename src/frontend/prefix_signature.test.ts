@@ -156,6 +156,43 @@ Deno.test("prefix signature snapshots reject cyclic logical terms", () => {
   );
 });
 
+Deno.test("prefix signature snapshots seal product metrics", () => {
+  const first: PrefixTerm = {
+    text: "major",
+    references: ["major"],
+    shape: { tag: "name", name: "major" },
+    span: { start: 4, end: 9 },
+  };
+  const second: PrefixTerm = {
+    text: "minor",
+    references: ["minor"],
+    shape: { tag: "name", name: "minor" },
+    span: { start: 11, end: 16 },
+  };
+  const values = [first, second];
+  const metric: PrefixTerm = {
+    text: "(major, minor)",
+    references: ["major", "minor"],
+    shape: { tag: "product", values },
+    span: { start: 3, end: 17 },
+  };
+  const result = checked_value(
+    associate_prefix_signatures(
+      [signature({ decreases: [metric] })],
+      [definition()],
+    ),
+  );
+  if (result === undefined) throw new Error("Expected associated signature.");
+  values[0] = second;
+  const associated = [...result.values()][0];
+  const shape = associated?.signature.decreases[0]?.shape;
+  if (shape?.tag !== "product") {
+    throw new Error("Expected a product decreases metric.");
+  }
+  assert_equals(shape.values[0]?.shape, { tag: "name", name: "major" });
+  assert_equals(Object.isFrozen(shape.values), true);
+});
+
 Deno.test("prefix signature snapshots seal refinement propositions", () => {
   const source_signature = signature();
   const parameter = source_signature.type.parameters[0];

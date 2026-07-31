@@ -75,6 +75,7 @@ export type PrefixTermShape =
     function: PrefixTerm;
     arguments: readonly PrefixTerm[];
   }
+  | { tag: "product"; values: readonly PrefixTerm[] }
   | { tag: "field"; object: PrefixTerm; field: string }
   | { tag: "index"; object: PrefixTerm }
   | { tag: "parenthesized"; value: PrefixTerm }
@@ -1408,6 +1409,21 @@ function snapshot_term_shape(
       ),
       arguments: Object.freeze(arguments_snapshot),
     });
+  }
+  if (tag === "product") {
+    const values = own_value<readonly PrefixTerm[]>(shape, "values");
+    assert_plain_array(values, "Prefix product values");
+    const snapshot: PrefixTerm[] = [];
+    for (
+      let index = 0;
+      index < own_array_length(values, "Prefix product values");
+      index += 1
+    ) {
+      const value = own_array_value(values, index, "Prefix product values");
+      expect(value !== undefined, "Prefix product values contain a hole.");
+      snapshot.push(snapshot_term(value, active, depth + 1, budget));
+    }
+    return Object.freeze({ tag, values: Object.freeze(snapshot) });
   }
   if (tag === "field") {
     return Object.freeze({

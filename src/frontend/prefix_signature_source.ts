@@ -1108,6 +1108,14 @@ function term_shape_from_node(
   if (node.kind === "string") return { tag: "string" };
   if (node.kind === "character") return { tag: "character" };
   if (node.kind === "boolean") return { tag: "boolean" };
+  if (node.kind === "positional_product") {
+    return {
+      tag: "product",
+      values: node.children.filter((child) =>
+        !child.kind.startsWith('"') && child.kind !== "comment"
+      ).map((child) => term_from_node(child, source)),
+    };
+  }
   if (node.kind === "prefix_proposition_binary_term") {
     const terms = node.children.filter((child) =>
       child.kind === "prefix_proposition_term"

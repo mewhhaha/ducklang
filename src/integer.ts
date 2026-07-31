@@ -26,6 +26,13 @@ export function integer_type_from_name(name: string): IntegerType | undefined {
   return { signed: sign === "I", width };
 }
 
+export function machine_integer_type_from_name(
+  name: string,
+): IntegerType | undefined {
+  if (name === "Int") return { signed: true, width: 32 };
+  return integer_type_from_name(name);
+}
+
 export function integer_type_name(type: IntegerType): string {
   if (type.signed) {
     return "I" + type.width.toString();

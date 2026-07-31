@@ -37,6 +37,7 @@ import {
 import type {
   FixityDeclaration,
   FrontExpr,
+  RecursiveBinding,
   Source as SourceNode,
   Stmt,
   TypeDeclaration,
@@ -130,6 +131,7 @@ import {
 } from "./frontend/semantic_fact_graph.ts";
 import {
   semantic_predicate_certificate,
+  type SemanticBoundedOffsetGoal,
   type SemanticBoundedOffsetRequirement,
   type SemanticControlFlowCertificate,
   type SemanticIndexBoundsRequirement,
@@ -904,7 +906,7 @@ function find_source_binding(
   root: object,
   name: string,
   span: SourceSpan,
-): Extract<Stmt, { tag: "bind" }> | undefined {
+): Extract<Stmt, { tag: "bind" }> | RecursiveBinding | undefined {
   const pending: object[] = [root];
   const visited = new WeakSet<object>();
   while (pending.length > 0) {
@@ -913,13 +915,14 @@ function find_source_binding(
     if (visited.has(current)) continue;
     visited.add(current);
     if (
-      "tag" in current && current.tag === "bind" &&
-      "name" in current && current.name === name &&
-      has_source_span(current)
+      "tag" in current && current.tag === "bind" && has_source_span(current)
     ) {
       const current_span = source_span(current);
       if (current_span.start === span.start && current_span.end === span.end) {
-        return current as Extract<Stmt, { tag: "bind" }>;
+        const binding = current as Extract<Stmt, { tag: "bind" }>;
+        if (binding.name === name) return binding;
+        const mutual = binding.mutual?.find((member) => member.name === name);
+        if (mutual !== undefined) return mutual;
       }
     }
     for (const key of Reflect.ownKeys(current)) {
@@ -2893,6 +2896,7 @@ type PrefixRuntimeContract = {
 };
 
 type PrefixCallObligation = {
+  kind?: "decreases";
   proposition: PrefixProposition;
   source_span: SourceSpan;
   description: string;
@@ -2921,11 +2925,7 @@ function check_prefix_call_obligations(
   for (const signature of signatures) {
     if (
       signature.type.result.type.proof !== undefined ||
-      (signature.requires.length === 0 &&
-        !signature.type.parameters.some((parameter) =>
-          parameter.type.proof !== undefined ||
-          parameter.type.refinement !== undefined
-        ))
+      signature.kind === "fact" || signature.kind === "opaque fact"
     ) {
       continue;
     }
@@ -2943,10 +2943,7 @@ function check_prefix_call_obligations(
     if (binding === undefined) continue;
     const occurrence = binding_index.occurrence_of(binding, "name");
     if (occurrence?.entity === undefined) continue;
-    expect(
-      binding.value.tag === "lam" || binding.value.tag === "rec",
-      `Proof-requiring callable ${signature.name} lost its function value.`,
-    );
+    if (binding.value.tag !== "lam" && binding.value.tag !== "rec") continue;
     const runtime_parameters = signature.type.parameters.filter((parameter) =>
       parameter.type.proof === undefined
     );
@@ -3026,6 +3023,60 @@ function check_prefix_call_obligations(
   const checks: Checked<
     { key: string; proof: CheckedKernelCertificate } | undefined
   >[] = [];
+  const recursive_groups = new Map<string, PrefixDefinition[]>();
+  for (const definition of definitions) {
+    if (definition.recursive !== true) continue;
+    const key = JSON.stringify([
+      definition.scope,
+      definition.span.start,
+      definition.span.end,
+    ]);
+    const group = recursive_groups.get(key);
+    if (group === undefined) {
+      recursive_groups.set(key, [definition]);
+    } else {
+      group.push(definition);
+    }
+  }
+  for (const group of recursive_groups.values()) {
+    const declared = group.map((definition) => ({
+      definition,
+      signature: signatures.find((signature) =>
+        signature.scope === definition.scope &&
+        signature.name === definition.name &&
+        signature.span.end <= definition.span.start
+      ),
+    }));
+    const decreasing = declared.find((member) =>
+      member.signature !== undefined && member.signature.decreases.length > 0
+    );
+    if (decreasing?.signature === undefined) continue;
+    const metric = decreasing.signature.decreases[0];
+    expect(
+      metric !== undefined,
+      `Prefix signature ${decreasing.signature.name} lost its decreases metric.`,
+    );
+    for (const member of declared) {
+      if (
+        member.signature !== undefined && member.signature.decreases.length > 0
+      ) {
+        continue;
+      }
+      checks.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.failed_decreases,
+            `Recursive group member ${member.definition.name} must declare a prefix signature with decreases because ${decreasing.signature.name} declares decreases.`,
+            member.definition.span,
+            [{
+              message: "The recursive group metric is declared here.",
+              span: metric.span,
+            }],
+          ),
+        ),
+      );
+    }
+  }
   let added_alias = true;
   while (added_alias) {
     added_alias = false;
@@ -3066,6 +3117,9 @@ function check_prefix_call_obligations(
     if (target === undefined) continue;
     const contract = contracts_by_entity.get(target.id);
     if (contract === undefined) continue;
+    if (!prefix_signature_requires_checked_use(contract.signature)) {
+      continue;
+    }
     checks.push(
       fail(
         compiler_diagnostic(
@@ -3100,6 +3154,9 @@ function check_prefix_call_obligations(
     }
     const contract = contracts_by_entity.get(occurrence.entity);
     expect(contract !== undefined, "Contract reference lost its signature.");
+    if (!prefix_signature_requires_checked_use(contract.signature)) {
+      continue;
+    }
     checks.push(
       fail(
         compiler_diagnostic(
@@ -3164,6 +3221,56 @@ function check_prefix_call_obligations(
     }
     const call_span = source_span(call);
     const caller = enclosing_prefix_runtime_contract(call, contracts);
+    if (
+      call_is_verified_unreachable(
+        call_span,
+        control_flow,
+        callable_control_flow,
+      )
+    ) {
+      continue;
+    }
+    const semantic_substitutions = new Map(substitutions);
+    const call_control_flow = unique_control_flow_for_call(
+      call_span,
+      control_flow,
+      callable_control_flow,
+    );
+    if (call_control_flow !== undefined) {
+      const semantic_calls = semantic_calls_at_span(
+        call_control_flow,
+        call_span,
+      );
+      const semantic_call = semantic_calls[0];
+      expect(
+        semantic_calls.length === 1 && semantic_call !== undefined,
+        `Call to ${contract.signature.name} lost its semantic operation.`,
+      );
+      for (let index = 0; index < runtime_parameters.length; index += 1) {
+        const parameter = runtime_parameters[index];
+        const argument = call.args[index];
+        const value = semantic_call.node.inputs[index + 1];
+        expect(
+          parameter !== undefined && argument !== undefined &&
+            value !== undefined,
+          `Call to ${contract.signature.name} lost semantic argument ${index}.`,
+        );
+        const name = "semantic-value:" + value;
+        semantic_substitutions.set(parameter.name, {
+          text: source_text.slice(
+            source_span(argument).start,
+            source_span(argument).end,
+          ),
+          references: [name],
+          shape: { tag: "name", name },
+          span: source_span(argument),
+        });
+        term_types.set(
+          name,
+          logical_term_type_from_reference(parameter.type),
+        );
+      }
+    }
     let caller_scope = contract.signature.scope;
     let caller_reference_at = contract.signature.span.start;
     if (caller !== undefined) {
@@ -3184,10 +3291,31 @@ function check_prefix_call_obligations(
     for (const [name, type] of caller_prefix_term_types(caller)) {
       term_types.set(name, type);
     }
-    const obligations = instantiate_prefix_call_obligations(
+    const obligations = [...instantiate_prefix_call_obligations(
       contract.signature,
       substitutions,
+    )];
+    const decrease = recursive_decrease_obligation(
+      caller,
+      contract,
+      semantic_substitutions,
+      call_span,
     );
+    if (decrease.tag === "invalid") {
+      checks.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.failed_decreases,
+            decrease.message,
+            call_span,
+            [{
+              message: "The decreases metric is declared here.",
+              span: decrease.source_span,
+            }],
+          ),
+        ),
+      );
+    }
     const facts = prefix_fact_signatures(
       signatures,
       definitions,
@@ -3195,15 +3323,6 @@ function check_prefix_call_obligations(
       contract.signature.span.start,
       call_span.start,
     );
-    if (
-      call_is_verified_unreachable(
-        call_span,
-        control_flow,
-        callable_control_flow,
-      )
-    ) {
-      continue;
-    }
     for (let index = 0; index < obligations.length; index += 1) {
       const obligation = obligations[index];
       expect(
@@ -3241,6 +3360,74 @@ function check_prefix_call_obligations(
           branch_hypotheses.certificate,
         ),
       );
+    }
+    if (decrease.tag === "alternatives") {
+      let accepted: Checked<
+        { key: string; proof: CheckedKernelCertificate } | undefined
+      >[] | undefined;
+      for (const alternative of decrease.alternatives) {
+        const alternative_checks: Checked<
+          { key: string; proof: CheckedKernelCertificate } | undefined
+        >[] = [];
+        for (let index = 0; index < alternative.length; index += 1) {
+          const obligation = alternative[index];
+          expect(
+            obligation !== undefined,
+            `Call to ${contract.signature.name} lost lexicographic obligation ${index}.`,
+          );
+          const branch_hypotheses = verified_branch_hypotheses(
+            contract.signature.name,
+            obligation.proposition,
+            call_span,
+            binding_values,
+            term_types,
+            facts,
+            hypotheses,
+            control_flow,
+            callable_control_flow,
+          );
+          alternative_checks.push(
+            check_prefix_call_obligation(
+              contract.signature,
+              obligation,
+              call_span,
+              [
+                ...hypotheses,
+                ...branch_hypotheses.propositions.map((proposition) => ({
+                  proposition,
+                  facts,
+                })),
+              ],
+              term_types,
+              signatures,
+              definitions,
+              declared_type_names,
+              obligations.length + index,
+              branch_hypotheses.certificate,
+            ),
+          );
+        }
+        if (diagnostics_of(all(alternative_checks)).length > 0) continue;
+        accepted = alternative_checks;
+        break;
+      }
+      if (accepted === undefined) {
+        checks.push(
+          fail(
+            compiler_diagnostic(
+              diagnostic_codes.failed_decreases,
+              `unknown: call to ${contract.signature.name} cannot prove decreases ${decrease.description}.`,
+              call_span,
+              [{
+                message: "The decreases metric is declared here.",
+                span: decrease.source_span,
+              }],
+            ),
+          ),
+        );
+      } else {
+        checks.push(...accepted);
+      }
     }
   }
   return checks;
@@ -3540,6 +3727,10 @@ function prefix_semantic_value(
   binding_values: ReadonlyMap<EntityId, ValueId>,
 ): ValueId | undefined {
   if (term.shape.tag !== "name") return undefined;
+  const direct_prefix = "semantic-value:";
+  if (term.shape.name.startsWith(direct_prefix)) {
+    return term.shape.name.slice(direct_prefix.length) as ValueId;
+  }
   const prefix = "semantic:";
   if (!term.shape.name.startsWith(prefix)) return undefined;
   const entity = term.shape.name.slice(prefix.length) as EntityId;
@@ -3781,28 +3972,36 @@ function prefix_bounded_offset_requirement(
   goal: SemanticMachineRequirement,
   control_flow: SemanticCfg,
 ): SemanticBoundedOffsetRequirement | undefined {
-  if (goal.tag !== "fact" || goal.proposition.tag === "equal") {
+  let logical_result: ValueId;
+  let bounded_goal: SemanticBoundedOffsetGoal;
+  if (goal.tag === "fact" && goal.proposition.tag !== "equal") {
+    logical_result = goal.proposition.value;
+    bounded_goal = { tag: "fact", proposition: { ...goal.proposition } };
+  } else if (goal.tag === "difference") {
+    logical_result = goal.left;
+    bounded_goal = { ...goal };
+  } else {
     return undefined;
   }
-  const logical_result = goal.proposition.value;
   const producers = new Map<ValueId, SemanticNode>();
   for (const block of control_flow.blocks) {
     for (const node of block.nodes) {
       for (const output of node.outputs) producers.set(output, node);
     }
   }
+  let result = logical_result;
   const binding = producers.get(logical_result);
   if (
-    binding?.operation.tag !== "primitive" ||
-    !binding.operation.name.startsWith("bind:") ||
-    binding.inputs.length !== 1 ||
-    binding.outputs.length !== 1 ||
-    binding.outputs[0] !== logical_result
+    binding?.operation.tag === "primitive" &&
+    binding.operation.name.startsWith("bind:") &&
+    binding.inputs.length === 1 &&
+    binding.outputs.length === 1 &&
+    binding.outputs[0] === logical_result
   ) {
-    return undefined;
+    const bound_result = binding.inputs[0];
+    if (bound_result === undefined) return undefined;
+    result = bound_result;
   }
-  const result = binding.inputs[0];
-  if (result === undefined) return undefined;
   const operation = producers.get(result);
   if (
     operation?.operation.tag !== "primitive" ||
@@ -3840,10 +4039,7 @@ function prefix_bounded_offset_requirement(
     offset,
     result,
     logical_result,
-    goal: {
-      tag: "fact",
-      proposition: { ...goal.proposition },
-    },
+    goal: bounded_goal,
   };
 }
 
@@ -4031,6 +4227,124 @@ function enclosing_prefix_runtime_contract(
     width = candidate_width;
   }
   return enclosing;
+}
+
+function prefix_signature_requires_checked_use(
+  signature: PrefixSignature,
+): boolean {
+  return signature.decreases.length > 0 || signature.requires.length > 0 ||
+    signature.type.parameters.some((parameter) =>
+      parameter.type.proof !== undefined ||
+      parameter.type.refinement !== undefined
+    );
+}
+
+type RecursiveDecreaseObligation =
+  | { tag: "none" }
+  | { tag: "invalid"; message: string; source_span: SourceSpan }
+  | {
+    tag: "alternatives";
+    alternatives: readonly (readonly PrefixCallObligation[])[];
+    description: string;
+    source_span: SourceSpan;
+  };
+
+function recursive_decrease_obligation(
+  caller: PrefixRuntimeContract | undefined,
+  callee: PrefixRuntimeContract,
+  callee_substitutions: ReadonlyMap<string, PrefixTerm>,
+  call_span: SourceSpan,
+): RecursiveDecreaseObligation {
+  if (caller === undefined) return { tag: "none" };
+  if (
+    caller.definition.recursive !== true ||
+    callee.definition.recursive !== true ||
+    caller.signature.scope !== callee.signature.scope ||
+    caller.definition.span.start !== callee.definition.span.start ||
+    caller.definition.span.end !== callee.definition.span.end
+  ) {
+    return { tag: "none" };
+  }
+  const caller_metric = caller.signature.decreases[0];
+  const callee_metric = callee.signature.decreases[0];
+  if (caller_metric === undefined && callee_metric === undefined) {
+    return { tag: "none" };
+  }
+  if (caller_metric === undefined || callee_metric === undefined) {
+    return { tag: "none" };
+  }
+  const current_metric = substitute_prefix_term(
+    caller_metric,
+    caller.parameter_terms,
+  );
+  const next_metric = substitute_prefix_term(
+    callee_metric,
+    callee_substitutions,
+  );
+  const current = prefix_decrease_metric_components(current_metric);
+  const next = prefix_decrease_metric_components(next_metric);
+  if (
+    current.length === 0 || next.length === 0 ||
+    current.length > proof_limits.maximum_formula_disjuncts ||
+    next.length > proof_limits.maximum_formula_disjuncts
+  ) {
+    return { tag: "none" };
+  }
+  if (current.length !== next.length) {
+    return {
+      tag: "invalid",
+      message:
+        `Recursive call from ${caller.signature.name} to ${callee.signature.name} uses incompatible decreases metric arities ${current.length} and ${next.length}.`,
+      source_span: callee_metric.span,
+    };
+  }
+  const alternatives: PrefixCallObligation[][] = [];
+  for (let decisive = 0; decisive < current.length; decisive += 1) {
+    const obligations: PrefixCallObligation[] = [];
+    for (let prior = 0; prior < decisive; prior += 1) {
+      const next_component = next[prior];
+      const current_component = current[prior];
+      expect(
+        next_component !== undefined && current_component !== undefined,
+        `Recursive call to ${callee.signature.name} lost lexicographic component ${prior}.`,
+      );
+      obligations.push({
+        kind: "decreases",
+        proposition: {
+          tag: "equal",
+          left: next_component,
+          right: current_component,
+          span: call_span,
+        },
+        source_span: callee_metric.span,
+        description: "decreases prior component equality",
+      });
+    }
+    const next_component = next[decisive];
+    const current_component = current[decisive];
+    expect(
+      next_component !== undefined && current_component !== undefined,
+      `Recursive call to ${callee.signature.name} lost lexicographic component ${decisive}.`,
+    );
+    obligations.push({
+      kind: "decreases",
+      proposition: {
+        tag: "less",
+        left: next_component,
+        right: current_component,
+        span: call_span,
+      },
+      source_span: callee_metric.span,
+      description: "decreases strict component",
+    });
+    alternatives.push(obligations);
+  }
+  return {
+    tag: "alternatives",
+    alternatives,
+    description: next_metric.text + " < " + current_metric.text,
+    source_span: callee_metric.span,
+  };
 }
 
 function caller_prefix_substitutions(
@@ -4270,9 +4584,12 @@ function check_prefix_call_obligation(
   if (prefix_proposition_is_definitely_false(obligation.proposition)) {
     status = "disproved";
   }
+  let code: CompilerDiagnostic["code"] =
+    diagnostic_codes.prefix_signature_unproved;
+  if (obligation.kind === "decreases") code = diagnostic_codes.failed_decreases;
   return fail(
     compiler_diagnostic(
-      diagnostic_codes.prefix_signature_unproved,
+      code,
       `${status}: call to ${signature.name} cannot prove ${obligation.description}.`,
       call_span,
       [{
@@ -4335,6 +4652,10 @@ function prefix_proposition_is_definitely_false(
     return prefix_term_surface_key(proposition.left) ===
       prefix_term_surface_key(proposition.right);
   }
+  if (proposition.tag === "less") {
+    return prefix_term_surface_key(proposition.left) ===
+      prefix_term_surface_key(proposition.right);
+  }
   if (proposition.tag === "and") {
     return prefix_proposition_is_definitely_false(proposition.left) ||
       prefix_proposition_is_definitely_false(proposition.right);
@@ -4371,6 +4692,12 @@ function prefix_term_surface_key(term: PrefixTerm): string {
       "call",
       prefix_term_surface_key(shape.function),
       shape.arguments.map(prefix_term_surface_key),
+    ]);
+  }
+  if (shape.tag === "product") {
+    return JSON.stringify([
+      "product",
+      shape.values.map(prefix_term_surface_key),
     ]);
   }
   if (shape.tag === "field") {
@@ -4515,6 +4842,17 @@ function substitute_prefix_term(
       },
     };
   }
+  if (shape.tag === "product") {
+    const values = shape.values.map((value) =>
+      substitute_prefix_term(value, substitutions)
+    );
+    return {
+      ...term,
+      text: "(" + values.map((value) => value.text).join(", ") + ")",
+      references: values.flatMap((value) => value.references),
+      shape: { tag: "product", values },
+    };
+  }
   if (shape.tag === "field" || shape.tag === "index") {
     const object = substitute_prefix_term(shape.object, substitutions);
     return {
@@ -4565,6 +4903,43 @@ function prefix_term_from_front_expr(
   if (expression.tag === "text") {
     return { text, references: [], shape: { tag: "string" }, span };
   }
+  if (expression.tag === "prim") {
+    let operator: string | undefined;
+    if (expression.prim.endsWith(".add")) operator = "+";
+    if (expression.prim.endsWith(".sub")) operator = "-";
+    if (expression.prim.endsWith(".mul")) operator = "*";
+    if (
+      expression.prim.endsWith(".div_s") ||
+      expression.prim.endsWith(".div_u")
+    ) {
+      operator = "/";
+    }
+    if (
+      expression.prim.endsWith(".rem_s") ||
+      expression.prim.endsWith(".rem_u")
+    ) {
+      operator = "%";
+    }
+    if (operator === undefined) {
+      return { text, references: [], shape: { tag: "unsupported" }, span };
+    }
+    const left = prefix_term_from_front_expr(
+      expression.left,
+      source_text,
+      binding_index,
+    );
+    const right = prefix_term_from_front_expr(
+      expression.right,
+      source_text,
+      binding_index,
+    );
+    return {
+      text,
+      references: [...left.references, ...right.references],
+      shape: { tag: "binary", operator, left, right },
+      span,
+    };
+  }
   if (expression.tag === "app") {
     const function_term = prefix_term_from_front_expr(
       expression.func,
@@ -4585,6 +4960,17 @@ function prefix_term_from_front_expr(
         function: function_term,
         arguments: arguments_,
       },
+      span,
+    };
+  }
+  if (expression.tag === "product") {
+    const values = expression.entries.map((entry) =>
+      prefix_term_from_front_expr(entry.value, source_text, binding_index)
+    );
+    return {
+      text,
+      references: values.flatMap((value) => value.references),
+      shape: { tag: "product", values },
       span,
     };
   }
@@ -4639,6 +5025,19 @@ function record_front_expr_logical_types(
     });
     return;
   }
+  if (expression.tag === "prim") {
+    record_front_expr_logical_types(
+      expression.left,
+      binding_index,
+      term_types,
+    );
+    record_front_expr_logical_types(
+      expression.right,
+      binding_index,
+      term_types,
+    );
+    return;
+  }
   if (expression.tag === "app") {
     record_front_expr_logical_types(
       expression.func,
@@ -4647,6 +5046,16 @@ function record_front_expr_logical_types(
     );
     for (const argument of expression.args) {
       record_front_expr_logical_types(argument, binding_index, term_types);
+    }
+    return;
+  }
+  if (expression.tag === "product") {
+    for (const entry of expression.entries) {
+      record_front_expr_logical_types(
+        entry.value,
+        binding_index,
+        term_types,
+      );
     }
     return;
   }
@@ -5940,6 +6349,12 @@ function prefix_term_key(
       "call",
       prefix_term_key(shape.function, context),
       shape.arguments.map((argument) => prefix_term_key(argument, context)),
+    ];
+  }
+  if (shape.tag === "product") {
+    return [
+      "product",
+      shape.values.map((value) => prefix_term_key(value, context)),
     ];
   }
   if (shape.tag === "field") {
@@ -8591,25 +9006,6 @@ function check_prefix_decreases(
   definitions: readonly PrefixDefinition[],
 ): Checked<undefined> {
   if (signature.decreases.length === 0) return ok(undefined);
-  const definition = definitions.find((candidate) =>
-    candidate.name === signature.name &&
-    candidate.scope === signature.scope &&
-    candidate.span.start >= signature.span.end
-  );
-  if (definition?.recursive === true) {
-    const metric = signature.decreases[0];
-    expect(
-      metric !== undefined,
-      `Prefix signature ${signature.name} lost its decreases metric.`,
-    );
-    return fail(
-      compiler_diagnostic(
-        diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} has recursive decreases obligations that are not yet checked.`,
-        metric.span,
-      ),
-    );
-  }
   const term_types = new Map<string, LogicalTermType>();
   for (const parameter of signature.type.parameters) {
     if (parameter.type.proof !== undefined) continue;
@@ -8618,10 +9014,28 @@ function check_prefix_decreases(
       logical_term_type_from_reference(parameter.type),
     );
   }
-  const checks = signature.decreases.map((metric) => {
+  const metric = signature.decreases[0];
+  expect(
+    metric !== undefined,
+    `Prefix signature ${signature.name} lost its decreases metric.`,
+  );
+  const components = prefix_decrease_metric_components(metric);
+  if (
+    components.length === 0 ||
+    components.length > proof_limits.maximum_formula_disjuncts
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.failed_decreases,
+        `Prefix signature ${signature.name} decreases metric must have between 1 and ${proof_limits.maximum_formula_disjuncts} machine-integer components.`,
+        metric.span,
+      ),
+    );
+  }
+  const checks = components.map((component) => {
     const checked_type = check_prefix_term_type(
       signature.name,
-      metric,
+      component,
       term_types,
       prefix_fact_signatures(
         signatures,
@@ -8639,14 +9053,28 @@ function check_prefix_decreases(
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} uses non-integer decreases metric ${metric.text}: ${
+        `Prefix signature ${signature.name} uses non-integer decreases metric ${component.text}: ${
           logical_term_type_display(metric_type)
         }.`,
-        metric.span,
+        component.span,
       ),
     );
   });
   return all(checks).map(() => undefined);
+}
+
+function prefix_decrease_metric_components(
+  metric: PrefixTerm,
+): readonly PrefixTerm[] {
+  if (metric.shape.tag === "parenthesized") {
+    return prefix_decrease_metric_components(metric.shape.value);
+  }
+  if (metric.shape.tag !== "product") return [metric];
+  const components: PrefixTerm[] = [];
+  for (const value of metric.shape.values) {
+    components.push(...prefix_decrease_metric_components(value));
+  }
+  return components;
 }
 
 function check_prefix_fact_definition(
