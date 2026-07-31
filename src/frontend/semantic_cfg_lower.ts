@@ -8,6 +8,7 @@ import {
 import type { FrontExpr, Pattern, Source, Stmt } from "./ast.ts";
 import type { BabaCstNode, BabaSourceNodeId } from "./baba_parser.ts";
 import type { BindingEntity, BindingIndex, EntityId } from "./binding_index.ts";
+import { text_byte_length } from "./text.ts";
 import {
   type SemanticBlockId,
   type SemanticCallableControlFlow,
@@ -1529,6 +1530,29 @@ function lower_expression(
           length: static_aggregate_length(object_type),
           mode: "read",
         },
+        operands.values,
+        type,
+        undefined,
+        context,
+      );
+      return { tag: "value", block: operands.block, value, type };
+    }
+    if (
+      expression.func.tag === "var" &&
+      expression.func.name === "@slice" &&
+      expression.args.length === 3
+    ) {
+      const operands = lower_expressions(expression.args, block, context);
+      if (operands.tag === "terminated") return operands;
+      let length: number | undefined;
+      const object = expression.args[0];
+      if (object?.tag === "text") {
+        length = text_byte_length(object.value);
+      }
+      const value = emit_operation(
+        operands.block,
+        expression,
+        { tag: "slice", length },
         operands.values,
         type,
         undefined,

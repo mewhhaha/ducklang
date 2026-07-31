@@ -200,6 +200,34 @@ Deno.test("Duck compiler executes guarded unsigned indexes", async () => {
   }
 });
 
+Deno.test("Duck compiler erases checked slice bounds certificates", async () => {
+  const source = '@slice("aéz", 1, 3)\n';
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "slice_bounds"
+    ),
+    true,
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded slice source to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("slice_bounds"),
+    false,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "text", value: "é" });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler rejects unchecked indexes before encoding", () => {
   assert_throws(
     () =>
@@ -219,6 +247,25 @@ Deno.test("Duck compiler rejects unchecked indexes before encoding", () => {
   );
 });
 
+Deno.test("Duck compiler rejects unchecked slices before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let take = (value: Bytes, start: I32, finish: I32) => " +
+          "@slice(value, start, finish);\n0\n",
+      ),
+    "unknown: cannot prove slice bounds",
+  );
+  assert_throws(
+    () => encode_duck_module('@slice("hello", 1, 6)\n'),
+    "disproved: cannot prove slice bounds",
+  );
+  assert_throws(
+    () => encode_duck_module('@slice("é", 0, 1)\n'),
+    "disproved: cannot prove Text slice endpoints are UTF-8 boundaries",
+  );
+});
+
 Deno.test("Duck compiler rejects first-class get before encoding", () => {
   assert_throws(
     () =>
@@ -228,6 +275,19 @@ Deno.test("Duck compiler rejects first-class get before encoding", () => {
           "invoke (@get, [20, 22], 2)\n",
       ),
     "partial intrinsic @get cannot escape a directly checked call",
+  );
+});
+
+Deno.test("Duck compiler rejects first-class slice before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let invoke: ((Text, I32, I32) -> Text, Text, I32, I32) -> Text = " +
+          "(operation, value, start, finish) => " +
+          "operation(value, start, finish);\n" +
+          'invoke(@slice, "hello", 1, 4)\n',
+      ),
+    "partial intrinsic @slice cannot escape",
   );
 });
 

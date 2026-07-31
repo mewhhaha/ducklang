@@ -7,6 +7,20 @@ export function text_byte_length(value: string): number {
   return text_encoder.encode(value).length;
 }
 
+export function text_byte_offset_is_boundary(
+  value: string,
+  offset: number,
+): boolean {
+  const bytes = text_encoder.encode(value);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.length) {
+    return false;
+  }
+  if (offset === bytes.length) return true;
+  const byte = bytes[offset];
+  if (byte === undefined) return false;
+  return (byte & 0xc0) !== 0x80;
+}
+
 export function text_content_bytes(value: string): number[] {
   return Array.from(text_encoder.encode(value));
 }

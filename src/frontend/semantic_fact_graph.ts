@@ -6,6 +6,7 @@ import {
   normalize_integer,
 } from "../integer.ts";
 import { type Prim, primitive_trap_conditions } from "../op.ts";
+import { text_byte_offset_is_boundary } from "./text.ts";
 import {
   assume_machine_bitmask,
   assume_machine_congruence,
@@ -41,6 +42,7 @@ import {
   unique_semantic_call_at_span,
   unique_semantic_index_at_span,
   unique_semantic_primitive_at_span,
+  unique_semantic_slice_at_span,
 } from "./semantic_cfg.ts";
 import {
   type RepresentationType,
@@ -53,6 +55,7 @@ import {
   semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
+  semantic_slice_bounds_certificate,
   semantic_type_certificate,
   semantic_unreachable_certificate,
   type SemanticBoundedOffsetCertificate,
@@ -67,6 +70,8 @@ import {
   type SemanticRemainderDivisibilityCertificate,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticSliceBoundsCertificate,
+  type SemanticSliceBoundsRequirement,
   type SemanticTypeCertificate,
   type SemanticTypeRequirement,
   type SemanticUnreachableCertificate,
@@ -218,6 +223,197 @@ export function semantic_index_is_unreachable(
 ): boolean {
   if (!semantic_cfg_is_well_formed(control_flow)) return false;
   const target = unique_semantic_index_at_span(control_flow, index_span);
+  if (target === undefined) return false;
+  return semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    undefined,
+  ) === "unreachable";
+}
+
+export function infer_semantic_slice_bounds_certificate(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  requirement: SemanticSliceBoundsRequirement,
+): SemanticSliceBoundsCertificate | undefined {
+  if (!semantic_cfg_is_well_formed(control_flow)) return undefined;
+  const target = unique_semantic_slice_at_span(control_flow, operation_span);
+  if (
+    target === undefined ||
+    target.node.inputs[0] !== requirement.object ||
+    target.node.inputs[1] !== requirement.start ||
+    target.node.inputs[2] !== requirement.end
+  ) {
+    return undefined;
+  }
+  let object_type = control_flow.values.find((value) =>
+    value.value === requirement.object
+  )?.type;
+  if (object_type === undefined) return undefined;
+  while (object_type.tag === "owned") object_type = object_type.value;
+  const is_text = object_type.tag === "scalar" &&
+    object_type.name === "Text";
+  const is_bytes = object_type.tag === "scalar" &&
+    object_type.name === "Bytes";
+  if (!is_text && !is_bytes) return undefined;
+  if (is_bytes && requirement.utf8_boundaries !== undefined) {
+    return undefined;
+  }
+  if (is_text) {
+    if (requirement.utf8_boundaries !== "static_literal") return undefined;
+    let object_constant: string | undefined;
+    let start_constant: bigint | undefined;
+    let end_constant: bigint | undefined;
+    for (const block of control_flow.blocks) {
+      for (const node of block.nodes) {
+        if (
+          node.outputs.length !== 1 ||
+          node.operation.tag !== "constant"
+        ) {
+          continue;
+        }
+        const output = node.outputs[0];
+        if (
+          output === requirement.object &&
+          typeof node.operation.value === "string"
+        ) {
+          object_constant = node.operation.value;
+        }
+        if (output === requirement.start) {
+          start_constant = integer_constant(node.operation.value);
+        }
+        if (output === requirement.end) {
+          end_constant = integer_constant(node.operation.value);
+        }
+      }
+    }
+    if (
+      object_constant === undefined ||
+      start_constant === undefined ||
+      end_constant === undefined ||
+      start_constant < BigInt(Number.MIN_SAFE_INTEGER) ||
+      start_constant > BigInt(Number.MAX_SAFE_INTEGER) ||
+      end_constant < BigInt(Number.MIN_SAFE_INTEGER) ||
+      end_constant > BigInt(Number.MAX_SAFE_INTEGER) ||
+      !text_byte_offset_is_boundary(
+        object_constant,
+        Number(start_constant),
+      ) ||
+      !text_byte_offset_is_boundary(object_constant, Number(end_constant))
+    ) {
+      return undefined;
+    }
+  }
+  let upper: SemanticMachineRequirement;
+  if (requirement.length !== undefined) {
+    if (
+      !Number.isSafeInteger(requirement.length) ||
+      requirement.length < 0 ||
+      target.node.operation.tag !== "slice" ||
+      target.node.operation.length !== requirement.length
+    ) {
+      return undefined;
+    }
+    upper = {
+      tag: "fact",
+      proposition: {
+        tag: "less_equal",
+        value: requirement.end,
+        bound: BigInt(requirement.length),
+      },
+    };
+  } else {
+    const invariant_aliases = loop_invariant_aliases(control_flow);
+    let matching_measure = false;
+    if (requirement.length_value !== undefined) {
+      for (const block of control_flow.blocks) {
+        for (const node of block.nodes) {
+          const measured_object = node.inputs[0];
+          const required_object = resolved_alias(
+            requirement.object,
+            invariant_aliases,
+          );
+          let resolved_measured_object: ValueId | undefined;
+          if (measured_object !== undefined) {
+            resolved_measured_object = resolved_alias(
+              measured_object,
+              invariant_aliases,
+            );
+          }
+          if (
+            node.operation.tag === "call" &&
+            node.operation.function_name === "@len" &&
+            node.inputs.length === 1 &&
+            required_object !== undefined &&
+            resolved_measured_object === required_object &&
+            node.outputs.length === 1 &&
+            node.outputs[0] === requirement.length_value
+          ) {
+            matching_measure = true;
+          }
+        }
+      }
+    }
+    if (
+      requirement.length_value === undefined ||
+      target.node.operation.tag !== "slice" ||
+      target.node.operation.length !== undefined ||
+      !matching_measure
+    ) {
+      return undefined;
+    }
+    upper = {
+      tag: "difference",
+      left: requirement.end,
+      right: requirement.length_value,
+      maximum: 0n,
+    };
+  }
+  const lower: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "greater_equal",
+      value: requirement.start,
+      bound: 0n,
+    },
+  };
+  const ordered: SemanticMachineRequirement = {
+    tag: "difference",
+    left: requirement.start,
+    right: requirement.end,
+    maximum: 0n,
+  };
+  const lower_result = semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    lower,
+  );
+  const ordered_result = semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    ordered,
+  );
+  const upper_result = semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    upper,
+  );
+  if (
+    lower_result !== "proved" ||
+    ordered_result !== "proved" ||
+    upper_result !== "proved"
+  ) {
+    return undefined;
+  }
+  return semantic_slice_bounds_certificate(operation_span, requirement);
+}
+
+export function semantic_slice_is_unreachable(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_slice_at_span(control_flow, operation_span);
   if (target === undefined) return false;
   return semantic_cfg_machine_path_result_at_target(
     control_flow,
@@ -1264,43 +1460,7 @@ function repeating_call_requirement_holds(
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
   );
-  let aliases = new Map<ValueId, ValueId>();
-  let aliases_changed = true;
-  while (aliases_changed) {
-    aliases_changed = false;
-    for (const block of control_flow.blocks) {
-      for (const node of block.nodes) {
-        const output = node.outputs[0];
-        if (
-          node.operation.tag !== "phi" ||
-          output === undefined ||
-          node.operation.incoming.length === 0 ||
-          aliases.has(output)
-        ) {
-          continue;
-        }
-        let invariant: ValueId | undefined;
-        let varies = false;
-        for (const incoming of node.operation.incoming) {
-          const resolved = resolved_alias(incoming.value, aliases);
-          if (resolved === undefined) {
-            varies = true;
-            break;
-          }
-          if (resolved === output) continue;
-          if (invariant === undefined) {
-            invariant = resolved;
-            continue;
-          }
-          if (resolved !== invariant) varies = true;
-        }
-        if (!varies && invariant !== undefined) {
-          aliases.set(output, invariant);
-          aliases_changed = true;
-        }
-      }
-    }
-  }
+  let aliases = new Map(loop_invariant_aliases(control_flow));
   const resolved_requirement = aliased_machine_requirement(
     requirement,
     aliases,
@@ -1504,6 +1664,49 @@ function repeating_call_requirement_holds(
     domain,
     aliased_machine_requirement(alternative_requirement, aliases),
   );
+}
+
+function loop_invariant_aliases(
+  control_flow: SemanticCfg,
+): ReadonlyMap<ValueId, ValueId> {
+  const aliases = new Map<ValueId, ValueId>();
+  let aliases_changed = true;
+  while (aliases_changed) {
+    aliases_changed = false;
+    for (const block of control_flow.blocks) {
+      for (const node of block.nodes) {
+        const output = node.outputs[0];
+        if (
+          node.operation.tag !== "phi" ||
+          output === undefined ||
+          node.operation.incoming.length === 0 ||
+          aliases.has(output)
+        ) {
+          continue;
+        }
+        let invariant: ValueId | undefined;
+        let varies = false;
+        for (const incoming of node.operation.incoming) {
+          const resolved = resolved_alias(incoming.value, aliases);
+          if (resolved === undefined) {
+            varies = true;
+            break;
+          }
+          if (resolved === output) continue;
+          if (invariant === undefined) {
+            invariant = resolved;
+            continue;
+          }
+          if (resolved !== invariant) varies = true;
+        }
+        if (!varies && invariant !== undefined) {
+          aliases.set(output, invariant);
+          aliases_changed = true;
+        }
+      }
+    }
+  }
+  return aliases;
 }
 
 function semantic_block_dominators(

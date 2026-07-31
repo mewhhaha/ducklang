@@ -92,6 +92,7 @@ import {
   baba_source_syntax,
   record_baba_source_name_sites,
 } from "./frontend/source_parse.ts";
+import { text_byte_offset_is_boundary } from "./frontend/text.ts";
 import {
   SemanticIdentityAllocator,
   type SemanticOrigin,
@@ -110,10 +111,12 @@ import {
   infer_semantic_primitive_safety_certificate,
   infer_semantic_remainder_certificate,
   infer_semantic_remainder_divisibility_certificate,
+  infer_semantic_slice_bounds_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
   semantic_index_is_unreachable,
   semantic_primitive_is_unreachable,
+  semantic_slice_is_unreachable,
   type SemanticMachineRequirement,
   type SemanticTypeRequirement,
 } from "./frontend/semantic_fact_graph.ts";
@@ -126,6 +129,8 @@ import {
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticSliceBoundsCertificate,
+  type SemanticSliceBoundsRequirement,
   verify_semantic_bounded_offset_certificate,
   verify_semantic_index_bounds_certificate,
   verify_semantic_index_unreachable,
@@ -135,6 +140,8 @@ import {
   verify_semantic_primitive_unreachable,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
+  verify_semantic_slice_bounds_certificate,
+  verify_semantic_slice_unreachable,
   verify_semantic_type_certificate,
   verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
@@ -459,15 +466,22 @@ export function analyze_duck_source(
   );
   let index_coverage_diagnostics: CompilerDiagnostic[] = [];
   let primitive_coverage_diagnostics: CompilerDiagnostic[] = [];
+  let slice_coverage_diagnostics: CompilerDiagnostic[] = [];
   if (!has_error_diagnostics(precontract_diagnostics)) {
+    const facts = source_facts(source_analysis.source);
     index_coverage_diagnostics = validate_index_obligation_coverage(
-      source_analysis.source,
+      facts,
       binding_index,
       inferred_control_flow,
       inferred_callable_control_flow,
     );
     primitive_coverage_diagnostics = validate_primitive_obligation_coverage(
-      source_analysis.source,
+      facts,
+      inferred_control_flow,
+      inferred_callable_control_flow,
+    );
+    slice_coverage_diagnostics = validate_slice_obligation_coverage(
+      facts,
       inferred_control_flow,
       inferred_callable_control_flow,
     );
@@ -480,6 +494,10 @@ export function analyze_duck_source(
     inferred_control_flow,
     inferred_callable_control_flow,
   );
+  const slice_validation = validate_slice_obligations(
+    inferred_control_flow,
+    inferred_callable_control_flow,
+  );
   const diagnostics = diagnostic_sequence([
     ...precontract_diagnostics,
     ...contract_validation.diagnostics,
@@ -487,6 +505,8 @@ export function analyze_duck_source(
     ...index_validation.diagnostics,
     ...primitive_coverage_diagnostics,
     ...primitive_validation.diagnostics,
+    ...slice_coverage_diagnostics,
+    ...slice_validation.diagnostics,
   ], options.uri);
   let control_flow: SemanticCfg | undefined;
   let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
@@ -512,6 +532,7 @@ export function analyze_duck_source(
       ...contract_validation.proofs,
       ...index_validation.proofs,
       ...primitive_validation.proofs,
+      ...slice_validation.proofs,
     ]),
     origins: new FrozenMap(origins),
     function_summaries: new FrozenMap<string, FunctionFactSummary>([]),
@@ -1205,7 +1226,7 @@ function collect_transparent_alias_dependencies(
 }
 
 function validate_index_obligation_coverage(
-  source: SourceNode,
+  facts: ReturnType<typeof source_facts>,
   binding_index: BindingIndex,
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
@@ -1228,7 +1249,6 @@ function validate_index_obligation_coverage(
   }
 
   const obligation_subjects: object[] = [];
-  const facts = source_facts(source);
   const direct_get_callees = new Set<FrontExpr>();
   for (const expression of facts.expressions) {
     if (expression.tag === "index") {
@@ -1425,8 +1445,77 @@ function source_aggregate_length(
   return undefined;
 }
 
+function validate_slice_obligation_coverage(
+  facts: ReturnType<typeof source_facts>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): CompilerDiagnostic[] {
+  const direct_slice_calls: FrontExpr[] = [];
+  const direct_slice_callees = new Set<FrontExpr>();
+  for (const expression of facts.expressions) {
+    if (
+      expression.tag !== "app" ||
+      expression.func.tag !== "var" ||
+      expression.func.name !== "@slice"
+    ) {
+      continue;
+    }
+    direct_slice_calls.push(expression);
+    direct_slice_callees.add(expression.func);
+  }
+  const escaped_slice_references = facts.expressions.filter((expression) =>
+    expression.tag === "var" &&
+    expression.name === "@slice" &&
+    !direct_slice_callees.has(expression) &&
+    has_source_span(expression)
+  );
+  if (
+    direct_slice_calls.length === 0 &&
+    escaped_slice_references.length === 0
+  ) {
+    return [];
+  }
+
+  const covered_spans = new Set<string>();
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (const candidate of control_flows) {
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "slice") continue;
+        covered_spans.add(
+          node.span.start.toString() + ":" + node.span.end.toString(),
+        );
+      }
+    }
+  }
+  const checks: Checked<null>[] = [];
+  for (const expression of direct_slice_calls) {
+    if (!has_source_span(expression)) continue;
+    const span = source_span(expression);
+    const key = span.start.toString() + ":" + span.end.toString();
+    if (covered_spans.has(key)) continue;
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: the compiler could not construct a slice proof obligation.",
+      span,
+    )));
+  }
+  for (const expression of escaped_slice_references) {
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: partial intrinsic @slice cannot escape a directly checked call.",
+      source_span(expression),
+    )));
+  }
+  return diagnostics_of(all(checks));
+}
+
 function validate_primitive_obligation_coverage(
-  source: SourceNode,
+  facts: ReturnType<typeof source_facts>,
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
 ): CompilerDiagnostic[] {
@@ -1452,7 +1541,7 @@ function validate_primitive_obligation_coverage(
     }
   }
   const checks: Checked<null>[] = [];
-  for (const expression of source_facts(source).expressions) {
+  for (const expression of facts.expressions) {
     if (
       (expression.tag === "var" || expression.tag === "linear") &&
       expression.name.startsWith("@wasm.") &&
@@ -1679,6 +1768,247 @@ function validate_index_obligations(
             }),
           }),
         );
+      }
+    }
+  }
+  const proofs = new Map<string, CheckedKernelCertificate>();
+  for (const check of checks) {
+    const checked = checked_value(check);
+    if (checked !== undefined) proofs.set(checked.key, checked.proof);
+  }
+  return {
+    diagnostics: diagnostics_of(all(checks)),
+    proofs,
+  };
+}
+
+function validate_slice_obligations(
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): {
+  diagnostics: CompilerDiagnostic[];
+  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+} {
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (let flow_index = 0; flow_index < control_flows.length; flow_index += 1) {
+    const candidate = control_flows[flow_index];
+    expect(candidate !== undefined, `Slice validation lost CFG ${flow_index}.`);
+    const producers = new Map<ValueId, SemanticNode>();
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        for (const output of node.outputs) producers.set(output, node);
+      }
+    }
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "slice") continue;
+        if (semantic_slice_is_unreachable(candidate, node.span)) {
+          expect(
+            verify_semantic_slice_unreachable(candidate, node.span),
+            "FactGraph and the independent verifier disagree about an unreachable slice.",
+          );
+          continue;
+        }
+        const object = node.inputs[0];
+        const start = node.inputs[1];
+        const end = node.inputs[2];
+        expect(object !== undefined, "Semantic slice lost its object ValueId.");
+        expect(start !== undefined, "Semantic slice lost its start ValueId.");
+        expect(end !== undefined, "Semantic slice lost its end ValueId.");
+        let object_type = candidate.values.find((value) =>
+          value.value === object
+        )?.type;
+        expect(
+          object_type !== undefined,
+          "Semantic slice lost its object representation.",
+        );
+        while (object_type.tag === "owned") object_type = object_type.value;
+        let utf8_boundaries: "static_literal" | undefined;
+        if (
+          object_type.tag === "scalar" && object_type.name === "Text"
+        ) {
+          utf8_boundaries = "static_literal";
+        }
+        let certificate: SemanticSliceBoundsCertificate | undefined;
+        if (node.operation.length !== undefined) {
+          const requirement: SemanticSliceBoundsRequirement = {
+            object,
+            start,
+            end,
+            length: node.operation.length,
+            utf8_boundaries,
+          };
+          certificate = infer_semantic_slice_bounds_certificate(
+            candidate,
+            node.span,
+            requirement,
+          );
+          if (certificate === undefined) {
+            let status = "unknown";
+            let goal = "slice bounds 0 <= start <= end <= " +
+              node.operation.length.toString();
+            const start_producer = producers.get(start);
+            const end_producer = producers.get(end);
+            let start_constant:
+              | string
+              | number
+              | bigint
+              | boolean
+              | undefined;
+            let end_constant:
+              | string
+              | number
+              | bigint
+              | boolean
+              | undefined;
+            if (start_producer?.operation.tag === "constant") {
+              start_constant = start_producer.operation.value;
+            }
+            if (end_producer?.operation.tag === "constant") {
+              end_constant = end_producer.operation.value;
+            }
+            if (
+              (typeof start_constant === "number" &&
+                  Number.isSafeInteger(start_constant) ||
+                typeof start_constant === "bigint") &&
+              (typeof end_constant === "number" &&
+                  Number.isSafeInteger(end_constant) ||
+                typeof end_constant === "bigint")
+            ) {
+              const start_value = BigInt(start_constant);
+              const end_value = BigInt(end_constant);
+              if (
+                start_value < 0n || start_value > end_value ||
+                end_value > BigInt(node.operation.length)
+              ) {
+                status = "disproved";
+              } else if (
+                utf8_boundaries === "static_literal" &&
+                start_producer?.operation.tag === "constant" &&
+                end_producer?.operation.tag === "constant"
+              ) {
+                const object_producer = producers.get(object);
+                if (
+                  object_producer?.operation.tag === "constant" &&
+                  typeof object_producer.operation.value === "string" &&
+                  (
+                    !text_byte_offset_is_boundary(
+                      object_producer.operation.value,
+                      Number(start_value),
+                    ) ||
+                    !text_byte_offset_is_boundary(
+                      object_producer.operation.value,
+                      Number(end_value),
+                    )
+                  )
+                ) {
+                  status = "disproved";
+                  goal = "Text slice endpoints are UTF-8 boundaries";
+                }
+              }
+            }
+            checks.push(fail(compiler_diagnostic(
+              diagnostic_codes.partial_operation_unproved,
+              `${status}: cannot prove ${goal}.`,
+              node.span,
+            )));
+            continue;
+          }
+          expect(
+            verify_semantic_slice_bounds_certificate(
+              certificate,
+              candidate,
+              node.span,
+              requirement,
+            ),
+            "FactGraph produced an invalid static slice bounds certificate.",
+          );
+        } else {
+          for (const candidate_block of candidate.blocks) {
+            for (const candidate_node of candidate_block.nodes) {
+              if (
+                candidate_node.operation.tag !== "call" ||
+                candidate_node.operation.function_name !== "@len" ||
+                candidate_node.inputs.length !== 1 ||
+                candidate_node.outputs.length !== 1
+              ) {
+                continue;
+              }
+              const length_value = candidate_node.outputs[0];
+              expect(
+                length_value !== undefined,
+                "Semantic slice length measure lost its ValueId.",
+              );
+              const requirement: SemanticSliceBoundsRequirement = {
+                object,
+                start,
+                end,
+                length_value,
+                utf8_boundaries,
+              };
+              certificate = infer_semantic_slice_bounds_certificate(
+                candidate,
+                node.span,
+                requirement,
+              );
+              if (certificate === undefined) continue;
+              expect(
+                verify_semantic_slice_bounds_certificate(
+                  certificate,
+                  candidate,
+                  node.span,
+                  requirement,
+                ),
+                "FactGraph produced an invalid dynamic slice bounds certificate.",
+              );
+              break;
+            }
+            if (certificate !== undefined) break;
+          }
+          if (certificate === undefined) {
+            let message =
+              "unknown: cannot prove slice bounds 0 <= start <= end <= length(value).";
+            if (utf8_boundaries === "static_literal") {
+              message =
+                "unknown: cannot prove Text slice endpoints are UTF-8 boundaries.";
+            }
+            checks.push(fail(compiler_diagnostic(
+              diagnostic_codes.partial_operation_unproved,
+              message,
+              node.span,
+            )));
+            continue;
+          }
+        }
+        const environment = KernelEnvironment.empty();
+        const term_context = snapshot_kernel_context([]);
+        const kernel_certificate = check_proof(
+          { tag: "true_intro" },
+          { tag: "true" },
+          {
+            allow_unsafe: false,
+            require_safe: true,
+            environment,
+            term_context,
+          },
+        );
+        checks.push(ok({
+          key: "slice:" + flow_index.toString() + ":" +
+            node.span.start.toString() + ":" + node.id.toString(),
+          proof: Object.freeze({
+            certificate: kernel_certificate,
+            environment,
+            term_context,
+            semantic_certificate: certificate,
+          }),
+        }));
       }
     }
   }

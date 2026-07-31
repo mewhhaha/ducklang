@@ -8,6 +8,7 @@ import {
   semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
+  semantic_slice_bounds_certificate,
   semantic_type_certificate,
   semantic_unreachable_certificate,
   type SemanticBoundedOffsetRequirement,
@@ -16,6 +17,7 @@ import {
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticSliceBoundsRequirement,
   type SemanticTypeRequirement,
   verify_semantic_bounded_offset_certificate,
   verify_semantic_index_bounds_certificate,
@@ -24,6 +26,7 @@ import {
   verify_semantic_primitive_safety_certificate,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
+  verify_semantic_slice_bounds_certificate,
   verify_semantic_type_certificate,
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
@@ -31,6 +34,7 @@ import {
   infer_semantic_index_bounds_certificate,
   infer_semantic_machine_certificate,
   infer_semantic_primitive_safety_certificate,
+  infer_semantic_slice_bounds_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
 } from "./semantic_fact_graph.ts";
@@ -162,6 +166,155 @@ Deno.test("semantic primitive certificates verify integer trap conditions", () =
       "i32.div_s",
     ),
     undefined,
+  );
+});
+
+Deno.test("semantic slice certificates verify every bound independently", () => {
+  const builder = new SemanticCfgBuilder("slice-bounds");
+  const entry = builder.add_block(origin);
+  const object = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 1 },
+    { tag: "constant", value: "aéz" },
+    [],
+    [text_type],
+  )[0];
+  const start = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  const end = builder.add_node(
+    entry,
+    origin,
+    { start: 4, end: 5 },
+    { tag: "constant", value: 3 },
+    [],
+    [i32_type],
+  )[0];
+  if (object === undefined || start === undefined || end === undefined) {
+    throw new Error("Expected slice bounds.");
+  }
+  const operation_span = { start: 0, end: 5 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    operation_span,
+    { tag: "slice", length: 4 },
+    [object, start, end],
+    [text_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected slice result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const requirement: SemanticSliceBoundsRequirement = {
+    object,
+    start,
+    end,
+    length: 4,
+    utf8_boundaries: "static_literal",
+  };
+  const certificate = infer_semantic_slice_bounds_certificate(
+    control_flow,
+    operation_span,
+    requirement,
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected slice bounds certificate.");
+  }
+  assert_equals(
+    verify_semantic_slice_bounds_certificate(
+      certificate,
+      control_flow,
+      operation_span,
+      requirement,
+    ),
+    true,
+  );
+  const forged: SemanticSliceBoundsRequirement = {
+    ...requirement,
+    end: "forged-slice-end" as ValueId,
+  };
+  assert_equals(
+    verify_semantic_slice_bounds_certificate(
+      semantic_slice_bounds_certificate(operation_span, forged),
+      control_flow,
+      operation_span,
+      forged,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic slice certificates reject split UTF-8 code points", () => {
+  const builder = new SemanticCfgBuilder("slice-utf8-boundary");
+  const entry = builder.add_block(origin);
+  const object = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 1 },
+    { tag: "constant", value: "é" },
+    [],
+    [text_type],
+  )[0];
+  const start = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  const end = builder.add_node(
+    entry,
+    origin,
+    { start: 4, end: 5 },
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (object === undefined || start === undefined || end === undefined) {
+    throw new Error("Expected UTF-8 slice bounds.");
+  }
+  const operation_span = { start: 0, end: 5 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    operation_span,
+    { tag: "slice", length: 2 },
+    [object, start, end],
+    [text_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected UTF-8 slice result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const requirement: SemanticSliceBoundsRequirement = {
+    object,
+    start,
+    end,
+    length: 2,
+    utf8_boundaries: "static_literal",
+  };
+  assert_equals(
+    infer_semantic_slice_bounds_certificate(
+      control_flow,
+      operation_span,
+      requirement,
+    ),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_slice_bounds_certificate(
+      semantic_slice_bounds_certificate(operation_span, requirement),
+      control_flow,
+      operation_span,
+      requirement,
+    ),
+    false,
   );
 });
 

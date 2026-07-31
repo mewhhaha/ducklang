@@ -10,6 +10,7 @@ import {
   same_representation_type,
   snapshot_representation_type,
 } from "./representation_type.ts";
+import { text_byte_length } from "./text.ts";
 import type { SourceSpan } from "./syntax.ts";
 
 export type SemanticBlockId = number & {
@@ -28,6 +29,7 @@ export type SemanticOperation =
     length: number | undefined;
     mode: "read" | "move" | "write";
   }
+  | { tag: "slice"; length: number | undefined }
   | { tag: "project"; field: string }
   | { tag: "construct"; constructor: string }
   | { tag: "call"; function_name: string }
@@ -428,6 +430,69 @@ export function semantic_cfg_is_well_formed(
           return false;
         }
       }
+      if (node.operation.tag === "slice") {
+        if (
+          node.inputs.length !== 3 ||
+          node.outputs.length !== 1 ||
+          (node.operation.length !== undefined &&
+            (!Number.isSafeInteger(node.operation.length) ||
+              node.operation.length < 0))
+        ) {
+          return false;
+        }
+        const object_value = node.inputs[0];
+        const start_value = node.inputs[1];
+        const end_value = node.inputs[2];
+        const output_value = node.outputs[0];
+        if (
+          object_value === undefined ||
+          start_value === undefined ||
+          end_value === undefined ||
+          output_value === undefined
+        ) {
+          return false;
+        }
+        let object_type = values.get(object_value)?.type;
+        let start_type = values.get(start_value)?.type;
+        let end_type = values.get(end_value)?.type;
+        const output_type = values.get(output_value)?.type;
+        if (
+          object_type === undefined ||
+          start_type === undefined ||
+          end_type === undefined ||
+          output_type === undefined
+        ) {
+          return false;
+        }
+        while (object_type.tag === "owned") object_type = object_type.value;
+        while (start_type.tag === "owned") start_type = start_type.value;
+        while (end_type.tag === "owned") end_type = end_type.value;
+        const sliceable = object_type.tag === "scalar" &&
+          (object_type.name === "Text" || object_type.name === "Bytes");
+        const start_is_i32 = start_type.tag === "scalar" &&
+            (start_type.name === "Int" || start_type.name === "I32") ||
+          start_type.tag === "integer" &&
+            start_type.signed && start_type.width === 32;
+        const end_is_i32 = end_type.tag === "scalar" &&
+            (end_type.name === "Int" || end_type.name === "I32") ||
+          end_type.tag === "integer" &&
+            end_type.signed && end_type.width === 32;
+        if (
+          !sliceable || !start_is_i32 || !end_is_i32 ||
+          !same_representation_type(object_type, output_type)
+        ) {
+          return false;
+        }
+        let static_length: number | undefined;
+        const object_producer = producers.get(object_value)?.node;
+        if (
+          object_producer?.operation.tag === "constant" &&
+          typeof object_producer.operation.value === "string"
+        ) {
+          static_length = text_byte_length(object_producer.operation.value);
+        }
+        if (node.operation.length !== static_length) return false;
+      }
       if (
         node.operation.tag === "call" &&
         node.operation.function_name === "@len"
@@ -591,6 +656,35 @@ export function semantic_indexes_at_span(
     }
   }
   return indexes;
+}
+
+export function unique_semantic_slice_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): { block: SemanticBlock; node: SemanticNode } | undefined {
+  const slices = semantic_slices_at_span(control_flow, span);
+  if (slices.length !== 1) return undefined;
+  return slices[0];
+}
+
+export function semantic_slices_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): readonly { block: SemanticBlock; node: SemanticNode }[] {
+  const slices: { block: SemanticBlock; node: SemanticNode }[] = [];
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "slice" ||
+        node.span.start !== span.start ||
+        node.span.end !== span.end
+      ) {
+        continue;
+      }
+      slices.push({ block, node });
+    }
+  }
+  return slices;
 }
 
 export function unique_semantic_primitive_at_span(
@@ -1274,6 +1368,16 @@ function snapshot_operation(operation: SemanticOperation): SemanticOperation {
         tag: "index",
         length: operation.length,
         mode: operation.mode,
+      });
+    case "slice":
+      expect(
+        operation.length === undefined ||
+          Number.isSafeInteger(operation.length) && operation.length >= 0,
+        "CFG slice length must be a non-negative safe integer.",
+      );
+      return Object.freeze({
+        tag: "slice",
+        length: operation.length,
       });
     case "project":
       return Object.freeze({

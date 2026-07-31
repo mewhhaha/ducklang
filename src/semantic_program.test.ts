@@ -1909,6 +1909,149 @@ Deno.test("partial Wasm intrinsics cannot escape checked call sites", () => {
   );
 });
 
+Deno.test("text slicing requires ordered in-bounds endpoints", () => {
+  const literal = analyze_duck_source(parse_duck_source(
+    '@slice("aéz", 1, 3)\n',
+  ));
+  assert_equals(literal.diagnostics, []);
+  assert_equals(
+    [...literal.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "slice_bounds"
+    ),
+    true,
+  );
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "@slice(value, start, finish) else Bytes.empty end end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.callable_control_flow.size, 1);
+
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => " +
+      "@slice(value, start, finish);\n0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove slice bounds 0 <= start <= end <= length(value)."
+    ),
+    true,
+  );
+
+  const wrong_measure = analyze_duck_source(parse_duck_source(
+    "let take = " +
+      "(value: Bytes, other: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len other; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "@slice(value, start, finish) else Bytes.empty end end;\n0\n",
+  ));
+  assert_equals(
+    wrong_measure.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith("unknown: cannot prove slice bounds")
+    ),
+    true,
+  );
+
+  const disproved = analyze_duck_source(parse_duck_source(
+    '@slice("hello", 1, 6)\n',
+  ));
+  assert_equals(
+    disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove slice bounds 0 <= start <= end <= 5."
+    ),
+    true,
+  );
+
+  const invalid_utf8_boundary = analyze_duck_source(parse_duck_source(
+    '@slice("é", 0, 1)\n',
+  ));
+  assert_equals(
+    invalid_utf8_boundary.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove Text slice endpoints are UTF-8 boundaries."
+    ),
+    true,
+  );
+
+  const dynamic_text = analyze_duck_source(parse_duck_source(
+    "let take = (value: Text, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      '@slice(value, start, finish) else "" end end;\n0\n',
+  ));
+  assert_equals(
+    dynamic_text.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove Text slice endpoints are UTF-8 boundaries."
+    ),
+    true,
+  );
+});
+
+Deno.test("partial slice intrinsics cannot escape checked call sites", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let invoke: ((Text, I32, I32) -> Text, Text, I32, I32) -> Text = " +
+      "(operation, value, start, finish) => " +
+      "operation(value, start, finish);\n" +
+      'invoke(@slice, "hello", 1, 4)\n',
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "partial intrinsic @slice cannot escape",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("byte slice bounds survive equivalent guards and loop invariants", () => {
+  const equivalent_guard = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start > -1 && start <= finish && finish <= length then " +
+      "@slice(value, start, finish) else Bytes.empty end end;\n0\n",
+  ));
+  assert_equals(equivalent_guard.diagnostics, []);
+
+  const loop_invariant = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "for unused in 0..3 do @slice(value, start, finish); end; " +
+      "end; Bytes.empty end;\n0\n",
+  ));
+  assert_equals(loop_invariant.diagnostics, []);
+
+  const loop_mutation = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "for unused in 0..3 do " +
+      "finish = finish + 1; @slice(value, start, finish); end; " +
+      "end; Bytes.empty end;\n0\n",
+  ));
+  assert_equals(
+    loop_mutation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith("unknown: cannot prove slice bounds")
+    ),
+    true,
+  );
+});
+
 Deno.test("remainder branches establish exact expression evidence", () => {
   for (
     const [value_type, divisor, expected] of [

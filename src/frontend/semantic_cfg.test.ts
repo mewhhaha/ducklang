@@ -11,6 +11,7 @@ const origin = "expression:0:1:0" as never;
 const span = { start: 0, end: 1 };
 const bool_type = { tag: "scalar", name: "Bool" } as const;
 const i32_type = { tag: "scalar", name: "I32" } as const;
+const text_type = { tag: "scalar", name: "Text" } as const;
 const pair_type = {
   tag: "product",
   fields: [
@@ -575,6 +576,62 @@ Deno.test("semantic CFG rejects forged indexed read and write types", () => {
     }),
   };
   assert_equals(semantic_cfg_is_well_formed(forged_write), false);
+});
+
+Deno.test("semantic CFG rejects forged static slice lengths", () => {
+  const builder = new SemanticCfgBuilder("cfg-slice-length");
+  const entry = builder.add_block(origin);
+  const object = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: "duck" },
+    [],
+    [text_type],
+  )[0];
+  const start = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  const end = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: 4 },
+    [],
+    [i32_type],
+  )[0];
+  if (object === undefined || start === undefined || end === undefined) {
+    throw new Error("Expected slice inputs.");
+  }
+  const result = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "slice", length: 4 },
+    [object, start, end],
+    [text_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected slice result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  assert_equals(semantic_cfg_is_well_formed(control_flow), true);
+
+  const forged = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (node.operation.tag !== "slice") return node;
+        return { ...node, operation: { tag: "slice" as const, length: 5 } };
+      }),
+    })),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged), false);
 });
 
 Deno.test("semantic CFG rejects representation key collisions at phis", () => {
