@@ -115,6 +115,8 @@ import {
   infer_semantic_slice_bounds_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
+  semantic_index_has_length_measure,
+  semantic_index_is_disproved,
   semantic_index_is_unreachable,
   semantic_integer_narrowing_is_disproved,
   semantic_integer_narrowing_is_unreachable,
@@ -137,6 +139,8 @@ import {
   type SemanticSliceBoundsRequirement,
   verify_semantic_bounded_offset_certificate,
   verify_semantic_index_bounds_certificate,
+  verify_semantic_index_disproved,
+  verify_semantic_index_length_measure,
   verify_semantic_index_unreachable,
   verify_semantic_integer_narrowing_certificate,
   verify_semantic_integer_narrowing_disproved,
@@ -1711,14 +1715,14 @@ function validate_index_obligations(
             object !== undefined,
             "Semantic index lost its object ValueId.",
           );
-          let proved_dynamic_length = false;
+          let found_dynamic_length = false;
+          let handled_dynamic_length = false;
           for (const candidate_block of candidate.blocks) {
             for (const candidate_node of candidate_block.nodes) {
               if (
                 candidate_node.operation.tag !== "call" ||
                 candidate_node.operation.function_name !== "@len" ||
                 candidate_node.inputs.length !== 1 ||
-                candidate_node.inputs[0] !== object ||
                 candidate_node.outputs.length !== 1
               ) {
                 continue;
@@ -1733,12 +1737,55 @@ function validate_index_obligations(
                 length_value,
                 object,
               };
+              if (
+                !semantic_index_has_length_measure(
+                  candidate,
+                  node.span,
+                  requirement,
+                )
+              ) {
+                continue;
+              }
+              expect(
+                verify_semantic_index_length_measure(
+                  candidate,
+                  node.span,
+                  requirement,
+                ),
+                "FactGraph and the independent verifier disagree about a dynamic length measure.",
+              );
+              found_dynamic_length = true;
               const certificate = infer_semantic_index_bounds_certificate(
                 candidate,
                 node.span,
                 requirement,
               );
-              if (certificate === undefined) continue;
+              if (certificate === undefined) {
+                if (
+                  !semantic_index_is_disproved(
+                    candidate,
+                    node.span,
+                    requirement,
+                  )
+                ) {
+                  continue;
+                }
+                expect(
+                  verify_semantic_index_disproved(
+                    candidate,
+                    node.span,
+                    requirement,
+                  ),
+                  "FactGraph and the independent verifier disagree about a disproved dynamic index.",
+                );
+                checks.push(fail(compiler_diagnostic(
+                  diagnostic_codes.partial_operation_unproved,
+                  "disproved: cannot prove index bounds 0 <= index < length(value).",
+                  node.span,
+                )));
+                handled_dynamic_length = true;
+                break;
+              }
               expect(
                 verify_semantic_index_bounds_certificate(
                   certificate,
@@ -1770,12 +1817,24 @@ function validate_index_obligations(
                   semantic_certificate: certificate,
                 }),
               }));
-              proved_dynamic_length = true;
+              handled_dynamic_length = true;
               break;
             }
-            if (proved_dynamic_length) break;
+            if (handled_dynamic_length) break;
           }
-          if (proved_dynamic_length) continue;
+          if (handled_dynamic_length) continue;
+          if (found_dynamic_length) {
+            checks.push(
+              fail(
+                compiler_diagnostic(
+                  diagnostic_codes.partial_operation_unproved,
+                  "unknown: cannot prove index bounds 0 <= index < length(value).",
+                  node.span,
+                ),
+              ),
+            );
+            continue;
+          }
           checks.push(
             fail(
               compiler_diagnostic(
@@ -1795,19 +1854,35 @@ function validate_index_obligations(
         );
         if (certificate === undefined) {
           let status = "unknown";
-          const producer = producers.get(index);
           if (
-            producer?.operation.tag === "constant" &&
-            (typeof producer.operation.value === "number" ||
-              typeof producer.operation.value === "bigint")
+            semantic_index_is_disproved(candidate, node.span, requirement)
           ) {
-            const constant = producer.operation.value;
+            expect(
+              verify_semantic_index_disproved(
+                candidate,
+                node.span,
+                requirement,
+              ),
+              "FactGraph and the independent verifier disagree about a disproved static index.",
+            );
+            status = "disproved";
+          } else {
+            const producer = producers.get(index);
             if (
-              typeof constant === "bigint" ||
-              Number.isSafeInteger(constant)
+              producer?.operation.tag === "constant" &&
+              (typeof producer.operation.value === "number" ||
+                typeof producer.operation.value === "bigint")
             ) {
-              const value = BigInt(constant);
-              if (value < 0n || value >= BigInt(length)) status = "disproved";
+              const constant = producer.operation.value;
+              if (
+                typeof constant === "bigint" ||
+                Number.isSafeInteger(constant)
+              ) {
+                const value = BigInt(constant);
+                if (value < 0n || value >= BigInt(length)) {
+                  status = "disproved";
+                }
+              }
             }
           }
           checks.push(

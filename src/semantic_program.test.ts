@@ -3697,6 +3697,105 @@ Deno.test("runtime length measures prove guarded index bounds", () => {
     true,
   );
   assert_equals(unrelated.proofs.size, 0);
+
+  const unproved = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "value[index]\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const disproved = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "if index < 0 || index >= length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const measured_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len alias;\n" +
+      "if index >= 0 && index < length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(measured_alias.diagnostics, []);
+  assert_equals(measured_alias.proofs.size, 1);
+
+  const indexed_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len value;\n" +
+      "if index >= length then alias[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    indexed_alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const loop_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len value;\n" +
+      "if index >= length then do\n" +
+      "for unused in 0..1 do alias[index]; end;\n" +
+      "0\n" +
+      "end else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    loop_alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const rebound_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, other: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len alias;\n" +
+      "alias = other;\n" +
+      "if index >= 0 && index < length then alias[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    rebound_alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "this value has no compile-time length measure",
+      )
+    ),
+    true,
+  );
 });
 
 Deno.test("raw get obeys the same runtime length obligation", () => {
@@ -3844,6 +3943,34 @@ Deno.test("statically invalid indexes are disproved before Core", () => {
   );
   assert_equals(analysis.proofs.size, 0);
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+
+  const branch_disproved = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => " +
+      "if index < 0 || index >= 2 then values[index] else 0 end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    branch_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], outside: Bool) => do " +
+      "let index = if outside then 2 else 0 end; " +
+      "values[index] end;\n0\n",
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
 });
 
 Deno.test("statically unreachable indexes create no bounds obligation", () => {

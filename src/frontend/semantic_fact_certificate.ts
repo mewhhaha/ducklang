@@ -959,26 +959,15 @@ export function verify_semantic_index_bounds_certificate(
       requirement.length_value === undefined ||
       requirement.object === undefined ||
       target.node.operation.length !== undefined ||
-      target.node.inputs[0] !== requirement.object
+      target.node.inputs[0] !== requirement.object ||
+      !verify_semantic_index_length_measure(
+        control_flow,
+        index_span,
+        requirement,
+      )
     ) {
       return false;
     }
-    let matching_measure = false;
-    for (const block of control_flow.blocks) {
-      for (const node of block.nodes) {
-        if (
-          node.operation.tag === "call" &&
-          node.operation.function_name === "@len" &&
-          node.inputs.length === 1 &&
-          node.inputs[0] === requirement.object &&
-          node.outputs.length === 1 &&
-          node.outputs[0] === requirement.length_value
-        ) {
-          matching_measure = true;
-        }
-      }
-    }
-    if (!matching_measure) return false;
     upper = {
       tag: "difference",
       left: requirement.index,
@@ -1574,6 +1563,123 @@ export function verify_semantic_index_unreachable(
     undefined,
     target,
   ) === "unreachable";
+}
+
+export function verify_semantic_index_length_measure(
+  control_flow: SemanticCfg,
+  index_span: SourceSpan,
+  requirement: SemanticIndexBoundsRequirement,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_index_at_span(control_flow, index_span);
+  if (
+    target === undefined ||
+    target.node.operation.tag !== "index" ||
+    target.node.operation.length !== undefined ||
+    target.node.inputs[0] !== requirement.object ||
+    target.node.inputs[1] !== requirement.index ||
+    requirement.object === undefined ||
+    requirement.length_value === undefined
+  ) {
+    return false;
+  }
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
+  const aliases = verified_loop_invariant_aliases(
+    control_flow,
+    value_types,
+  );
+  const indexed_object = resolved_alias(requirement.object, aliases);
+  if (indexed_object === undefined) return false;
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      const measured_object = node.inputs[0];
+      if (
+        node.operation.tag !== "call" ||
+        node.operation.function_name !== "@len" ||
+        node.inputs.length !== 1 ||
+        measured_object === undefined ||
+        resolved_alias(measured_object, aliases) !== indexed_object ||
+        node.outputs.length !== 1 ||
+        node.outputs[0] !== requirement.length_value
+      ) {
+        continue;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+export function verify_semantic_index_disproved(
+  control_flow: SemanticCfg,
+  index_span: SourceSpan,
+  requirement: SemanticIndexBoundsRequirement,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_index_at_span(control_flow, index_span);
+  if (
+    target === undefined ||
+    target.node.operation.tag !== "index" ||
+    target.node.inputs[1] !== requirement.index
+  ) {
+    return false;
+  }
+  let above_upper: SemanticMachineRequirement;
+  if (requirement.length !== undefined) {
+    if (
+      !Number.isSafeInteger(requirement.length) ||
+      requirement.length < 0 ||
+      target.node.operation.length !== requirement.length
+    ) {
+      return false;
+    }
+    above_upper = {
+      tag: "fact",
+      proposition: {
+        tag: "greater_equal",
+        value: requirement.index,
+        bound: BigInt(requirement.length),
+      },
+    };
+  } else {
+    if (
+      requirement.length_value === undefined ||
+      requirement.object === undefined ||
+      target.node.operation.length !== undefined ||
+      target.node.inputs[0] !== requirement.object ||
+      !verify_semantic_index_length_measure(
+        control_flow,
+        index_span,
+        requirement,
+      )
+    ) {
+      return false;
+    }
+    above_upper = {
+      tag: "difference",
+      left: requirement.length_value,
+      right: requirement.index,
+      maximum: 0n,
+    };
+  }
+  const below_zero: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "less_than",
+      value: requirement.index,
+      bound: 0n,
+    },
+  };
+  return verify_semantic_paths(
+    control_flow,
+    index_span,
+    below_zero,
+    undefined,
+    target,
+    above_upper,
+  ) === "proved";
 }
 
 type TypeVerificationState = {
@@ -2749,6 +2855,18 @@ function verified_loop_invariant_aliases(
     for (const block of control_flow.blocks) {
       for (const node of block.nodes) {
         const output = node.outputs[0];
+        if (
+          node.operation.tag === "primitive" &&
+          node.operation.name.startsWith("bind:") &&
+          node.inputs.length === 1 &&
+          node.outputs.length === 1 &&
+          output !== undefined &&
+          !aliases.has(output) &&
+          record_value_alias(node, undefined, aliases, value_types)
+        ) {
+          aliases_changed = true;
+          continue;
+        }
         if (
           node.operation.tag !== "phi" ||
           output === undefined ||
