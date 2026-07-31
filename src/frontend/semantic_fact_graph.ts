@@ -811,6 +811,135 @@ export function semantic_primitive_is_unreachable(
   ) === "unreachable";
 }
 
+export function semantic_primitive_is_disproved(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  primitive: Prim,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_primitive_at_span(
+    control_flow,
+    operation_span,
+    primitive,
+  );
+  if (
+    target === undefined ||
+    target.node.inputs.length !== 2 ||
+    target.node.outputs.length !== 1
+  ) {
+    return false;
+  }
+  const dividend = target.node.inputs[0];
+  const divisor = target.node.inputs[1];
+  const result = target.node.outputs[0];
+  if (
+    dividend === undefined || divisor === undefined || result === undefined
+  ) {
+    return false;
+  }
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
+  const dividend_type = value_types.get(dividend);
+  const divisor_type = value_types.get(divisor);
+  const result_type = value_types.get(result);
+  let dividend_range: { signed: boolean; width: number } | undefined;
+  let divisor_range: { signed: boolean; width: number } | undefined;
+  let result_range: { signed: boolean; width: number } | undefined;
+  if (dividend_type?.tag === "scalar") {
+    dividend_range = integer_type_from_name(dividend_type.name);
+  } else if (dividend_type?.tag === "integer") {
+    dividend_range = {
+      signed: dividend_type.signed,
+      width: dividend_type.width,
+    };
+  }
+  if (divisor_type?.tag === "scalar") {
+    divisor_range = integer_type_from_name(divisor_type.name);
+  } else if (divisor_type?.tag === "integer") {
+    divisor_range = {
+      signed: divisor_type.signed,
+      width: divisor_type.width,
+    };
+  }
+  if (result_type?.tag === "scalar") {
+    result_range = integer_type_from_name(result_type.name);
+  } else if (result_type?.tag === "integer") {
+    result_range = {
+      signed: result_type.signed,
+      width: result_type.width,
+    };
+  }
+  if (
+    dividend_range === undefined || divisor_range === undefined ||
+    result_range === undefined ||
+    dividend_range.signed !== divisor_range.signed ||
+    dividend_range.width !== divisor_range.width ||
+    dividend_range.signed !== result_range.signed ||
+    dividend_range.width !== result_range.width
+  ) {
+    return false;
+  }
+  const val_type = integer_val_type(dividend_range);
+  if (val_type === undefined) return false;
+  let expected_primitive = val_type + ".rem_";
+  if (primitive.includes(".div_")) expected_primitive = val_type + ".div_";
+  if (dividend_range.signed) {
+    expected_primitive += "s";
+  } else {
+    expected_primitive += "u";
+  }
+  if (primitive !== expected_primitive) return false;
+  const trap_conditions = primitive_trap_conditions(primitive);
+  if (!trap_conditions.includes("nonzero_divisor")) return false;
+  const divisor_zero: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "equal",
+      value: divisor,
+      expected: 0n,
+    },
+  };
+  if (!trap_conditions.includes("signed_division_overflow")) {
+    return semantic_cfg_machine_path_result_at_target(
+      control_flow,
+      target,
+      divisor_zero,
+    ) === "proved";
+  }
+  if (!dividend_range.signed) return false;
+  const dividend_minimum: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "equal",
+      value: dividend,
+      expected: integer_minimum(dividend_range),
+    },
+  };
+  const divisor_negative_one: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "equal",
+      value: divisor,
+      expected: -1n,
+    },
+  };
+  return semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        divisor_zero,
+        undefined,
+        dividend_minimum,
+      ) === "proved" &&
+    semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        divisor_zero,
+        undefined,
+        divisor_negative_one,
+      ) === "proved";
+}
+
 export function infer_semantic_type_certificate(
   control_flow: SemanticCfg,
   call_span: SourceSpan,

@@ -120,6 +120,7 @@ import {
   semantic_index_is_unreachable,
   semantic_integer_narrowing_is_disproved,
   semantic_integer_narrowing_is_unreachable,
+  semantic_primitive_is_disproved,
   semantic_primitive_is_unreachable,
   semantic_slice_is_unreachable,
   type SemanticMachineRequirement,
@@ -147,6 +148,7 @@ import {
   verify_semantic_integer_narrowing_unreachable,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
+  verify_semantic_primitive_disproved,
   verify_semantic_primitive_safety_certificate,
   verify_semantic_primitive_unreachable,
   verify_semantic_remainder_certificate,
@@ -2387,6 +2389,24 @@ function validate_partial_primitive_obligations(
           primitive,
         );
         if (certificate === undefined) {
+          let status = "unknown";
+          if (
+            semantic_primitive_is_disproved(
+              candidate,
+              node.span,
+              primitive,
+            )
+          ) {
+            expect(
+              verify_semantic_primitive_disproved(
+                candidate,
+                node.span,
+                primitive,
+              ),
+              "FactGraph and the independent verifier disagree about a disproved primitive.",
+            );
+            status = "disproved";
+          }
           const dividend = node.inputs[0];
           const divisor = node.inputs[1];
           expect(
@@ -2404,7 +2424,6 @@ function validate_partial_primitive_obligations(
           ) {
             divisor_value = BigInt(divisor_constant.operation.value);
           }
-          let status = "unknown";
           if (divisor_value === 0n) status = "disproved";
           let goal = "divisor != 0";
           if (trap_conditions.includes("signed_division_overflow")) {

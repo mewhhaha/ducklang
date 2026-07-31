@@ -26,6 +26,7 @@ import {
   verify_semantic_integer_narrowing_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
+  verify_semantic_primitive_disproved,
   verify_semantic_primitive_safety_certificate,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
@@ -41,6 +42,7 @@ import {
   infer_semantic_slice_bounds_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
+  semantic_primitive_is_disproved,
 } from "./semantic_fact_graph.ts";
 import {
   semantic_cfg_is_well_formed,
@@ -171,6 +173,113 @@ Deno.test("semantic primitive certificates verify integer trap conditions", () =
       "i32.div_s",
     ),
     undefined,
+  );
+});
+
+Deno.test("semantic primitive disproof verifies inevitable traps", () => {
+  const builder = new SemanticCfgBuilder("primitive-disproof");
+  const entry = builder.add_block(origin);
+  const dividend = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 2 },
+    { tag: "constant", value: 84 },
+    [],
+    [i32_type],
+  )[0];
+  const divisor = builder.add_node(
+    entry,
+    origin,
+    { start: 3, end: 4 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (dividend === undefined || divisor === undefined) {
+    throw new Error("Expected primitive disproof operands.");
+  }
+  const operation_span = { start: 0, end: 4 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    operation_span,
+    { tag: "primitive", name: "i32.div_s" },
+    [dividend, divisor],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected division result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  assert_equals(
+    semantic_primitive_is_disproved(
+      control_flow,
+      operation_span,
+      "i32.div_s",
+    ),
+    true,
+  );
+  assert_equals(
+    verify_semantic_primitive_disproved(
+      control_flow,
+      operation_span,
+      "i32.div_s",
+    ),
+    true,
+  );
+  assert_equals(
+    verify_semantic_primitive_disproved(
+      control_flow,
+      operation_span,
+      "i32.rem_s",
+    ),
+    false,
+  );
+
+  const mismatched_builder = new SemanticCfgBuilder(
+    "primitive-disproof-mismatch",
+  );
+  const mismatched_entry = mismatched_builder.add_block(origin);
+  const mismatched_dividend = mismatched_builder.add_node(
+    mismatched_entry,
+    origin,
+    { start: 0, end: 2 },
+    { tag: "constant", value: 84 },
+    [],
+    [i32_type],
+  )[0];
+  const mismatched_divisor = mismatched_builder.add_node(
+    mismatched_entry,
+    origin,
+    { start: 3, end: 4 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (mismatched_dividend === undefined || mismatched_divisor === undefined) {
+    throw new Error("Expected mismatched primitive operands.");
+  }
+  const mismatched_result = mismatched_builder.add_node(
+    mismatched_entry,
+    origin,
+    operation_span,
+    { tag: "primitive", name: "i32.div_s" },
+    [mismatched_dividend, mismatched_divisor],
+    [u32_type],
+  )[0];
+  if (mismatched_result === undefined) {
+    throw new Error("Expected mismatched primitive result.");
+  }
+  mismatched_builder.terminate(mismatched_entry, {
+    tag: "return",
+    value: mismatched_result,
+  });
+  assert_equals(
+    verify_semantic_primitive_disproved(
+      mismatched_builder.finish(),
+      operation_span,
+      "i32.div_s",
+    ),
+    false,
   );
 });
 

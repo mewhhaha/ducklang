@@ -1882,6 +1882,80 @@ Deno.test("integer division and remainder require trap evidence", () => {
       true,
     );
   }
+
+  const branch_zero = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right == 0 then left / right else 0 end;\n0\n",
+  ));
+  assert_equals(
+    branch_zero.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "disproved: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const branch_overflow = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if left == -2147483648i32 && right == -1i32 then " +
+      "left / right else 0 end;\n0\n",
+  ));
+  assert_equals(
+    branch_overflow.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "disproved: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const pathwise_traps = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right == 0 || " +
+      "(left == -2147483648i32 && right == -1i32) then " +
+      "left / right else 0 end;\n0\n",
+  ));
+  assert_equals(
+    pathwise_traps.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "disproved: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let divide = (choose_zero: Bool) => do\n" +
+      "let right = if choose_zero then 0 else 2 end;\n" +
+      "84 / right\n" +
+      "end;\n0\n",
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "unknown: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const unsigned_branch_zero = analyze_duck_source(parse_duck_source(
+    "let remainder = (left: U32, right: U32) => " +
+      "if right == 0u32 then left % right else 0u32 end;\n0\n",
+  ));
+  assert_equals(
+    unsigned_branch_zero.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove divisor != 0 before i32.rem_u."
+    ),
+    true,
+  );
 });
 
 Deno.test("unreachable integer traps create no proof obligation", () => {
