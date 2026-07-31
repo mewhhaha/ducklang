@@ -307,11 +307,17 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
     name: "evidence",
     span: { start: 28, end: 36 },
   };
+  const applied: PrefixProofTerm = {
+    tag: "name",
+    name: "theorem",
+    span: { start: 45, end: 52 },
+  };
   const proof: PrefixProofTerm = {
     tag: "tactics",
     commands: [
       { tag: "intro", name: "evidence", span: { start: 15, end: 29 } },
       { tag: "exact", proof: exact, span: { start: 30, end: 44 } },
+      { tag: "apply", proof: applied, span: { start: 45, end: 58 } },
     ],
     span: { start: 10, end: 46 },
   };
@@ -327,6 +333,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
     span: { start: 0, end: 1 },
   };
   exact.name = "changed";
+  applied.name = "changed";
   const body = [...index.values()][0]?.definition.callable_proof_body;
 
   assert_equals(body?.tag, "tactics");
@@ -339,6 +346,14 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
     tag: "name",
     name: "evidence",
     span: { start: 28, end: 36 },
+  });
+  const stable_apply = body.commands[2];
+  assert_equals(stable_apply?.tag, "apply");
+  if (stable_apply?.tag !== "apply") throw new Error("Expected apply tactic.");
+  assert_equals(stable_apply.proof, {
+    tag: "name",
+    name: "theorem",
+    span: { start: 45, end: 52 },
   });
   assert_equals(Object.isFrozen(body.commands), true);
 });

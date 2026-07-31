@@ -1364,10 +1364,17 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "type all_reflexive = " +
       "() -> Proof forall (value: I32). value = value\n" +
       "let all_reflexive = () => by { intro value exact refl };\n" +
+      "type apply_chain = " +
+      "(theorem: Proof True implies False implies True, " +
+      "truth: Proof True, falsehood: Proof False) -> Proof True\n" +
+      "let apply_chain = (theorem, truth, falsehood) => " +
+      "by { apply theorem exact truth exact falsehood };\n" +
+      "type apply_exact = (evidence: Proof True) -> Proof True\n" +
+      "let apply_exact = evidence => by { apply evidence };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 6);
+  assert_equals(analysis.proofs.size, 8);
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
@@ -1378,6 +1385,7 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
       ["by { intro evidence }", "intro requires an implication"],
       ["by { constructor }", "constructor requires a True or conjunction"],
       ["by { left }", "left requires a disjunction"],
+      ["by { apply true_intro }", "apply proof conclusion does not match"],
       ["by { exact true_intro assumption }", "has no remaining goal"],
       ["by {}", "leaves 1 unresolved goal"],
     ] as const

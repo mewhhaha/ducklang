@@ -8962,6 +8962,10 @@
     "named": false
   },
   {
+    "type": "apply",
+    "named": false
+  },
+  {
     "type": "as_keyword",
     "named": true
   },

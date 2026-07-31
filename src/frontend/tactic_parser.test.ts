@@ -8,6 +8,7 @@ Deno.test("tactic keywords reject identifier continuations", () => {
       "leftexact evidence",
       "rightexact evidence",
       "exacttrue_intro",
+      "applyevidence",
       "introintro",
     ]
   ) {

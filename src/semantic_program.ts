@@ -6477,6 +6477,73 @@ function elaborate_prefix_tactics(
       current.accept(term);
       continue;
     }
+    if (command.tag === "apply") {
+      const applied_check = synthesize_prefix_proof(
+        command.proof,
+        current.context,
+      );
+      const applied = checked_value(applied_check);
+      if (applied === undefined) {
+        return applied_check.map((proof) => proof.term);
+      }
+      const premises: Proposition[] = [];
+      let conclusion = applied.proposition;
+      while (conclusion.tag === "implies") {
+        premises.push(conclusion.premise);
+        conclusion = conclusion.conclusion;
+      }
+      const environment = KernelEnvironment.from(
+        current.context.declarations,
+      );
+      const term_context = snapshot_kernel_context(
+        current.context.term_context,
+      );
+      if (
+        !proposition_equal(conclusion, current.goal, {
+          environment,
+          term_context,
+        })
+      ) {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "apply proof conclusion does not match the current goal.",
+          command.span,
+        ));
+      }
+      if (premises.length === 0) {
+        current.accept(applied.term);
+        continue;
+      }
+      const premise_proofs: (ProofTerm | undefined)[] = new Array(
+        premises.length,
+      ).fill(undefined);
+      const complete = () => {
+        if (premise_proofs.some((proof) => proof === undefined)) return;
+        let proof = applied.term;
+        for (const premise_proof of premise_proofs) {
+          expect(
+            premise_proof !== undefined,
+            "Completed apply tactic lost a premise proof.",
+          );
+          proof = {
+            tag: "implies_apply",
+            function: proof,
+            argument: premise_proof,
+          };
+        }
+        current.accept(proof);
+      };
+      const goals = premises.map((premise, index): PendingPrefixTacticGoal => ({
+        goal: premise,
+        context: current.context,
+        accept: (proof) => {
+          premise_proofs[index] = proof;
+          complete();
+        },
+      }));
+      pending.unshift(...goals);
+      continue;
+    }
     if (command.tag === "assumption") {
       let selected_index: number | undefined;
       const environment = KernelEnvironment.from(current.context.declarations);

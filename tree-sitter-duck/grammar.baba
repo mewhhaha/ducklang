@@ -531,6 +531,7 @@ prefix_tactic_block = (
 
 prefix_tactic_command = (
                           ("exact" _tactic_space proof:(prefix_proof_term))
+                          | ("apply" _tactic_space proof:(prefix_proof_term))
                           | ("assumption" _tactic_space)
                           | ("intro" _tactic_space name:(identifier))
                           | ("constructor" _tactic_space)

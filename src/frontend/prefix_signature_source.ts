@@ -559,15 +559,21 @@ function tactic_command_from_node(
   source: string,
 ): PrefixTacticCommand | undefined {
   const span = { start: node.start, end: node.end };
-  const exact = node.children.find((child) => child.kind === '"exact"');
-  if (exact !== undefined) {
+  let proof_command: "exact" | "apply" | undefined;
+  if (node.children.some((child) => child.kind === '"exact"')) {
+    proof_command = "exact";
+  }
+  if (node.children.some((child) => child.kind === '"apply"')) {
+    proof_command = "apply";
+  }
+  if (proof_command !== undefined) {
     const proof_node = node.children.find((child) =>
       child.kind === "prefix_proof_term"
     );
     if (proof_node === undefined) return undefined;
     const proof = proof_term_from_node(proof_node, source);
     if (proof === undefined) return undefined;
-    return { tag: "exact", proof, span };
+    return { tag: proof_command, proof, span };
   }
   const intro = node.children.find((child) => child.kind === '"intro"');
   if (intro !== undefined) {
