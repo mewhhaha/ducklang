@@ -9,7 +9,7 @@
   },
   "imports": {
     "@mewhhaha/baba": "jsr:@mewhhaha/baba@7.0.0",
-    "gpufuck": "jsr:@mewhhaha/gpufuck@^0.4.0",
+    "gpufuck": "jsr:@mewhhaha/gpufuck@^0.7.0",
     "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.2",
     "web-tree-sitter": "npm:web-tree-sitter@0.26.11"
   },

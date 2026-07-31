@@ -1,6 +1,7 @@
 module () where
 
 const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/json/values" ();
 
 type RolloutStoredFile = [Text, Text, Text]
 type RolloutStoredFiles = List RolloutStoredFile

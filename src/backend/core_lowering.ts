@@ -2,6 +2,7 @@ import {
   BinaryOperator,
   BYTES_TYPE_NAME,
   createModuleArtifact,
+  effectSet,
   type EncodedModule,
   EvaluationProfile,
   type HostCapabilityDeclaration,
@@ -1248,7 +1249,7 @@ class DuckCoreLowering {
         fields.push({
           kind: "operation",
           name: operation.name,
-          purity: "effectful",
+          effects: effectSet(effect.name),
           execution: operation.execution,
           parameter: this.operation_parameter_type(
             operation.params.map((param) => param.type),
@@ -1289,7 +1290,7 @@ class DuckCoreLowering {
         mutable_fields.push({
           kind: "operation",
           name: imported.field,
-          purity: "effectful",
+          effects: effectSet(imported.module),
           parameter: this.operation_parameter_type(
             imported.params.map((param) => param.type),
           ),
@@ -1459,22 +1460,23 @@ class DuckCoreLowering {
                 ),
               );
               let function_body = lowered.expression;
-              const parameters: string[] = [];
-              const parameter_count = Math.max(1, definition.params.length);
-              for (
-                let parameter_index = 0;
-                parameter_index < parameter_count;
-                parameter_index += 1
-              ) {
-                if (function_body.kind !== "lambda") {
-                  throw new Error(
-                    "Duck gpufuck recursive function is not a lambda: " +
-                      recursive_name,
-                  );
-                }
-                parameters.push(function_body.parameter);
-                function_body = function_body.body;
+              if (function_body.kind !== "lambda") {
+                throw new Error(
+                  "Duck gpufuck recursive function is not a lambda: " +
+                    recursive_name,
+                );
               }
+              const parameter_count = Math.max(1, definition.params.length);
+              if (function_body.parameters.length !== parameter_count) {
+                throw new Error(
+                  "Duck gpufuck recursive function lambda has " +
+                    function_body.parameters.length.toString() +
+                    " parameters, expected " + parameter_count.toString() +
+                    ": " + recursive_name,
+                );
+              }
+              const parameters = [...function_body.parameters];
+              function_body = function_body.body;
               bindings.push({
                 name: recursive_name,
                 parameters,
@@ -2258,10 +2260,13 @@ class DuckCoreLowering {
       fields: state_fields,
       cases: [],
     });
-    const state_value = surface.apply(
-      surface.name(this.struct_constructor(state_name)),
-      ...carried.map((name) => surface.name(name)),
-    );
+    let state_value = surface.name(this.struct_constructor(state_name));
+    if (carried.length > 0) {
+      state_value = surface.apply(
+        state_value,
+        ...carried.map((name) => surface.name(name)),
+      );
+    }
     const next_index = surface.binary(
       BinaryOperator.Add,
       surface.name(index_name),
@@ -2440,10 +2445,13 @@ class DuckCoreLowering {
         })),
         cases: [],
       });
-      break_result = surface.apply(
-        surface.name(this.struct_constructor(state_name)),
-        ...carried_names.map((name) => surface.name(name)),
-      );
+      break_result = surface.name(this.struct_constructor(state_name));
+      if (carried_names.length > 0) {
+        break_result = surface.apply(
+          break_result,
+          ...carried_names.map((name) => surface.name(name)),
+        );
+      }
     }
     this.#loop_controls.push({ break_result, continue_result: continue_call });
     let body: SurfaceExpression;
@@ -3271,7 +3279,10 @@ class DuckCoreLowering {
     } finally {
       this.#function_expected_results.pop();
     }
-    let lowered = lowered_body.expression;
+    const lowered = surface.lambda(
+      params.map((param) => param.name),
+      lowered_body.expression,
+    );
     let inferred_result = lowered_body.type;
     if (inferred_result === undefined) {
       inferred_result = expected_result;
@@ -3289,7 +3300,6 @@ class DuckCoreLowering {
           "Duck gpufuck lowering lost function parameter " + index.toString(),
         );
       }
-      lowered = surface.lambda(param.name, lowered);
       function_type = {
         kind: "function",
         parameter: param_type,
@@ -3520,22 +3530,23 @@ class DuckCoreLowering {
         throw error;
       }
       let function_body = lowered.expression;
-      const parameters: string[] = [];
       const parameter_count = Math.max(1, dependency.params.length);
-      for (
-        let parameter_index = 0;
-        parameter_index < parameter_count;
-        parameter_index += 1
-      ) {
-        if (function_body.kind !== "lambda") {
-          throw new Error(
-            "Duck host callable dependency is not a function: " +
-              statement.name,
-          );
-        }
-        parameters.push(function_body.parameter);
-        function_body = function_body.body;
+      if (function_body.kind !== "lambda") {
+        throw new Error(
+          "Duck host callable dependency is not a function: " +
+            statement.name,
+        );
       }
+      if (function_body.parameters.length !== parameter_count) {
+        throw new Error(
+          "Duck host callable dependency lambda has " +
+            function_body.parameters.length.toString() +
+            " parameters, expected " + parameter_count.toString() +
+            ": " + statement.name,
+        );
+      }
+      const parameters = [...function_body.parameters];
+      function_body = function_body.body;
       definitions.push({
         name: statement.name,
         parameters,
@@ -5004,8 +5015,19 @@ class DuckCoreLowering {
     environment: ReadonlyMap<string, TypeSchema>,
     expected: TypeSchema | undefined,
   ): LoweredExpression {
+    let expected_is_named_struct = false;
+    if (expected !== undefined) {
+      const resolved_expected = this.resolve_type_alias(expected);
+      if (resolved_expected.kind === "named") {
+        const expected_name = source_type_name_from_schema(resolved_expected);
+        this.materialize_type_definition(expected_name);
+        expected_is_named_struct = this.#types.get(expected_name)?.shape ===
+          "struct";
+      }
+    }
     if (
       expression.fields.length === 1 && expected !== undefined &&
+      !expected_is_named_struct &&
       expression.type_expr.tag === "var" &&
       expression.type_expr.name === "object_type"
     ) {
@@ -5158,11 +5180,12 @@ class DuckCoreLowering {
       return this.lower_expression(field.value, environment, declared.type)
         .expression;
     });
+    let constructed = surface.name(this.struct_constructor(name));
+    if (values.length > 0) {
+      constructed = surface.apply(constructed, ...values);
+    }
     return {
-      expression: surface.apply(
-        surface.name(this.struct_constructor(name)),
-        ...values,
-      ),
+      expression: constructed,
       type: this.named_type(name),
     };
   }
@@ -5200,11 +5223,15 @@ class DuckCoreLowering {
       };
       this.#types.set(name, definition);
     }
-    return {
-      expression: surface.apply(
-        surface.name(this.struct_constructor(name)),
+    let constructed = surface.name(this.struct_constructor(name));
+    if (lowered_fields.length > 0) {
+      constructed = surface.apply(
+        constructed,
         ...lowered_fields.map((field) => field.expression),
-      ),
+      );
+    }
+    return {
+      expression: constructed,
       type: this.named_type(name),
     };
   }
@@ -6394,7 +6421,7 @@ class DuckCoreLowering {
     const declaration: HostCapabilityDeclaration["fields"][number] = {
       kind: "operation",
       name: key,
-      purity: "pure",
+      effects: effectSet(),
       parameter,
       result,
       ...ownership,
@@ -6431,7 +6458,7 @@ class DuckCoreLowering {
     const declaration: HostCapabilityDeclaration["fields"][number] = {
       kind: "operation",
       name: key,
-      purity: "pure",
+      effects: effectSet(),
       parameter,
       result,
       wasmIntrinsic: wasm_intrinsic,

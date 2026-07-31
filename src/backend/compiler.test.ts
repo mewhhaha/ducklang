@@ -28,6 +28,25 @@ Deno.test("Duck compiler lowers the supported scalar source shape", () => {
   assert_equals(module.nodeCount, 5);
 });
 
+Deno.test(
+  "Duck compiler preserves one-field named structs in exact-arity calls",
+  async () => {
+    const source = 'const { .struct } = import "duck:prelude/types" ();\n' +
+      "type Options = struct { .enabled = Bool, }\n" +
+      "let select = (label: Text, value: I32, options: Options) => " +
+      "if options.enabled then value else 0 end;\n" +
+      'select("answer", 42, [.enabled = false])\n';
+    const compiler = await DuckCompiler.create();
+
+    try {
+      const execution = await compiler.run(source);
+      assert_equals(execution.value, { kind: "integer", value: 0 });
+    } finally {
+      compiler.destroy();
+    }
+  },
+);
+
 Deno.test("Duck compiler checks and erases contracts before gpufuck", async () => {
   const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
     "ensures result = value\n" +
@@ -4843,6 +4862,48 @@ Deno.test("Duck compiler executes aggregate effect capabilities", async () => {
     compiler.destroy();
   }
 });
+
+Deno.test(
+  "Duck compiler constructs nullary state for effectful uncarried loops",
+  async () => {
+    const source = `
+module (!init: Init) where
+
+declare effect Tick {
+  tick: () => Unit
+}
+declare Init { tick: Tick }
+
+for index in 0..1 do
+  _ <- Tick.tick()
+end;
+loop do
+  _ <- Tick.tick()
+  break;
+end;
+return { .result = 7 };
+`;
+    const compiler = await DuckCompiler.create();
+
+    try {
+      const execution = await compiler.run(source, {
+        init: {
+          Tick: {
+            $resource: { kind: "resource", id: 1 },
+            tick: () => ({ kind: "unit" }),
+          },
+        },
+      });
+      assert_equals(execution.value, {
+        kind: "constructor",
+        name: "duck::$DuckStruct:duck_entry_result_type",
+        fields: [{ kind: "integer", value: 7 }],
+      });
+    } finally {
+      compiler.destroy();
+    }
+  },
+);
 
 Deno.test("Duck compiler emits host callables as persistent exports", async () => {
   const compiler = await DuckCompiler.create();
