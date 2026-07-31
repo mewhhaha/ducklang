@@ -1412,10 +1412,23 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "let decide_plus_negative = () => by { decide };\n" +
       "type decide_wrapping_negation = () -> Proof -(-128i8) = -128i8\n" +
       "let decide_wrapping_negation = () => by { decide };\n" +
+      "type simp_conjunction = () -> Proof True and True\n" +
+      "let simp_conjunction = () => by { simp };\n" +
+      "type simp_implication = () -> Proof True implies True\n" +
+      "let simp_implication = () => by { simp };\n" +
+      "type simp_disjunction = () -> Proof False or True\n" +
+      "let simp_disjunction = () => by { simp };\n" +
+      "type simp_negation = () -> Proof not False\n" +
+      "let simp_negation = () => by { simp };\n" +
+      "type simp_false_elimination = () -> Proof False implies 1i32 = 2i32\n" +
+      "let simp_false_elimination = () => by { simp };\n" +
+      "type simp_quantified = () -> " +
+      "Proof forall (value: I32). value = value\n" +
+      "let simp_quantified = () => by { simp };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 22);
+  assert_equals(analysis.proofs.size, 28);
   assert_equals(
     checked_value(lower_duck_source(analysis))?.core.statements,
     [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
@@ -1433,6 +1446,7 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
       ["by { cases true_intro }", "cases requires disjunction"],
       ["by { rewrite true_intro }", "rewrite requires equality"],
       ["by { decide }", "decide found no total compile-time decision"],
+      ["by { simp }", "simp could not prove the current goal"],
       ["by { exact true_intro assumption }", "has no remaining goal"],
       ["by {}", "leaves 1 unresolved goal"],
     ] as const
@@ -1451,6 +1465,114 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
     assert_equals(analysis.proofs.size, 0);
     assert_equals(checked_value(lower_duck_source(analysis)), undefined);
   }
+});
+
+Deno.test("simp reports its structural proof-search depth limit", () => {
+  const implication_chain = "True implies ".repeat(17) + "True";
+  const analysis = analyze_duck_source(parse_duck_source(
+    `type too_deep = () -> Proof ${implication_chain}\n` +
+      "let too_deep = () => by { simp };\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "simp exceeded the compiler proof-search budget",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("simp reports structural exhaustion before kernel snapshot limits", () => {
+  let propositions = new Array<string>(6_000).fill("True");
+  while (propositions.length > 1) {
+    const combined: string[] = [];
+    for (let index = 0; index < propositions.length; index += 2) {
+      const left = propositions[index];
+      const right = propositions[index + 1];
+      if (left === undefined) {
+        throw new Error(`Missing simplification proposition ${index}.`);
+      }
+      if (right === undefined) {
+        combined.push(left);
+        continue;
+      }
+      combined.push(`(${left} and ${right})`);
+    }
+    propositions = combined;
+  }
+  const large_proposition = propositions[0];
+  if (large_proposition === undefined) {
+    throw new Error("Expected a large simplification proposition.");
+  }
+  for (
+    const [source, message] of [
+      [
+        `type too_large = (evidence: Proof ${large_proposition}) -> ` +
+        `Proof ${large_proposition}\n` +
+        "let too_large = evidence => by { simp };\n42\n",
+        "simp exceeded the compiler proof-search budget",
+      ],
+      [
+        `type too_large = () -> Proof (${large_proposition}) implies True\n` +
+        "let too_large = () => by { simp };\n42\n",
+        "simp exceeded the compiler proof-search budget",
+      ],
+      [
+        `type too_large = () -> Proof (${large_proposition}) or True\n` +
+        "let too_large = () => by { right simp };\n42\n",
+        "Tactic block exceeded the compiler proof-construction budget",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("simp shares one structural budget across its tactic block", () => {
+  const build_conjunction = (
+    leaves: number,
+  ): { proposition: string; tactics: string } => {
+    if (leaves === 1) {
+      return { proposition: "0i32 = 0i32", tactics: "simp" };
+    }
+    const left = build_conjunction(Math.floor(leaves / 2));
+    const right = build_conjunction(leaves - Math.floor(leaves / 2));
+    return {
+      proposition: `(${left.proposition} and ${right.proposition})`,
+      tactics: `constructor ${left.tactics} ${right.tactics}`,
+    };
+  };
+  const conjunction = build_conjunction(700);
+  const analysis = analyze_duck_source(parse_duck_source(
+    `type partitioned = () -> Proof ${conjunction.proposition}\n` +
+      `let partitioned = () => by { ${conjunction.tactics} };\n` +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "simp exceeded the compiler proof-search budget",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
 Deno.test("rewrite tactics reject equality absent from the goal", () => {

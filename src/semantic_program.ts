@@ -6481,6 +6481,171 @@ type PendingPrefixTacticGoal = {
   accept: (proof: ProofTerm) => void;
 };
 
+type PrefixTacticSearchBudget = { steps: number };
+
+function charge_prefix_tactic_node(
+  search_budget: PrefixTacticSearchBudget,
+): boolean {
+  search_budget.steps += 1;
+  return search_budget.steps <= proof_limits.compiler_search_steps;
+}
+
+function charge_prefix_tactic_type(
+  search_budget: PrefixTacticSearchBudget,
+  type: KernelType,
+): boolean {
+  if (!charge_prefix_tactic_node(search_budget)) return false;
+  if (type.tag === "sort" || type.tag === "var" || type.tag === "constant") {
+    return true;
+  }
+  if (type.tag === "pi") {
+    return charge_prefix_tactic_type(search_budget, type.domain) &&
+      charge_prefix_tactic_type(search_budget, type.codomain);
+  }
+  if (type.tag === "lam") {
+    return charge_prefix_tactic_type(search_budget, type.domain) &&
+      charge_prefix_tactic_type(search_budget, type.body);
+  }
+  return charge_prefix_tactic_type(search_budget, type.function) &&
+    charge_prefix_tactic_type(search_budget, type.argument);
+}
+
+function charge_prefix_tactic_term(
+  search_budget: PrefixTacticSearchBudget,
+  term: KernelTerm,
+): boolean {
+  if (!charge_prefix_tactic_node(search_budget)) return false;
+  if (term.tag === "var") return true;
+  if (term.tag === "constant") {
+    return charge_prefix_tactic_type(search_budget, term.type);
+  }
+  if (term.tag === "lam") {
+    return charge_prefix_tactic_type(search_budget, term.domain) &&
+      charge_prefix_tactic_term(search_budget, term.body);
+  }
+  return charge_prefix_tactic_term(search_budget, term.function) &&
+    charge_prefix_tactic_term(search_budget, term.argument);
+}
+
+function charge_prefix_tactic_proposition(
+  search_budget: PrefixTacticSearchBudget,
+  proposition: Proposition,
+): boolean {
+  if (!charge_prefix_tactic_node(search_budget)) return false;
+  if (proposition.tag === "true" || proposition.tag === "false") return true;
+  if (proposition.tag === "atom") {
+    for (const argument of proposition.arguments) {
+      if (!charge_prefix_tactic_term(search_budget, argument)) return false;
+    }
+    return true;
+  }
+  if (proposition.tag === "equal") {
+    return charge_prefix_tactic_type(search_budget, proposition.type) &&
+      charge_prefix_tactic_term(search_budget, proposition.left) &&
+      charge_prefix_tactic_term(search_budget, proposition.right);
+  }
+  if (proposition.tag === "and" || proposition.tag === "or") {
+    return charge_prefix_tactic_proposition(search_budget, proposition.left) &&
+      charge_prefix_tactic_proposition(search_budget, proposition.right);
+  }
+  if (proposition.tag === "implies") {
+    return charge_prefix_tactic_proposition(
+      search_budget,
+      proposition.premise,
+    ) && charge_prefix_tactic_proposition(
+      search_budget,
+      proposition.conclusion,
+    );
+  }
+  if (proposition.tag === "not") {
+    return charge_prefix_tactic_proposition(
+      search_budget,
+      proposition.proposition,
+    );
+  }
+  return charge_prefix_tactic_type(search_budget, proposition.domain) &&
+    charge_prefix_tactic_proposition(search_budget, proposition.body);
+}
+
+function charge_prefix_tactic_proof(
+  search_budget: PrefixTacticSearchBudget,
+  proof: ProofTerm,
+): boolean {
+  if (!charge_prefix_tactic_node(search_budget)) return false;
+  if (proof.tag === "assumption" || proof.tag === "true_intro") return true;
+  if (proof.tag === "machine_reflect" || proof.tag === "unsafe_assume") {
+    return charge_prefix_tactic_proposition(
+      search_budget,
+      proof.proposition,
+    );
+  }
+  if (proof.tag === "refl") {
+    return charge_prefix_tactic_type(search_budget, proof.type) &&
+      charge_prefix_tactic_term(search_budget, proof.term);
+  }
+  if (proof.tag === "congr") {
+    return charge_prefix_tactic_term(search_budget, proof.function) &&
+      charge_prefix_tactic_proof(search_budget, proof.proof);
+  }
+  if (
+    proof.tag === "symm" || proof.tag === "and_left" ||
+    proof.tag === "and_right"
+  ) {
+    return charge_prefix_tactic_proof(search_budget, proof.proof);
+  }
+  if (proof.tag === "trans" || proof.tag === "and_intro") {
+    return charge_prefix_tactic_proof(search_budget, proof.left) &&
+      charge_prefix_tactic_proof(search_budget, proof.right);
+  }
+  if (proof.tag === "or_left") {
+    return charge_prefix_tactic_proof(search_budget, proof.proof) &&
+      charge_prefix_tactic_proposition(search_budget, proof.other);
+  }
+  if (proof.tag === "or_right") {
+    return charge_prefix_tactic_proposition(search_budget, proof.other) &&
+      charge_prefix_tactic_proof(search_budget, proof.proof);
+  }
+  if (proof.tag === "or_cases") {
+    return charge_prefix_tactic_proof(search_budget, proof.proof) &&
+      charge_prefix_tactic_proof(search_budget, proof.left_body) &&
+      charge_prefix_tactic_proof(search_budget, proof.right_body);
+  }
+  if (proof.tag === "not_intro" || proof.tag === "implies_intro") {
+    return charge_prefix_tactic_proposition(search_budget, proof.premise) &&
+      charge_prefix_tactic_proof(search_budget, proof.body);
+  }
+  if (proof.tag === "implies_apply") {
+    return charge_prefix_tactic_proof(search_budget, proof.function) &&
+      charge_prefix_tactic_proof(search_budget, proof.argument);
+  }
+  if (proof.tag === "forall_intro") {
+    return charge_prefix_tactic_type(search_budget, proof.domain) &&
+      charge_prefix_tactic_proof(search_budget, proof.body);
+  }
+  if (proof.tag === "forall_apply") {
+    return charge_prefix_tactic_proof(search_budget, proof.proof) &&
+      charge_prefix_tactic_term(search_budget, proof.argument);
+  }
+  if (proof.tag === "exists_intro") {
+    return charge_prefix_tactic_type(search_budget, proof.domain) &&
+      charge_prefix_tactic_proposition(search_budget, proof.body) &&
+      charge_prefix_tactic_term(search_budget, proof.witness) &&
+      charge_prefix_tactic_proof(search_budget, proof.proof);
+  }
+  if (proof.tag === "exists_elim") {
+    return charge_prefix_tactic_proof(search_budget, proof.proof) &&
+      charge_prefix_tactic_proposition(search_budget, proof.target) &&
+      charge_prefix_tactic_proof(search_budget, proof.body);
+  }
+  if (proof.tag === "transport") {
+    return charge_prefix_tactic_proof(search_budget, proof.equality) &&
+      charge_prefix_tactic_proposition(search_budget, proof.motive) &&
+      charge_prefix_tactic_proof(search_budget, proof.proof);
+  }
+  return charge_prefix_tactic_proof(search_budget, proof.proof) &&
+    charge_prefix_tactic_proposition(search_budget, proof.target);
+}
+
 function elaborate_prefix_tactics(
   commands: readonly PrefixTacticCommand[],
   block_span: PrefixSpan,
@@ -6495,6 +6660,7 @@ function elaborate_prefix_tactics(
       block_span,
     ));
   }
+  const search_budget: PrefixTacticSearchBudget = { steps: commands.length };
   let completed: ProofTerm | undefined;
   const pending: PendingPrefixTacticGoal[] = [{
     goal,
@@ -6875,6 +7041,18 @@ function elaborate_prefix_tactics(
       const choose_left = command.tag === "left";
       let selected_goal = right_goal;
       if (choose_left) selected_goal = left_goal;
+      let unchosen_goal = left_goal;
+      if (choose_left) unchosen_goal = right_goal;
+      if (
+        !charge_prefix_tactic_node(search_budget) ||
+        !charge_prefix_tactic_proposition(search_budget, unchosen_goal)
+      ) {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "Tactic block exceeded the compiler proof-construction budget.",
+          command.span,
+        ));
+      }
       pending.unshift({
         goal: selected_goal,
         context: current.context,
@@ -6913,6 +7091,29 @@ function elaborate_prefix_tactics(
       });
       continue;
     }
+    if (command.tag === "simp") {
+      const simplified = simplify_prefix_tactic_goal(
+        current.goal,
+        current.context,
+        search_budget,
+      );
+      if (simplified.tag === "budget_exhausted") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "simp exceeded the compiler proof-search budget.",
+          command.span,
+        ));
+      }
+      if (simplified.tag === "unknown") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "simp could not prove the current goal using built-in reductions.",
+          command.span,
+        ));
+      }
+      current.accept(simplified.proof);
+      continue;
+    }
     throw new Error("Invalid prefix tactic command.");
   }
   if (pending.length > 0) {
@@ -6928,6 +7129,13 @@ function elaborate_prefix_tactics(
     completed !== undefined,
     "Completed tactic block lost its proof term.",
   );
+  if (!charge_prefix_tactic_proof(search_budget, completed)) {
+    return fail(compiler_diagnostic(
+      diagnostic_codes.prefix_proof_invalid,
+      "Tactic block exceeded the compiler proof-construction budget.",
+      block_span,
+    ));
+  }
   return ok(completed);
 }
 
@@ -7107,6 +7315,351 @@ function rewrite_prefix_tactic_goal(
     motive,
     goal: instantiate_proposition(motive, target),
   };
+}
+
+type PrefixTacticSimplification =
+  | { tag: "proved"; proof: ProofTerm }
+  | { tag: "unknown" }
+  | { tag: "budget_exhausted" };
+
+function simplify_prefix_tactic_goal(
+  goal: Proposition,
+  context: PrefixKernelProofContext,
+  search_budget: { steps: number },
+): PrefixTacticSimplification {
+  const charge_node = (): boolean => {
+    search_budget.steps += 1;
+    return search_budget.steps <= proof_limits.compiler_search_steps;
+  };
+  const charge_type = (type: KernelType): boolean => {
+    if (!charge_node()) return false;
+    if (
+      type.tag === "sort" || type.tag === "var" || type.tag === "constant"
+    ) {
+      return true;
+    }
+    if (type.tag === "pi") {
+      return charge_type(type.domain) && charge_type(type.codomain);
+    }
+    if (type.tag === "lam") {
+      return charge_type(type.domain) && charge_type(type.body);
+    }
+    return charge_type(type.function) && charge_type(type.argument);
+  };
+  const charge_term = (term: KernelTerm): boolean => {
+    if (!charge_node()) return false;
+    if (term.tag === "var") return true;
+    if (term.tag === "constant") return charge_type(term.type);
+    if (term.tag === "lam") {
+      return charge_type(term.domain) && charge_term(term.body);
+    }
+    return charge_term(term.function) && charge_term(term.argument);
+  };
+  const charge_proposition = (proposition: Proposition): boolean => {
+    if (!charge_node()) return false;
+    if (proposition.tag === "true" || proposition.tag === "false") {
+      return true;
+    }
+    if (proposition.tag === "atom") {
+      for (const argument of proposition.arguments) {
+        if (!charge_term(argument)) return false;
+      }
+      return true;
+    }
+    if (proposition.tag === "equal") {
+      return charge_type(proposition.type) &&
+        charge_term(proposition.left) && charge_term(proposition.right);
+    }
+    if (proposition.tag === "and" || proposition.tag === "or") {
+      return charge_proposition(proposition.left) &&
+        charge_proposition(proposition.right);
+    }
+    if (proposition.tag === "implies") {
+      return charge_proposition(proposition.premise) &&
+        charge_proposition(proposition.conclusion);
+    }
+    if (proposition.tag === "not") {
+      return charge_proposition(proposition.proposition);
+    }
+    return charge_type(proposition.domain) &&
+      charge_proposition(proposition.body);
+  };
+  const charge_context = (term_context: KernelContext): boolean => {
+    for (const type of term_context) {
+      if (!charge_type(type)) return false;
+    }
+    return true;
+  };
+  const is_kernel_budget_error = (error: unknown): boolean => {
+    if (!(error instanceof Error)) return false;
+    return error.message.includes("snapshot exceeded") ||
+      error.message.includes("normalization exceeded");
+  };
+
+  const prove = (
+    current_goal: Proposition,
+    current_context: PrefixKernelProofContext,
+    depth: number,
+  ): PrefixTacticSimplification => {
+    if (
+      depth > proof_limits.compiler_search_depth ||
+      !charge_proposition(current_goal) ||
+      !charge_context(current_context.term_context)
+    ) {
+      return { tag: "budget_exhausted" };
+    }
+    let environment: KernelEnvironment;
+    let term_context: KernelContext;
+    try {
+      environment = KernelEnvironment.from(current_context.declarations);
+      term_context = snapshot_kernel_context(current_context.term_context);
+    } catch (error) {
+      if (is_kernel_budget_error(error)) return { tag: "budget_exhausted" };
+      throw error;
+    }
+    let matching_assumption: number | undefined;
+    let false_assumption: number | undefined;
+    for (const [name, index] of current_context.proof_indices) {
+      const proposition = current_context.proof_propositions.get(name);
+      if (proposition === undefined) continue;
+      if (
+        !charge_proposition(proposition) ||
+        !charge_proposition(current_goal) || !charge_context(term_context)
+      ) {
+        return { tag: "budget_exhausted" };
+      }
+      let matches = false;
+      try {
+        matches = proposition_equal(proposition, current_goal, {
+          environment,
+          term_context,
+        });
+      } catch (error) {
+        if (is_kernel_budget_error(error)) {
+          return { tag: "budget_exhausted" };
+        }
+        throw error;
+      }
+      if (
+        matches &&
+        (matching_assumption === undefined || index < matching_assumption)
+      ) {
+        matching_assumption = index;
+      }
+      if (
+        proposition.tag === "false" &&
+        (false_assumption === undefined || index < false_assumption)
+      ) {
+        false_assumption = index;
+      }
+    }
+    if (matching_assumption !== undefined) {
+      if (!charge_node()) return { tag: "budget_exhausted" };
+      return {
+        tag: "proved",
+        proof: { tag: "assumption", index: matching_assumption },
+      };
+    }
+    if (false_assumption !== undefined) {
+      if (
+        !charge_node() || !charge_node() ||
+        !charge_proposition(current_goal)
+      ) {
+        return { tag: "budget_exhausted" };
+      }
+      return {
+        tag: "proved",
+        proof: {
+          tag: "false_elim",
+          proof: { tag: "assumption", index: false_assumption },
+          target: current_goal,
+        },
+      };
+    }
+    if (current_goal.tag === "true") {
+      if (!charge_node()) return { tag: "budget_exhausted" };
+      return { tag: "proved", proof: { tag: "true_intro" } };
+    }
+    if (current_goal.tag === "equal") {
+      if (
+        !charge_term(current_goal.left) ||
+        !charge_term(current_goal.right) || !charge_context(term_context)
+      ) {
+        return { tag: "budget_exhausted" };
+      }
+      let reflexive = false;
+      try {
+        reflexive = term_equal(
+          current_goal.left,
+          current_goal.right,
+          term_context,
+          environment,
+        );
+      } catch (error) {
+        if (is_kernel_budget_error(error)) {
+          return { tag: "budget_exhausted" };
+        }
+        throw error;
+      }
+      if (!reflexive) return { tag: "unknown" };
+      if (
+        !charge_node() || !charge_type(current_goal.type) ||
+        !charge_term(current_goal.left)
+      ) {
+        return { tag: "budget_exhausted" };
+      }
+      return {
+        tag: "proved",
+        proof: {
+          tag: "refl",
+          type: current_goal.type,
+          term: current_goal.left,
+        },
+      };
+    }
+    if (current_goal.tag === "and") {
+      const left = prove(
+        current_goal.left,
+        current_context,
+        depth + 1,
+      );
+      if (left.tag !== "proved") return left;
+      const right = prove(
+        current_goal.right,
+        current_context,
+        depth + 1,
+      );
+      if (right.tag !== "proved") return right;
+      if (!charge_node()) return { tag: "budget_exhausted" };
+      return {
+        tag: "proved",
+        proof: { tag: "and_intro", left: left.proof, right: right.proof },
+      };
+    }
+    if (current_goal.tag === "or") {
+      const left = prove(
+        current_goal.left,
+        current_context,
+        depth + 1,
+      );
+      if (left.tag === "budget_exhausted") return left;
+      if (left.tag === "proved") {
+        if (
+          !charge_node() || !charge_proposition(current_goal.right)
+        ) {
+          return { tag: "budget_exhausted" };
+        }
+        return {
+          tag: "proved",
+          proof: {
+            tag: "or_left",
+            proof: left.proof,
+            other: current_goal.right,
+          },
+        };
+      }
+      const right = prove(
+        current_goal.right,
+        current_context,
+        depth + 1,
+      );
+      if (right.tag !== "proved") return right;
+      if (!charge_node() || !charge_proposition(current_goal.left)) {
+        return { tag: "budget_exhausted" };
+      }
+      return {
+        tag: "proved",
+        proof: {
+          tag: "or_right",
+          other: current_goal.left,
+          proof: right.proof,
+        },
+      };
+    }
+    if (current_goal.tag === "implies") {
+      const body = prove(
+        current_goal.conclusion,
+        extend_prefix_proof_context(
+          current_context,
+          `simp:premise:${depth.toString()}`,
+          current_goal.premise,
+        ),
+        depth + 1,
+      );
+      if (body.tag !== "proved") return body;
+      if (!charge_node() || !charge_proposition(current_goal.premise)) {
+        return { tag: "budget_exhausted" };
+      }
+      return {
+        tag: "proved",
+        proof: {
+          tag: "implies_intro",
+          premise: current_goal.premise,
+          body: body.proof,
+        },
+      };
+    }
+    if (current_goal.tag === "not") {
+      const body = prove(
+        { tag: "false" },
+        extend_prefix_proof_context(
+          current_context,
+          `simp:negation:${depth.toString()}`,
+          current_goal.proposition,
+        ),
+        depth + 1,
+      );
+      if (body.tag !== "proved") return body;
+      if (
+        !charge_node() || !charge_proposition(current_goal.proposition)
+      ) {
+        return { tag: "budget_exhausted" };
+      }
+      return {
+        tag: "proved",
+        proof: {
+          tag: "not_intro",
+          premise: current_goal.proposition,
+          body: body.proof,
+        },
+      };
+    }
+    if (current_goal.tag === "forall") {
+      let body_context: PrefixKernelProofContext;
+      try {
+        body_context = extend_prefix_term_context(
+          current_context,
+          `simp:value:${depth.toString()}`,
+          current_goal.domain,
+        );
+      } catch (error) {
+        if (is_kernel_budget_error(error)) {
+          return { tag: "budget_exhausted" };
+        }
+        throw error;
+      }
+      const body = prove(
+        current_goal.body,
+        body_context,
+        depth + 1,
+      );
+      if (body.tag !== "proved") return body;
+      if (!charge_node() || !charge_type(current_goal.domain)) {
+        return { tag: "budget_exhausted" };
+      }
+      return {
+        tag: "proved",
+        proof: {
+          tag: "forall_intro",
+          domain: current_goal.domain,
+          body: body.proof,
+        },
+      };
+    }
+    return { tag: "unknown" };
+  };
+
+  return prove(goal, context, 0);
 }
 
 type SynthesizedPrefixProof = {
