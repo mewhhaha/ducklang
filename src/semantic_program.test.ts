@@ -2210,6 +2210,49 @@ Deno.test("text slicing requires ordered in-bounds endpoints", () => {
     true,
   );
 
+  const pathwise_disproved = analyze_duck_source(parse_duck_source(
+    "let take = (start: I32, finish: I32) => " +
+      "if start < 0 || start > finish then " +
+      '@slice("hello", start, finish) else "" end;\n0\n',
+  ));
+  assert_equals(
+    pathwise_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove slice bounds 0 <= start <= end <= 5."
+    ),
+    true,
+  );
+
+  const dynamic_disproved = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if finish > length then @slice(value, start, finish) " +
+      "else Bytes.empty end end;\n0\n",
+  ));
+  assert_equals(
+    dynamic_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove slice bounds 0 <= start <= end <= length(value)."
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let take = (outside: Bool) => do " +
+      "let start = if outside then -1 else 0 end; " +
+      '@slice("hello", start, 1) end;\n0\n',
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove slice bounds 0 <= start <= end <= 5."
+    ),
+    true,
+  );
+
   const invalid_utf8_boundary = analyze_duck_source(parse_duck_source(
     '@slice("é", 0, 1)\n',
   ));

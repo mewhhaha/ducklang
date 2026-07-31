@@ -122,6 +122,7 @@ import {
   semantic_integer_narrowing_is_unreachable,
   semantic_primitive_is_disproved,
   semantic_primitive_is_unreachable,
+  semantic_slice_is_disproved,
   semantic_slice_is_unreachable,
   type SemanticMachineRequirement,
   type SemanticTypeRequirement,
@@ -154,6 +155,7 @@ import {
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
   verify_semantic_slice_bounds_certificate,
+  verify_semantic_slice_disproved,
   verify_semantic_slice_unreachable,
   verify_semantic_type_certificate,
   verify_semantic_unreachable_certificate,
@@ -2017,6 +2019,23 @@ function validate_slice_obligations(
             let status = "unknown";
             let goal = "slice bounds 0 <= start <= end <= " +
               node.operation.length.toString();
+            if (
+              semantic_slice_is_disproved(
+                candidate,
+                node.span,
+                requirement,
+              )
+            ) {
+              expect(
+                verify_semantic_slice_disproved(
+                  candidate,
+                  node.span,
+                  requirement,
+                ),
+                "FactGraph and the independent verifier disagree about a disproved static slice.",
+              );
+              status = "disproved";
+            }
             const start_producer = producers.get(start);
             const end_producer = producers.get(end);
             let start_constant:
@@ -2094,6 +2113,7 @@ function validate_slice_obligations(
             "FactGraph produced an invalid static slice bounds certificate.",
           );
         } else {
+          let slice_disproved = false;
           for (const candidate_block of candidate.blocks) {
             for (const candidate_node of candidate_block.nodes) {
               if (
@@ -2121,7 +2141,32 @@ function validate_slice_obligations(
                 node.span,
                 requirement,
               );
-              if (certificate === undefined) continue;
+              if (certificate === undefined) {
+                if (
+                  !semantic_slice_is_disproved(
+                    candidate,
+                    node.span,
+                    requirement,
+                  )
+                ) {
+                  continue;
+                }
+                expect(
+                  verify_semantic_slice_disproved(
+                    candidate,
+                    node.span,
+                    requirement,
+                  ),
+                  "FactGraph and the independent verifier disagree about a disproved dynamic slice.",
+                );
+                checks.push(fail(compiler_diagnostic(
+                  diagnostic_codes.partial_operation_unproved,
+                  "disproved: cannot prove slice bounds 0 <= start <= end <= length(value).",
+                  node.span,
+                )));
+                slice_disproved = true;
+                break;
+              }
               expect(
                 verify_semantic_slice_bounds_certificate(
                   certificate,
@@ -2133,8 +2178,9 @@ function validate_slice_obligations(
               );
               break;
             }
-            if (certificate !== undefined) break;
+            if (certificate !== undefined || slice_disproved) break;
           }
+          if (slice_disproved) continue;
           if (certificate === undefined) {
             let message =
               "unknown: cannot prove slice bounds 0 <= start <= end <= length(value).";

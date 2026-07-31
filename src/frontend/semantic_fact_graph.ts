@@ -641,6 +641,147 @@ export function semantic_slice_is_unreachable(
   ) === "unreachable";
 }
 
+export function semantic_slice_is_disproved(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  requirement: SemanticSliceBoundsRequirement,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_slice_at_span(control_flow, operation_span);
+  if (
+    target === undefined ||
+    target.node.inputs[0] !== requirement.object ||
+    target.node.inputs[1] !== requirement.start ||
+    target.node.inputs[2] !== requirement.end
+  ) {
+    return false;
+  }
+  let object_type = control_flow.values.find((value) =>
+    value.value === requirement.object
+  )?.type;
+  if (object_type === undefined) return false;
+  while (object_type.tag === "owned") object_type = object_type.value;
+  const is_text = object_type.tag === "scalar" &&
+    object_type.name === "Text";
+  const is_bytes = object_type.tag === "scalar" &&
+    object_type.name === "Bytes";
+  if (!is_text && !is_bytes) return false;
+  if (is_bytes && requirement.utf8_boundaries !== undefined) return false;
+  if (is_text && requirement.utf8_boundaries !== "static_literal") {
+    return false;
+  }
+  let above_length: SemanticMachineRequirement;
+  if (requirement.length !== undefined) {
+    if (
+      !Number.isSafeInteger(requirement.length) ||
+      requirement.length < 0 ||
+      target.node.operation.tag !== "slice" ||
+      target.node.operation.length !== requirement.length
+    ) {
+      return false;
+    }
+    above_length = {
+      tag: "fact",
+      proposition: {
+        tag: "greater_than",
+        value: requirement.end,
+        bound: BigInt(requirement.length),
+      },
+    };
+  } else {
+    const aliases = loop_invariant_aliases(control_flow);
+    let matching_measure = false;
+    if (requirement.length_value !== undefined) {
+      for (const block of control_flow.blocks) {
+        for (const node of block.nodes) {
+          const measured_object = node.inputs[0];
+          const indexed_object = resolved_alias(requirement.object, aliases);
+          let resolved_measured_object: ValueId | undefined;
+          if (measured_object !== undefined) {
+            resolved_measured_object = resolved_alias(
+              measured_object,
+              aliases,
+            );
+          }
+          if (
+            node.operation.tag === "call" &&
+            node.operation.function_name === "@len" &&
+            node.inputs.length === 1 &&
+            indexed_object !== undefined &&
+            resolved_measured_object === indexed_object &&
+            node.outputs.length === 1 &&
+            node.outputs[0] === requirement.length_value
+          ) {
+            matching_measure = true;
+          }
+        }
+      }
+    }
+    if (
+      requirement.length_value === undefined ||
+      target.node.operation.tag !== "slice" ||
+      target.node.operation.length !== undefined ||
+      !matching_measure
+    ) {
+      return false;
+    }
+    above_length = {
+      tag: "difference",
+      left: requirement.length_value,
+      right: requirement.end,
+      maximum: -1n,
+    };
+  }
+  const below_zero: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "less_than",
+      value: requirement.start,
+      bound: 0n,
+    },
+  };
+  const reversed: SemanticMachineRequirement = {
+    tag: "difference",
+    left: requirement.end,
+    right: requirement.start,
+    maximum: -1n,
+  };
+  const violations = [below_zero, reversed, above_length];
+  for (let index = 0; index < violations.length; index += 1) {
+    const violation = violations[index];
+    if (violation === undefined) return false;
+    if (
+      semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        violation,
+      ) === "proved"
+    ) {
+      return true;
+    }
+    for (
+      let alternative_index = index + 1;
+      alternative_index < violations.length;
+      alternative_index += 1
+    ) {
+      const alternative = violations[alternative_index];
+      if (alternative === undefined) return false;
+      if (
+        semantic_cfg_machine_path_result_at_target(
+          control_flow,
+          target,
+          violation,
+          undefined,
+          alternative,
+        ) === "proved"
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function infer_semantic_primitive_safety_certificate(
   control_flow: SemanticCfg,
   operation_span: SourceSpan,
