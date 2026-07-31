@@ -23,6 +23,11 @@ export type SemanticOperation =
   | { tag: "constant"; value: string | number | bigint | boolean }
   | { tag: "primitive"; name: string }
   | { tag: "type_test"; type: string }
+  | {
+    tag: "index";
+    length: number | undefined;
+    mode: "read" | "move" | "write";
+  }
   | { tag: "project"; field: string }
   | { tag: "construct"; constructor: string }
   | { tag: "call"; function_name: string }
@@ -311,6 +316,146 @@ export function semantic_cfg_is_well_formed(
           return false;
         }
       }
+      if (node.operation.tag === "index") {
+        let expected_inputs = 2;
+        if (node.operation.mode === "write") expected_inputs = 3;
+        if (
+          (node.operation.mode !== "read" &&
+            node.operation.mode !== "move" &&
+            node.operation.mode !== "write") ||
+          node.inputs.length !== expected_inputs ||
+          node.outputs.length !== 1 ||
+          (node.operation.length !== undefined &&
+            (!Number.isSafeInteger(node.operation.length) ||
+              node.operation.length < 0))
+        ) {
+          return false;
+        }
+        const object_value = node.inputs[0];
+        if (object_value === undefined) return false;
+        const stored_object_type = values.get(object_value)?.type;
+        if (stored_object_type === undefined) return false;
+        let object_type = stored_object_type;
+        while (object_type.tag === "owned") object_type = object_type.value;
+        const index_value = node.inputs[1];
+        if (index_value === undefined) return false;
+        let index_type = values.get(index_value)?.type;
+        if (index_type === undefined) return false;
+        while (index_type.tag === "owned") index_type = index_type.value;
+        const index_is_i32_family = index_type.tag === "scalar" &&
+            (index_type.name === "Int" || index_type.name === "I32" ||
+              index_type.name === "U32") ||
+          index_type.tag === "integer" && index_type.width <= 32;
+        if (!index_is_i32_family) return false;
+        let static_length: number | undefined;
+        let element_type: RepresentationType | undefined;
+        if (
+          object_type.tag === "product" || object_type.tag === "record"
+        ) {
+          static_length = object_type.fields.length;
+          const index_producer = producers.get(index_value)?.node;
+          if (
+            index_producer?.operation.tag === "constant" &&
+            (typeof index_producer.operation.value === "number" ||
+              typeof index_producer.operation.value === "bigint")
+          ) {
+            const constant = index_producer.operation.value;
+            let field_index: number | undefined;
+            if (
+              typeof constant === "number" &&
+              Number.isSafeInteger(constant)
+            ) {
+              field_index = constant;
+            } else if (
+              typeof constant === "bigint" &&
+              constant >= BigInt(Number.MIN_SAFE_INTEGER) &&
+              constant <= BigInt(Number.MAX_SAFE_INTEGER)
+            ) {
+              field_index = Number(constant);
+            }
+            if (field_index !== undefined) {
+              element_type = object_type.fields[field_index]?.type;
+            }
+            if (element_type === undefined) {
+              const first = object_type.fields[0]?.type;
+              if (
+                first !== undefined &&
+                object_type.fields.every((field) =>
+                  same_representation_type(field.type, first)
+                )
+              ) {
+                element_type = first;
+              }
+            }
+          } else {
+            const first = object_type.fields[0]?.type;
+            if (
+              first !== undefined &&
+              object_type.fields.every((field) =>
+                same_representation_type(field.type, first)
+              )
+            ) {
+              element_type = first;
+            }
+          }
+        } else if (object_type.tag === "fixed_array") {
+          static_length = object_type.length;
+          element_type = object_type.element;
+        } else if (
+          object_type.tag === "scalar" &&
+          (object_type.name === "Text" || object_type.name === "Bytes")
+        ) {
+          element_type = { tag: "scalar", name: "I32" };
+        }
+        if (node.operation.length !== static_length) return false;
+        if (element_type === undefined) return false;
+        const output_value = node.outputs[0];
+        if (output_value === undefined) return false;
+        const output_type = values.get(output_value)?.type;
+        if (output_type === undefined) return false;
+        if (node.operation.mode === "write") {
+          const replacement_value = node.inputs[2];
+          if (replacement_value === undefined) return false;
+          const replacement_type = values.get(replacement_value)?.type;
+          if (
+            replacement_type === undefined ||
+            !same_representation_type(replacement_type, element_type) ||
+            !same_representation_type(output_type, stored_object_type)
+          ) {
+            return false;
+          }
+        } else if (!same_representation_type(output_type, element_type)) {
+          return false;
+        }
+      }
+      if (
+        node.operation.tag === "call" &&
+        node.operation.function_name === "@len"
+      ) {
+        if (node.inputs.length !== 1 || node.outputs.length !== 1) return false;
+        const object_value = node.inputs[0];
+        const output_value = node.outputs[0];
+        if (object_value === undefined || output_value === undefined) {
+          return false;
+        }
+        let object_type = values.get(object_value)?.type;
+        let output_type = values.get(output_value)?.type;
+        if (object_type === undefined || output_type === undefined) {
+          return false;
+        }
+        while (object_type.tag === "owned") object_type = object_type.value;
+        while (output_type.tag === "owned") output_type = output_type.value;
+        const measurable = object_type.tag === "product" ||
+          object_type.tag === "record" ||
+          object_type.tag === "fixed_array" ||
+          object_type.tag === "scalar" &&
+            (object_type.name === "Text" || object_type.name === "Bytes");
+        const returns_i32 = output_type.tag === "scalar" &&
+            (output_type.name === "Int" || output_type.name === "I32") ||
+          output_type.tag === "integer" &&
+            output_type.signed && output_type.width === 32;
+        if (!measurable || !returns_i32) return false;
+      }
       if (node.operation.tag === "phi") {
         if (
           node.outputs.length !== 1 ||
@@ -417,6 +562,35 @@ export function semantic_calls_at_span(
     }
   }
   return calls;
+}
+
+export function unique_semantic_index_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): { block: SemanticBlock; node: SemanticNode } | undefined {
+  const indexes = semantic_indexes_at_span(control_flow, span);
+  if (indexes.length !== 1) return undefined;
+  return indexes[0];
+}
+
+export function semantic_indexes_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): readonly { block: SemanticBlock; node: SemanticNode }[] {
+  const indexes: { block: SemanticBlock; node: SemanticNode }[] = [];
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "index" ||
+        node.span.start !== span.start ||
+        node.span.end !== span.end
+      ) {
+        continue;
+      }
+      indexes.push({ block, node });
+    }
+  }
+  return indexes;
 }
 
 export type SemanticCallableControlFlow = {
@@ -1048,6 +1222,22 @@ function snapshot_operation(operation: SemanticOperation): SemanticOperation {
       return Object.freeze({
         tag: "type_test",
         type: required_text(operation.type),
+      });
+    case "index":
+      expect(
+        operation.length === undefined ||
+          Number.isSafeInteger(operation.length) && operation.length >= 0,
+        "CFG index length must be a non-negative safe integer.",
+      );
+      expect(
+        operation.mode === "read" || operation.mode === "move" ||
+          operation.mode === "write",
+        "CFG index mode is invalid.",
+      );
+      return Object.freeze({
+        tag: "index",
+        length: operation.length,
+        mode: operation.mode,
       });
     case "project":
       return Object.freeze({

@@ -159,6 +159,228 @@ Deno.test("Duck compiler erases branch-established proofs", async () => {
   }
 });
 
+Deno.test("Duck compiler erases guarded index bounds certificates", async () => {
+  const source = "let read = (values: [I32, I32, I32], index: I32) => " +
+    "if index >= 0 && index < 3 then values[index] else 0 end;\n" +
+    "read ([20, 21, 22], 2)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded index source to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("index_bounds"),
+    false,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 22 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler executes guarded unsigned indexes", async () => {
+  const source = "let read = (values: [I32, I32], index: U32) => " +
+    "if index < 2u32 then values[index] else 0 end;\n" +
+    "read ([20, 22], 1u32)\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 22 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects unchecked indexes before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let read = (values: [I32, I32], index: I32) => values[index];\n" +
+          "0\n",
+      ),
+    "unknown: cannot prove index bounds 0 <= index < 2.",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let read = (value: Text, index: I32) => @get(value, index);\n" +
+          "0\n",
+      ),
+    "this value has no compile-time length measure",
+  );
+});
+
+Deno.test("Duck compiler rejects first-class get before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let invoke: ((([I32, I32], I32) -> I32), [I32, I32], I32) -> I32 = " +
+          "(getter, values, index) => getter(values, index);\n" +
+          "invoke (@get, [20, 22], 2)\n",
+      ),
+    "partial intrinsic @get cannot escape a directly checked call",
+  );
+});
+
+Deno.test("Duck compiler rejects non-I32 index operands before encoding", () => {
+  for (
+    const source of [
+      "let read = (values: [I32, I32], index: I64) => values[index];\n0\n",
+      "let read = (values: [I32, I32], index: F32) => values[index];\n0\n",
+      "let write = (values: [I32, I32], index: I64) => do\n" +
+      "values[index] = 1;\n0\nend;\n0\n",
+    ]
+  ) {
+    assert_throws(
+      () => encode_duck_module(source),
+      "Index expects an integer no wider than 32 bits",
+    );
+  }
+});
+
+Deno.test("Duck file compilation rejects unchecked indexes", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-index-proof-",
+  });
+  const path = directory + "/unchecked.duck";
+  Deno.writeTextFileSync(
+    path,
+    "let read = (values: [I32, I32], index: I32) => values[index];\n" +
+      "0\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(path),
+      "unknown: cannot prove index bounds 0 <= index < 2.",
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation rejects non-I32 index operands", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-index-type-",
+  });
+  const path = directory + "/invalid.duck";
+  Deno.writeTextFileSync(
+    path,
+    "let read = (values: [I32, I32], index: F32) => values[index];\n0\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(path),
+      "Index expects an integer no wider than 32 bits",
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation checks indexes inside const callables", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-const-index-proof-",
+  });
+  const path = directory + "/unchecked.duck";
+  Deno.writeTextFileSync(
+    path,
+    "const read: ([I32, I32], I32) -> I32 = " +
+      "(values, index) => values[index];\n" +
+      "read ([20, 22], 2)\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(path),
+      "unknown: cannot prove index bounds 0 <= index < 2.",
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck gpufuck lowering retains traps for proved index updates", () => {
+  const source = "let update = (values: [I32; 2], index: I32) => do\n" +
+    "if index >= 0 && index < 2 then values[index] = 42; end;\n" +
+    "values\n" +
+    "end;\n" +
+    "0\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded fixed-array update to lower.");
+  }
+  const lowered = lower_duck_semantic_program_to_gpufuck(
+    analysis.source,
+    program,
+    new TextEncoder().encode(source).byteLength,
+  );
+  const artifact = JSON.stringify(lowered.artifact);
+  assert_equals(artifact.includes('"alternate"'), true);
+  assert_equals(artifact.includes("$DuckRuntime:trap"), true);
+  assert_equals(lowered.encoded.nodeCount > 0, true);
+});
+
+Deno.test("Duck compiler lowers unreachable empty-array indexes", () => {
+  const module = encode_duck_module(
+    "let read = (values: [I32; 0], index: I32) => " +
+      "if false then values[index] else 0 end;\n" +
+      "0\n",
+  );
+  assert_equals(module.nodeCount > 0, true);
+});
+
+Deno.test("Duck compiler lowers unreachable out-of-range indexes", () => {
+  for (
+    const source of [
+      "let read = (values: [I32, I32]) => " +
+      "if false then values[2] else 0 end;\n0\n",
+      "let read = (values: [I32; 2]) => " +
+      "if false then values[2] else 0 end;\n0\n",
+    ]
+  ) {
+    const module = encode_duck_module(source);
+    assert_equals(module.nodeCount > 0, true);
+  }
+});
+
+Deno.test("Duck compiler updates statically selected heterogeneous fields", async () => {
+  const source = 'let pair: [I32, Text] = [20, "a"];\n' +
+    'pair[1] = "b";\n' +
+    'if pair[1] == "b" then 42 else 0 end\n';
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler updates statically selected named fields", async () => {
+  const source = 'const { .struct } = import "duck:prelude" ();\n' +
+    "type Pair = struct { .first = Int, .second = Text }\n" +
+    'let pair: Pair = [20, "a"];\n' +
+    'pair[1] = "b";\n' +
+    'if pair.second == "b" then 42 else 0 end\n';
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases type-membership branch proofs", async () => {
   const proved_source = "type Alias = I32\n" +
     "type consume = " +
@@ -4108,10 +4330,14 @@ Deno.test("Duck compiler executes Bytes conversion and slicing", async () => {
   try {
     const execution = await compiler.run(`
 scratch do
+  let final_byte = (joined: Bytes) => do
+    let joined_length = @len joined;
+    if 2 < joined_length then joined_length * 100 + @get(joined, 2) else 0 end
+  end;
   let bytes: Bytes = @Utf8.encode("AB");
   let part: Bytes = @slice(bytes, 0, 2);
   let joined: Bytes = @append(part, @Utf8.encode("C"));
-  @len(joined) * 100 + @get(joined, 2)
+  final_byte joined
 end
 `);
     assert_equals(execution.value, { kind: "integer", value: 367 });
@@ -4358,18 +4584,16 @@ Deno.test("Duck compiler emits host callables as persistent exports", async () =
   const compiler = await DuckCompiler.create();
   const storage_source = `
 let add: (I32, I32) -> I32 = (left, right) => left + right;
-let sum_to: I32 -> I32 = rec (value: I32) => {
-  if value == 0 { 0 } else { value + rec(value - 1) }
-};
+let sum_to: I32 -> I32 = rec (value: I32) =>
+  if value == 0 then 0 else value + rec(value - 1) end;
 add(sum_to(6), 21)
 `;
   const callable_source = `
 module () where
 
 let add: (I32, I32) -> I32 = (left, right) => left + right;
-let sum_to: I32 -> I32 = rec (value: I32) => {
-  if value == 0 { 0 } else { value + rec(value - 1) }
-};
+let sum_to: I32 -> I32 = rec (value: I32) =>
+  if value == 0 then 0 else value + rec(value - 1) end;
 return { .add = add, .sum_to = sum_to, .answer = 42 };
 `;
   try {

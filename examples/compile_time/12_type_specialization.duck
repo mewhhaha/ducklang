@@ -1,23 +1,9 @@
 const { .struct } = import "duck:prelude" ();
-const { .length } = import "duck:prelude/runtime" ();
-
 type Player = struct { .left = Int, .right = Int }
 
-const fold = rec (values, index, state, next) => do
-  if index == length values then
-    state
-  else
-    rec(values, index + 1, next(state, values[index]), next)
-  end;
-end;
-
-const add_field = (sum, field) => do
-  value => sum value + @project(value, field)
-end;
-
 const derive_sum = (const target) => do
-  const fields = @describe_fields target;
-  fold(fields, 0, value => 0, add_field)
+  const [left, right] = @describe_fields target;
+  value => @project(value, left) + @project(value, right)
 end;
 
 const sum_player = comptime derive_sum Player;

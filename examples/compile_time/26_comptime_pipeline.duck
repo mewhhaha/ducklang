@@ -1,15 +1,7 @@
-const { .length } = import "duck:prelude/runtime" ();
-
-const compose_all = rec (steps, index, composed) => do
-  if index == length steps then
-    composed
-  else
-    rec(steps, index + 1, value => steps[index](composed value))
-  end;
+const pipeline = (const steps) => comptime do
+  const [first, second, third] = steps;
+  value => third(second(first(value)))
 end;
-
-const pipeline =
-  (const steps) => comptime compose_all(steps, 0, value => value);
 
 const normalize = comptime pipeline [
   value => value + 1,

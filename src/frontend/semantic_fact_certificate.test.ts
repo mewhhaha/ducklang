@@ -2,6 +2,7 @@ import { assert_equals } from "../assert.ts";
 import { normalize_machine_integer } from "./fact_graph.ts";
 import {
   semantic_bounded_offset_certificate,
+  semantic_index_bounds_certificate,
   semantic_machine_certificate,
   semantic_predicate_certificate,
   semantic_remainder_certificate,
@@ -9,11 +10,13 @@ import {
   semantic_type_certificate,
   semantic_unreachable_certificate,
   type SemanticBoundedOffsetRequirement,
+  type SemanticIndexBoundsRequirement,
   type SemanticMachineRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   type SemanticTypeRequirement,
   verify_semantic_bounded_offset_certificate,
+  verify_semantic_index_bounds_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
@@ -22,6 +25,7 @@ import {
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
 import {
+  infer_semantic_index_bounds_certificate,
   infer_semantic_machine_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
@@ -37,6 +41,14 @@ const i32_type = { tag: "scalar", name: "I32" } as const;
 const u32_type = { tag: "scalar", name: "U32" } as const;
 const u64_type = { tag: "integer", signed: false, width: 64 } as const;
 const bool_type = { tag: "scalar", name: "Bool" } as const;
+const text_type = { tag: "scalar", name: "Text" } as const;
+const pair_type = {
+  tag: "product",
+  fields: [
+    { label: undefined, type: i32_type },
+    { label: undefined, type: i32_type },
+  ],
+} as const;
 
 Deno.test("semantic type certificates verify positive branch membership", () => {
   const builder = new SemanticCfgBuilder("positive-type-certificate");
@@ -1672,6 +1684,334 @@ Deno.test("semantic remainder certificates reject ambiguous producer outputs", (
       false,
     );
   }
+});
+
+Deno.test("semantic index certificates independently verify both bounds", () => {
+  const builder = new SemanticCfgBuilder("index-bounds-certificate");
+  const entry = builder.add_block(origin);
+  const nonnegative = builder.add_block("index-nonnegative:1:2:0" as never);
+  const in_bounds = builder.add_block("index-in-bounds:2:3:0" as never);
+  const fallback = builder.add_block("index-fallback:3:4:0" as never);
+  const values = "index-values" as ValueId;
+  const index = "index-parameter" as ValueId;
+  builder.add_parameter(values, pair_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  builder.add_parameter(index, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const zero = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (zero === undefined) throw new Error("Expected lower index bound.");
+  const has_lower_bound = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 3 },
+    { tag: "primitive", name: "i32.ge_s" },
+    [index, zero],
+    [bool_type],
+  )[0];
+  if (has_lower_bound === undefined) {
+    throw new Error("Expected lower index comparison.");
+  }
+  builder.connect(entry, nonnegative);
+  builder.connect(entry, fallback);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition: has_lower_bound,
+    when_true: nonnegative,
+    when_false: fallback,
+  });
+  const length = builder.add_node(
+    nonnegative,
+    "index-nonnegative:1:2:0" as never,
+    { start: 4, end: 5 },
+    { tag: "constant", value: 2 },
+    [],
+    [i32_type],
+  )[0];
+  if (length === undefined) throw new Error("Expected upper index bound.");
+  const has_upper_bound = builder.add_node(
+    nonnegative,
+    "index-nonnegative:1:2:0" as never,
+    { start: 4, end: 8 },
+    { tag: "primitive", name: "i32.lt_s" },
+    [index, length],
+    [bool_type],
+  )[0];
+  if (has_upper_bound === undefined) {
+    throw new Error("Expected upper index comparison.");
+  }
+  builder.connect(nonnegative, in_bounds);
+  builder.connect(nonnegative, fallback);
+  builder.terminate(nonnegative, {
+    tag: "branch",
+    condition: has_upper_bound,
+    when_true: in_bounds,
+    when_false: fallback,
+  });
+  const index_span = { start: 9, end: 22 };
+  const result = builder.add_node(
+    in_bounds,
+    "index-in-bounds:2:3:0" as never,
+    index_span,
+    { tag: "index", length: 2, mode: "read" },
+    [values, index],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected indexed value.");
+  builder.terminate(in_bounds, { tag: "return", value: result });
+  builder.terminate(fallback, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const requirement: SemanticIndexBoundsRequirement = { index, length: 2 };
+  const certificate = infer_semantic_index_bounds_certificate(
+    control_flow,
+    index_span,
+    requirement,
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected inferred semantic index certificate.");
+  }
+
+  assert_equals(certificate.tag, "index_bounds");
+  assert_equals(
+    verify_semantic_index_bounds_certificate(
+      certificate,
+      control_flow,
+      index_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(certificate), true);
+  assert_equals(Object.isFrozen(certificate.index_span), true);
+  assert_equals(Object.isFrozen(certificate.requirement), true);
+
+  const forged_requirement: SemanticIndexBoundsRequirement = {
+    index,
+    length: 1,
+  };
+  const forged = semantic_index_bounds_certificate(
+    index_span,
+    forged_requirement,
+  );
+  assert_equals(
+    verify_semantic_index_bounds_certificate(
+      forged,
+      control_flow,
+      index_span,
+      forged_requirement,
+    ),
+    false,
+  );
+
+  const inverted_lower_bound = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (node.outputs[0] !== has_lower_bound) return node;
+        return {
+          ...node,
+          operation: { tag: "primitive", name: "i32.lt_s" } as const,
+        };
+      }),
+    })),
+  };
+  assert_equals(
+    semantic_cfg_is_well_formed(inverted_lower_bound),
+    true,
+  );
+  assert_equals(
+    infer_semantic_index_bounds_certificate(
+      inverted_lower_bound,
+      index_span,
+      requirement,
+    ),
+    undefined,
+  );
+
+  const forged_layout = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (node.span.start !== index_span.start) return node;
+        return {
+          ...node,
+          operation: { tag: "index", length: 3, mode: "read" } as const,
+        };
+      }),
+    })),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged_layout), false);
+  const forged_layout_requirement: SemanticIndexBoundsRequirement = {
+    index,
+    length: 3,
+  };
+  assert_equals(
+    verify_semantic_index_bounds_certificate(
+      semantic_index_bounds_certificate(
+        index_span,
+        forged_layout_requirement,
+      ),
+      forged_layout,
+      index_span,
+      forged_layout_requirement,
+    ),
+    false,
+  );
+});
+
+Deno.test("dynamic index certificates bind length measures to their object", () => {
+  const builder = new SemanticCfgBuilder("dynamic-index-certificate");
+  const entry = builder.add_block(origin);
+  const nonnegative = builder.add_block("dynamic-nonnegative:1:2:0" as never);
+  const in_bounds = builder.add_block("dynamic-in-bounds:2:3:0" as never);
+  const fallback = builder.add_block("dynamic-fallback:3:4:0" as never);
+  const value = "dynamic-value" as ValueId;
+  const other = "dynamic-other" as ValueId;
+  const index = "dynamic-index" as ValueId;
+  builder.add_parameter(value, text_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  builder.add_parameter(other, text_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  builder.add_parameter(index, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const zero = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 1 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  const length = builder.add_node(
+    entry,
+    origin,
+    { start: 1, end: 2 },
+    { tag: "call", function_name: "@len" },
+    [value],
+    [i32_type],
+  )[0];
+  if (zero === undefined || length === undefined) {
+    throw new Error("Expected dynamic index setup values.");
+  }
+  const has_lower_bound = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "primitive", name: "i32.ge_s" },
+    [index, zero],
+    [bool_type],
+  )[0];
+  if (has_lower_bound === undefined) {
+    throw new Error("Expected dynamic lower-bound comparison.");
+  }
+  builder.connect(entry, nonnegative);
+  builder.connect(entry, fallback);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition: has_lower_bound,
+    when_true: nonnegative,
+    when_false: fallback,
+  });
+  const has_upper_bound = builder.add_node(
+    nonnegative,
+    origin,
+    { start: 3, end: 4 },
+    { tag: "primitive", name: "i32.lt_s" },
+    [index, length],
+    [bool_type],
+  )[0];
+  if (has_upper_bound === undefined) {
+    throw new Error("Expected dynamic upper-bound comparison.");
+  }
+  builder.connect(nonnegative, in_bounds);
+  builder.connect(nonnegative, fallback);
+  builder.terminate(nonnegative, {
+    tag: "branch",
+    condition: has_upper_bound,
+    when_true: in_bounds,
+    when_false: fallback,
+  });
+  const index_span = { start: 4, end: 5 };
+  const result = builder.add_node(
+    in_bounds,
+    origin,
+    index_span,
+    { tag: "index", length: undefined, mode: "read" },
+    [value, index],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected dynamic index result.");
+  builder.terminate(in_bounds, { tag: "return", value: result });
+  builder.terminate(fallback, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const requirement: SemanticIndexBoundsRequirement = {
+    index,
+    length_value: length,
+    object: value,
+  };
+  const certificate = infer_semantic_index_bounds_certificate(
+    control_flow,
+    index_span,
+    requirement,
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected a dynamic index certificate.");
+  }
+  assert_equals(
+    verify_semantic_index_bounds_certificate(
+      certificate,
+      control_flow,
+      index_span,
+      requirement,
+    ),
+    true,
+  );
+
+  const unrelated: SemanticIndexBoundsRequirement = {
+    index,
+    length_value: length,
+    object: other,
+  };
+  assert_equals(
+    verify_semantic_index_bounds_certificate(
+      semantic_index_bounds_certificate(index_span, unrelated),
+      control_flow,
+      index_span,
+      unrelated,
+    ),
+    false,
+  );
+  assert_equals(
+    infer_semantic_index_bounds_certificate(
+      control_flow,
+      index_span,
+      unrelated,
+    ),
+    undefined,
+  );
 });
 
 Deno.test("semantic machine certificates independently verify CFG bounds", () => {

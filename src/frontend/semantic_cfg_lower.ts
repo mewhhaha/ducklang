@@ -143,7 +143,7 @@ export function semantic_cfgs_from_source(
     return { root: control_flow, callables };
   } catch (error) {
     if (error instanceof SemanticCfgUnavailable) {
-      return { root: undefined, callables: new Map() };
+      return { root: undefined, callables };
     }
     throw error;
   }
@@ -241,6 +241,17 @@ function build_semantic_cfg_from_source(
     allow_captures: false,
     transparent_type_definitions,
   };
+  for (const statement of source.statements) {
+    if (statement.tag === "bind") associate_callable_group(statement, context);
+  }
+  for (const statement of source.statements) {
+    if (statement.tag !== "bind") continue;
+    prebuild_capture_free_callable(statement.value, context);
+    if (statement.mutual === undefined) continue;
+    for (const member of statement.mutual) {
+      prebuild_capture_free_callable(member.value, context);
+    }
+  }
   const lowered = lower_statements(source.statements, entry, context);
   if (!lowered.terminated) {
     let result: ValueId | undefined;
@@ -248,6 +259,123 @@ function build_semantic_cfg_from_source(
     builder.terminate(lowered.block, { tag: "return", value: result });
   }
   return builder.finish();
+}
+
+function prebuild_capture_free_callable(
+  expression: FrontExpr,
+  context: LoweringContext,
+): void {
+  if (expression.tag !== "lam" && expression.tag !== "rec") return;
+  if (!callable_is_syntactically_capture_free(expression, context)) return;
+  const type = representation_of(expression, context);
+  const identity = callable_output(expression, type, context);
+  if (!identity.body_available) return;
+  const callable = lower_callable_control_flow(
+    expression,
+    identity.output.value,
+    type,
+    context,
+  );
+  if (callable === undefined) return;
+  for (const parameter of callable.control_flow.parameters) {
+    if (callable.declared_parameters.has(parameter)) continue;
+    if (callable.recursive_values.has(parameter)) continue;
+    return;
+  }
+  for (const [value, nested] of callable.nested_callables) {
+    context.callable_control_flow.set(value, nested);
+  }
+  let recursive_self: ValueId | undefined;
+  if (
+    expression.tag === "rec" ||
+    (identity.binding !== undefined && identity.binding.recursive)
+  ) {
+    recursive_self = identity.output.value;
+  }
+  context.callable_control_flow.set(
+    identity.output.value,
+    Object.freeze({
+      callable: identity.output.value,
+      parameters: Object.freeze([...callable.declared_parameters]),
+      captures: Object.freeze([]),
+      recursive_self,
+      recursive_group: Object.freeze([...callable.recursive_values]),
+      control_flow: callable.control_flow,
+    }),
+  );
+}
+
+function callable_is_syntactically_capture_free(
+  expression: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  context: LoweringContext,
+): boolean {
+  const span = source_span(expression);
+  const binding = context.callable_bindings.get(expression);
+  for (const occurrence of context.binding_index.occurrences.values()) {
+    if (
+      occurrence.role !== "reference" || occurrence.entity === undefined ||
+      occurrence.span.start < span.start || occurrence.span.end > span.end
+    ) {
+      continue;
+    }
+    const entity = context.binding_index.entities.get(occurrence.entity);
+    expect(
+      entity !== undefined,
+      `Callable reference ${occurrence.name} lost its binding entity.`,
+    );
+    if (!runtime_binding(entity)) continue;
+    if (binding?.entity.id === entity.id) continue;
+    if (entity.definition === undefined) return false;
+    const definition = context.binding_index.occurrences.get(
+      entity.definition,
+    );
+    expect(
+      definition !== undefined,
+      `Callable reference ${occurrence.name} lost its definition.`,
+    );
+    if (
+      definition.span.start < span.start || definition.span.end > span.end
+    ) {
+      return false;
+    }
+  }
+  for (const entity of context.binding_index.entities.values()) {
+    if (entity.replaces === undefined || entity.definition === undefined) {
+      continue;
+    }
+    const definition = context.binding_index.occurrences.get(
+      entity.definition,
+    );
+    expect(
+      definition !== undefined,
+      `Callable replacement ${entity.name} lost its definition.`,
+    );
+    if (
+      definition.span.start < span.start || definition.span.end > span.end
+    ) {
+      continue;
+    }
+    const predecessor = context.binding_index.entities.get(entity.replaces);
+    expect(
+      predecessor !== undefined,
+      `Callable replacement ${entity.name} lost its predecessor.`,
+    );
+    if (predecessor.definition === undefined) return false;
+    const predecessor_definition = context.binding_index.occurrences.get(
+      predecessor.definition,
+    );
+    expect(
+      predecessor_definition !== undefined,
+      `Callable replacement ${entity.name} lost its predecessor definition.`,
+    );
+    if (
+      predecessor_definition.span.start < span.start ||
+      predecessor_definition.span.end > span.end
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function lower_statements(
@@ -481,10 +609,11 @@ function lower_statement(
       return statement_value(replacement.block, value, replacement.type);
     }
     const type = binding_entity_type(entity, context);
+    const length = static_aggregate_length(type);
     const value = emit_operation(
       replacement.block,
       statement,
-      { tag: "primitive", name: "index-set" },
+      { tag: "index", length, mode: "write" },
       [replaced_value(entity, context), index.value, replacement.value],
       type,
       semantic_output(entity, context),
@@ -1345,6 +1474,50 @@ function lower_expression(
   if (expression.tag === "app") {
     if (
       expression.func.tag === "var" &&
+      expression.func.name === "@len" &&
+      expression.args.length === 1
+    ) {
+      const operands = lower_expressions(expression.args, block, context);
+      if (operands.tag === "terminated") return operands;
+      const value = emit_operation(
+        operands.block,
+        expression,
+        { tag: "call", function_name: "@len" },
+        operands.values,
+        type,
+        undefined,
+        context,
+      );
+      return { tag: "value", block: operands.block, value, type };
+    }
+    if (
+      expression.func.tag === "var" &&
+      expression.func.name === "@get" &&
+      expression.args.length === 2
+    ) {
+      const operands = lower_expressions(expression.args, block, context);
+      if (operands.tag === "terminated") return operands;
+      const object = operands.values[0];
+      expect(object !== undefined, "@get object was not lowered.");
+      const object_type = context.value_types.get(object);
+      expect(object_type !== undefined, "@get object lost its type.");
+      const value = emit_operation(
+        operands.block,
+        expression,
+        {
+          tag: "index",
+          length: static_aggregate_length(object_type),
+          mode: "read",
+        },
+        operands.values,
+        type,
+        undefined,
+        context,
+      );
+      return { tag: "value", block: operands.block, value, type };
+    }
+    if (
+      expression.func.tag === "var" &&
       (expression.func.name === "@bit_and" ||
         expression.func.name === "@bit_or" ||
         expression.func.name === "@bit_xor") &&
@@ -1501,12 +1674,20 @@ function lower_expression(
       context,
     );
     if (operands.tag === "terminated") return operands;
-    let field = "index";
-    if (expression.move === true) field = "move-index";
+    const object = operands.values[0];
+    expect(object !== undefined, "Index object was not lowered.");
+    const object_type = context.value_types.get(object);
+    expect(object_type !== undefined, "Index object lost its type.");
+    let mode: "read" | "move" = "read";
+    if (expression.move === true) mode = "move";
     const value = emit_operation(
       operands.block,
       expression,
-      { tag: "project", field },
+      {
+        tag: "index",
+        length: static_aggregate_length(object_type),
+        mode,
+      },
       operands.values,
       type,
       undefined,
@@ -1607,7 +1788,8 @@ function lower_expression(
     const callable_identity = callable_output(expression, type, context);
     const output = callable_identity.output;
     let callable: LoweredCallableControlFlow | undefined;
-    if (callable_identity.body_available) {
+    const prebuilt = context.callable_control_flow.get(output.value);
+    if (callable_identity.body_available && prebuilt === undefined) {
       callable = lower_callable_control_flow(
         expression,
         output.value,
@@ -1616,6 +1798,7 @@ function lower_expression(
       );
     }
     const captures: ValueId[] = [];
+    if (prebuilt !== undefined) captures.push(...prebuilt.captures);
     if (callable !== undefined) {
       let captures_available = true;
       for (const parameter of callable.control_flow.parameters) {
@@ -2146,6 +2329,18 @@ function normalize_condition(
     );
   }
   return condition.value;
+}
+
+function static_aggregate_length(
+  type: RepresentationType,
+): number | undefined {
+  let aggregate = type;
+  while (aggregate.tag === "owned") aggregate = aggregate.value;
+  if (aggregate.tag === "product" || aggregate.tag === "record") {
+    return aggregate.fields.length;
+  }
+  if (aggregate.tag === "fixed_array") return aggregate.length;
+  return undefined;
 }
 
 type LoweredOperands =
@@ -2895,7 +3090,7 @@ function representation_of(
   subject: object,
   context: LoweringContext,
 ): RepresentationType {
-  const type = context.binding_index.representation_of(subject);
+  let type = context.binding_index.representation_of(subject);
   if (type === undefined) {
     const record = subject as { tag?: unknown };
     if (record.tag === "type_name") {
@@ -2911,7 +3106,10 @@ function representation_of(
       if (!runtime_binding(entity)) {
         return Object.freeze({ tag: "scalar", name: "Type" });
       }
+      type = context.binding_index.facts.get(entity.id)?.representation;
     }
+  }
+  if (type === undefined) {
     const location = semantic_location(subject, context.root);
     throw new SemanticCfgUnavailable(
       `Semantic expression at ${location.span.start}:${location.span.end} has no representation type.`,

@@ -3,7 +3,10 @@ type Pair = [Tree, Tree]
 
 let rec tree_sum = (tree: Tree) => case tree of
   #Leaf value => value,
-  #Fork pair => tree_sum pair[0] + tree_sum pair[1];
+  #Fork pair => do
+    let [left, right] = pair;
+    tree_sum left + tree_sum right
+  end;
 
 let small: Tree = #Leaf 9;
 let large: Tree = #Leaf 20;

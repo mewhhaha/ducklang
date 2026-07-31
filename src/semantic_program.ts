@@ -55,6 +55,7 @@ import {
   type TransparentTypeDefinition,
 } from "./frontend/transparent_type.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
+import { source_with_host_callable_exports } from "./frontend/host_exports.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
 import { parse_number_expr } from "./frontend/number_literal.ts";
 import { is_snake_case } from "./frontend/names.ts";
@@ -72,6 +73,7 @@ import type {
 import { semantic_calls_at_span } from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
+  clone_source_tree,
   has_source_span,
   mark_source_span,
   mark_source_syntax,
@@ -97,11 +99,13 @@ import {
 import type { FactState } from "./frontend/fact_graph.ts";
 import {
   infer_semantic_bounded_offset_certificate,
+  infer_semantic_index_bounds_certificate,
   infer_semantic_machine_certificate,
   infer_semantic_remainder_certificate,
   infer_semantic_remainder_divisibility_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
+  semantic_index_is_unreachable,
   type SemanticMachineRequirement,
   type SemanticTypeRequirement,
 } from "./frontend/semantic_fact_graph.ts";
@@ -109,10 +113,13 @@ import {
   semantic_predicate_certificate,
   type SemanticBoundedOffsetRequirement,
   type SemanticControlFlowCertificate,
+  type SemanticIndexBoundsRequirement,
   type SemanticPredicateAtom,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   verify_semantic_bounded_offset_certificate,
+  verify_semantic_index_bounds_certificate,
+  verify_semantic_index_unreachable,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
@@ -439,9 +446,24 @@ export function analyze_duck_source(
     origins,
     transparent_types,
   );
+  let index_coverage_diagnostics: CompilerDiagnostic[] = [];
+  if (!has_error_diagnostics(precontract_diagnostics)) {
+    index_coverage_diagnostics = validate_index_obligation_coverage(
+      source_analysis.source,
+      binding_index,
+      inferred_control_flow,
+      inferred_callable_control_flow,
+    );
+  }
+  const index_validation = validate_index_obligations(
+    inferred_control_flow,
+    inferred_callable_control_flow,
+  );
   const diagnostics = diagnostic_sequence([
     ...precontract_diagnostics,
     ...contract_validation.diagnostics,
+    ...index_coverage_diagnostics,
+    ...index_validation.diagnostics,
   ], options.uri);
   let control_flow: SemanticCfg | undefined;
   let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
@@ -463,7 +485,10 @@ export function analyze_duck_source(
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap(types),
     facts: new FrozenMap<ValueId, FactState>([]),
-    proofs: new FrozenMap(contract_validation.proofs),
+    proofs: new FrozenMap([
+      ...contract_validation.proofs,
+      ...index_validation.proofs,
+    ]),
     origins: new FrozenMap(origins),
     function_summaries: new FrozenMap<string, FunctionFactSummary>([]),
   };
@@ -1153,6 +1178,427 @@ function collect_transparent_alias_dependencies(
       dependencies,
     );
   }
+}
+
+function validate_index_obligation_coverage(
+  source: SourceNode,
+  binding_index: BindingIndex,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): CompilerDiagnostic[] {
+  const covered_spans = new Set<string>();
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (const candidate of control_flows) {
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "index") continue;
+        covered_spans.add(
+          node.span.start.toString() + ":" + node.span.end.toString(),
+        );
+      }
+    }
+  }
+
+  const obligation_subjects: object[] = [];
+  const facts = source_facts(source);
+  const direct_get_callees = new Set<FrontExpr>();
+  for (const expression of facts.expressions) {
+    if (expression.tag === "index") {
+      obligation_subjects.push(expression);
+      continue;
+    }
+    if (
+      expression.tag === "app" &&
+      expression.func.tag === "var" &&
+      expression.func.name === "@get"
+    ) {
+      direct_get_callees.add(expression.func);
+      obligation_subjects.push(expression);
+    }
+  }
+  for (const statement of facts.statements) {
+    if (statement.tag === "index_assign") {
+      obligation_subjects.push(statement);
+    }
+  }
+
+  const checks: Checked<null>[] = [];
+  for (const expression of facts.expressions) {
+    if (
+      expression.tag !== "var" || expression.name !== "@get" ||
+      direct_get_callees.has(expression)
+    ) {
+      continue;
+    }
+    if (!has_source_span(expression)) continue;
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: partial intrinsic @get cannot escape a directly checked call.",
+      source_span(expression),
+    )));
+  }
+  for (const subject of obligation_subjects) {
+    if (!has_source_span(subject)) continue;
+    const span = source_span(subject);
+    const key = span.start.toString() + ":" + span.end.toString();
+    if (covered_spans.has(key)) continue;
+    if (static_index_operation_is_total(subject, binding_index)) continue;
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: the compiler could not construct an index proof obligation.",
+      span,
+    )));
+  }
+  return diagnostics_of(all(checks));
+}
+
+function static_index_operation_is_total(
+  subject: object,
+  binding_index: BindingIndex,
+): boolean {
+  const expression = subject as FrontExpr | Stmt;
+  let object: FrontExpr | undefined;
+  let index: FrontExpr | undefined;
+  let object_entity: EntityId | undefined;
+  if (expression.tag === "index") {
+    object = expression.object;
+    index = expression.index;
+  } else if (
+    expression.tag === "app" &&
+    expression.func.tag === "var" &&
+    expression.func.name === "@get"
+  ) {
+    object = expression.args[0];
+    index = expression.args[1];
+  } else if (expression.tag === "index_assign") {
+    index = expression.index;
+    object_entity = binding_index.occurrence_of(expression, "name")?.entity;
+  }
+  let index_value: number | undefined;
+  if (
+    index?.tag === "num" && index.type === "i32" &&
+    index.character === undefined && typeof index.value === "number" &&
+    Number.isSafeInteger(index.value)
+  ) {
+    index_value = index.value;
+  } else if (index?.tag === "var" || index?.tag === "linear") {
+    let entity_id = binding_index.occurrence_of(index, "name")?.entity;
+    const visited_entities = new Set<EntityId>();
+    while (
+      entity_id !== undefined && !visited_entities.has(entity_id)
+    ) {
+      visited_entities.add(entity_id);
+      const entity = binding_index.entities.get(entity_id);
+      const definition = entity?.definition_subject as {
+        value?: FrontExpr;
+      } | undefined;
+      const value = definition?.value;
+      if (
+        value?.tag === "num" && value.type === "i32" &&
+        value.character === undefined && typeof value.value === "number" &&
+        Number.isSafeInteger(value.value)
+      ) {
+        index_value = value.value;
+        break;
+      }
+      entity_id = entity?.replaces;
+    }
+  }
+  if (index_value === undefined) return false;
+  const direct_length = source_aggregate_length(object);
+  if (direct_length !== undefined) {
+    return index_value >= 0 && index_value < direct_length;
+  }
+  let object_type: RepresentationType | undefined;
+  if (object !== undefined) {
+    object_type = binding_index.representation_of(object);
+  }
+  let annotated_length: number | undefined;
+  if (
+    object !== undefined &&
+    (object.tag === "var" || object.tag === "linear")
+  ) {
+    const occurrence = binding_index.occurrence_of(object, "name");
+    object_entity = occurrence?.entity;
+  }
+  if (object_entity !== undefined) {
+    const visited_entities = new Set<EntityId>();
+    while (!visited_entities.has(object_entity)) {
+      visited_entities.add(object_entity);
+      const current = binding_index.entities.get(object_entity);
+      if (current?.replaces === undefined) break;
+      object_entity = current.replaces;
+    }
+    if (object_type === undefined) {
+      object_type = binding_index.facts.get(object_entity)?.representation;
+    }
+    const entity = binding_index.entities.get(object_entity);
+    if (entity !== undefined) {
+      const definition = entity?.definition_subject as {
+        type_annotation?: TypeExpr;
+        value?: FrontExpr;
+      } | undefined;
+      annotated_length = source_aggregate_length(definition?.value);
+      const annotation = definition?.type_annotation;
+      if (annotated_length === undefined) {
+        if (annotation?.tag === "tuple") {
+          annotated_length = annotation.items.length;
+        } else if (
+          annotation?.tag === "product" &&
+          annotation.repeat === undefined
+        ) {
+          annotated_length = annotation.entries.length;
+        } else if (
+          annotation?.tag === "array" &&
+          annotation.length.tag === "number"
+        ) {
+          annotated_length = annotation.length.value;
+        }
+      }
+    }
+  }
+  if (annotated_length !== undefined) {
+    return index_value >= 0 && index_value < annotated_length;
+  }
+  if (object_type === undefined) {
+    return false;
+  }
+  while (object_type.tag === "owned") object_type = object_type.value;
+  let length: number | undefined;
+  if (object_type.tag === "product" || object_type.tag === "record") {
+    length = object_type.fields.length;
+  } else if (object_type.tag === "fixed_array") {
+    length = object_type.length;
+  }
+  return length !== undefined && index_value >= 0 && index_value < length;
+}
+
+function source_aggregate_length(
+  expression: FrontExpr | undefined,
+): number | undefined {
+  if (
+    expression?.tag === "product" || expression?.tag === "shape"
+  ) {
+    return expression.entries.length;
+  }
+  if (expression?.tag === "array" && expression.rest === undefined) {
+    return expression.items.length;
+  }
+  if (
+    expression?.tag === "array_repeat" &&
+    expression.length.tag === "num" &&
+    expression.length.type === "i32" &&
+    typeof expression.length.value === "number" &&
+    Number.isSafeInteger(expression.length.value) &&
+    expression.length.value >= 0
+  ) {
+    return expression.length.value;
+  }
+  return undefined;
+}
+
+function validate_index_obligations(
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): {
+  diagnostics: CompilerDiagnostic[];
+  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+} {
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (let flow_index = 0; flow_index < control_flows.length; flow_index += 1) {
+    const candidate = control_flows[flow_index];
+    expect(candidate !== undefined, `Index validation lost CFG ${flow_index}.`);
+    const producers = new Map<ValueId, SemanticNode>();
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        for (const output of node.outputs) producers.set(output, node);
+      }
+    }
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "index") continue;
+        if (semantic_index_is_unreachable(candidate, node.span)) {
+          expect(
+            verify_semantic_index_unreachable(candidate, node.span),
+            "FactGraph and the independent verifier disagree about an unreachable index.",
+          );
+          continue;
+        }
+        const index = node.inputs[1];
+        expect(index !== undefined, "Semantic index lost its index ValueId.");
+        const length = node.operation.length;
+        if (length === undefined) {
+          const object = node.inputs[0];
+          expect(
+            object !== undefined,
+            "Semantic index lost its object ValueId.",
+          );
+          let proved_dynamic_length = false;
+          for (const candidate_block of candidate.blocks) {
+            for (const candidate_node of candidate_block.nodes) {
+              if (
+                candidate_node.operation.tag !== "call" ||
+                candidate_node.operation.function_name !== "@len" ||
+                candidate_node.inputs.length !== 1 ||
+                candidate_node.inputs[0] !== object ||
+                candidate_node.outputs.length !== 1
+              ) {
+                continue;
+              }
+              const length_value = candidate_node.outputs[0];
+              expect(
+                length_value !== undefined,
+                "Semantic length measure lost its ValueId.",
+              );
+              const requirement: SemanticIndexBoundsRequirement = {
+                index,
+                length_value,
+                object,
+              };
+              const certificate = infer_semantic_index_bounds_certificate(
+                candidate,
+                node.span,
+                requirement,
+              );
+              if (certificate === undefined) continue;
+              expect(
+                verify_semantic_index_bounds_certificate(
+                  certificate,
+                  candidate,
+                  node.span,
+                  requirement,
+                ),
+                "FactGraph produced an invalid dynamic index bounds certificate.",
+              );
+              const environment = KernelEnvironment.empty();
+              const term_context = snapshot_kernel_context([]);
+              const kernel_certificate = check_proof(
+                { tag: "true_intro" },
+                { tag: "true" },
+                {
+                  allow_unsafe: false,
+                  require_safe: true,
+                  environment,
+                  term_context,
+                },
+              );
+              checks.push(ok({
+                key: "index:" + flow_index.toString() + ":" +
+                  node.span.start.toString() + ":" + node.span.end.toString(),
+                proof: Object.freeze({
+                  certificate: kernel_certificate,
+                  environment,
+                  term_context,
+                  semantic_certificate: certificate,
+                }),
+              }));
+              proved_dynamic_length = true;
+              break;
+            }
+            if (proved_dynamic_length) break;
+          }
+          if (proved_dynamic_length) continue;
+          checks.push(
+            fail(
+              compiler_diagnostic(
+                diagnostic_codes.partial_operation_unproved,
+                "unknown: cannot prove index bounds 0 <= index < length(value); this value has no compile-time length measure.",
+                node.span,
+              ),
+            ),
+          );
+          continue;
+        }
+        const requirement: SemanticIndexBoundsRequirement = { index, length };
+        const certificate = infer_semantic_index_bounds_certificate(
+          candidate,
+          node.span,
+          requirement,
+        );
+        if (certificate === undefined) {
+          let status = "unknown";
+          const producer = producers.get(index);
+          if (
+            producer?.operation.tag === "constant" &&
+            (typeof producer.operation.value === "number" ||
+              typeof producer.operation.value === "bigint")
+          ) {
+            const constant = producer.operation.value;
+            if (
+              typeof constant === "bigint" ||
+              Number.isSafeInteger(constant)
+            ) {
+              const value = BigInt(constant);
+              if (value < 0n || value >= BigInt(length)) status = "disproved";
+            }
+          }
+          checks.push(
+            fail(
+              compiler_diagnostic(
+                diagnostic_codes.partial_operation_unproved,
+                `${status}: cannot prove index bounds 0 <= index < ${length}.`,
+                node.span,
+              ),
+            ),
+          );
+          continue;
+        }
+        expect(
+          verify_semantic_index_bounds_certificate(
+            certificate,
+            candidate,
+            node.span,
+            requirement,
+          ),
+          "FactGraph produced an invalid semantic index bounds certificate.",
+        );
+        const environment = KernelEnvironment.empty();
+        const term_context = snapshot_kernel_context([]);
+        const kernel_certificate = check_proof(
+          { tag: "true_intro" },
+          { tag: "true" },
+          {
+            allow_unsafe: false,
+            require_safe: true,
+            environment,
+            term_context,
+          },
+        );
+        checks.push(
+          ok({
+            key: "index:" + flow_index.toString() + ":" +
+              node.span.start.toString() + ":" + node.id.toString(),
+            proof: Object.freeze({
+              certificate: kernel_certificate,
+              environment,
+              term_context,
+              semantic_certificate: certificate,
+            }),
+          }),
+        );
+      }
+    }
+  }
+  const proofs = new Map<string, CheckedKernelCertificate>();
+  for (const check of checks) {
+    const checked = checked_value(check);
+    if (checked !== undefined) proofs.set(checked.key, checked.proof);
+  }
+  return {
+    diagnostics: diagnostics_of(all(checks)),
+    proofs,
+  };
 }
 
 function validate_prefix_contracts(
@@ -8508,7 +8954,10 @@ export function lower_duck_source(
     return fail(...analysis.diagnostics);
   }
   try {
-    return check_source_for_gpufuck(analysis.source).map((source) => {
+    const lowering_source = source_with_host_callable_exports(
+      clone_source_tree(analysis.source),
+    );
+    return check_source_for_gpufuck(lowering_source).map((source) => {
       const core = core_from_source(source);
       freeze_semantic_graph(analysis.source);
       freeze_semantic_graph(core);

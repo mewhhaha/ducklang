@@ -286,6 +286,7 @@ export function associate_prefix_signatures(
 
   for (const definition of stable_definitions) {
     const key = scoped_name(definition.scope, definition.name);
+    if (!signatures_by_key.has(key)) continue;
     if (definitions_by_key.has(key)) {
       const previous = definitions_by_key.get(key);
       diagnostics.push(

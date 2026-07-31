@@ -2,7 +2,9 @@ import { expect } from "../expect.ts";
 import {
   derive_source_span,
   has_source_span,
+  mark_source_span,
   source_span,
+  source_span_origin,
   type SourceSpan,
 } from "../source_span.ts";
 import type { Token } from "./token.ts";
@@ -54,6 +56,40 @@ export type SourceSyntax = {
   diagnostics: SyntaxDiagnostic[];
   position_at(offset: number): SourcePosition;
 };
+
+export function clone_source_tree<value extends object>(source: value): value {
+  const cloned = structuredClone(source);
+  const pending: [object, object][] = [[source, cloned]];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const pair = pending.pop();
+    expect(pair !== undefined, "Source clone lost a pending syntax node");
+    const source_node = pair[0];
+    const target_node = pair[1];
+    if (visited.has(source_node)) continue;
+    visited.add(source_node);
+    if (has_source_span(source_node)) {
+      const span = source_span(source_node);
+      if (source_span_origin(source_node) === "concrete") {
+        mark_source_span(target_node, span);
+      } else {
+        derive_source_span(target_node, span);
+      }
+    }
+    const target_fields = target_node as Record<string, unknown>;
+    for (const [name, source_field] of Object.entries(source_node)) {
+      const target_field = target_fields[name];
+      if (
+        source_field === null || typeof source_field !== "object" ||
+        target_field === null || typeof target_field !== "object"
+      ) {
+        continue;
+      }
+      pending.push([source_field, target_field]);
+    }
+  }
+  return cloned;
+}
 
 const node_syntaxes = new WeakMap<object, SourceSyntax>();
 

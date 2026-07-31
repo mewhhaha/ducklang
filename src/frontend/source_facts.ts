@@ -215,6 +215,7 @@ export type SourceTypeFact = {
   nominal: string | undefined;
   duck_member?: { declaration: string; member: string };
   type_arguments?: SourceTypeFact[];
+  fixed_array?: { length: number; element: SourceTypeFact };
   call_params: (SourceTypeFact | undefined)[] | undefined;
   call_result: SourceTypeFact | undefined;
   fields: SourceFieldTypeFact[] | undefined;
@@ -527,7 +528,10 @@ function collect_unresolved_annotation_names(
   }
 
   if (annotation.tag === "name") {
-    if (!known_names.has(annotation.name)) {
+    if (
+      !known_names.has(annotation.name) &&
+      !is_builtin_type_name(annotation.name)
+    ) {
       unresolved_names.add(annotation.name);
     }
 
@@ -2030,7 +2034,7 @@ class SourceFactRecorder {
             type = this.type_from_name(result_name);
           }
         } else if (func !== undefined) {
-          type = this.specialize_call_result(func, args, expr);
+          type = this.specialize_call_result(func, args, expr, expected);
         }
       } else if (func !== undefined) {
         let inferred_callable = false;
@@ -2047,7 +2051,7 @@ class SourceFactRecorder {
         if (inferred_callable) {
           type = func.call_result;
         } else {
-          type = this.specialize_call_result(func, args, expr);
+          type = this.specialize_call_result(func, args, expr, expected);
         }
       }
     } else if (expr.tag === "block") {
@@ -2210,6 +2214,7 @@ class SourceFactRecorder {
     func: SourceTypeFact,
     args: (SourceTypeFact | undefined)[],
     subject: object,
+    expected?: SourceTypeFact,
   ): SourceTypeFact | undefined {
     const exact_error = exact_call_constraint_error(func, args);
 
@@ -2227,7 +2232,7 @@ class SourceFactRecorder {
       return undefined;
     }
 
-    return specialize_call_result(func, args);
+    return specialize_call_result(func, args, expected);
   }
 
   builtin_call_name(
@@ -3188,6 +3193,18 @@ class SourceFactRecorder {
       return named_type("I32");
     }
 
+    const canonical_object = object.canonical_type();
+    if (canonical_object?.tag === "fixed_array") {
+      if (index === undefined || !is_i32_family(index)) {
+        return undefined;
+      }
+
+      return source_type_from_canonical(
+        canonical_object.element,
+        new Map(),
+      );
+    }
+
     const fields = source_fields(object);
 
     if (fields === undefined) {
@@ -3198,10 +3215,11 @@ class SourceFactRecorder {
       const numeric_index = Number(expr.index.value);
 
       if (Number.isInteger(numeric_index) && numeric_index >= 0) {
-        return projected_source_type(object, fields[numeric_index]?.type);
+        const field = fields[numeric_index];
+        if (field !== undefined) {
+          return projected_source_type(object, field.type);
+        }
       }
-
-      return undefined;
     }
 
     if (index === undefined || !is_i32_family(index)) {
@@ -4544,7 +4562,14 @@ class SourceFactRecorder {
         return named_type("unknown");
       }
 
-      return named_type(format_type_expr(type_expr));
+      const type = named_type(format_type_expr(type_expr));
+      if (type_expr.length.tag === "number") {
+        type.fixed_array = {
+          length: type_expr.length.value,
+          element,
+        };
+      }
+      return type;
     }
 
     if (
@@ -5304,6 +5329,25 @@ function builtin_call_result(
       return named_type("I32");
     }
 
+    const object = args[0];
+    const index = args[1];
+    if (
+      args.length === 2 && object !== undefined && index !== undefined &&
+      is_i32_family(index)
+    ) {
+      const canonical_object = object.canonical_type();
+      if (canonical_object?.tag === "fixed_array") {
+        return source_type_from_canonical(
+          canonical_object.element,
+          new Map(),
+        );
+      }
+      const fields = source_fields(object);
+      if (fields !== undefined) {
+        return common_type_facts(fields.map((field) => field.type));
+      }
+    }
+
     return undefined;
   }
 
@@ -5687,6 +5731,14 @@ function collect_source_inference_variables(
     }
   }
 
+  if (type.fixed_array !== undefined) {
+    collect_source_inference_variables(
+      type.fixed_array.element,
+      variables,
+      visited,
+    );
+  }
+
   if (type.cases !== undefined) {
     for (const payload of type.cases.values()) {
       collect_source_inference_variables(payload, variables, visited);
@@ -6031,6 +6083,23 @@ function canonical_type_from_source_fact(
     return { tag: "function", params, effects: [], result };
   }
 
+  if (source.fixed_array !== undefined) {
+    const element = canonical_type_from_source_fact(
+      source.fixed_array.element,
+      engine,
+      variables,
+      visiting,
+      unwrapped_quantifiers,
+      variable_kind,
+    );
+    if (element === undefined) return undefined;
+    return {
+      tag: "fixed_array",
+      length: source.fixed_array.length,
+      element,
+    };
+  }
+
   if (source.nominal !== undefined) {
     const args: Type[] = [];
 
@@ -6186,6 +6255,7 @@ function source_type_literal(
 function specialize_call_result(
   func: SourceTypeFact,
   args: (SourceTypeFact | undefined)[],
+  expected?: SourceTypeFact,
 ): SourceTypeFact | undefined {
   if (func.call_params === undefined || func.call_result === undefined) {
     return undefined;
@@ -6241,6 +6311,29 @@ function specialize_call_result(
       }
 
       return undefined;
+    }
+  }
+
+  if (expected !== undefined) {
+    const result_type = canonical_type_from_source_fact(
+      func.call_result,
+      engine,
+      expected_variables,
+      new Set(),
+    );
+    const expected_type = canonical_type_from_source_fact(
+      expected,
+      engine,
+      actual_variables,
+      new Set(),
+    );
+    if (result_type !== undefined && expected_type !== undefined) {
+      try {
+        engine.unify(result_type, expected_type, "call result");
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        return undefined;
+      }
     }
   }
 
@@ -6342,6 +6435,17 @@ function clone_source_type(
     result.type_arguments = source.type_arguments.map((argument) =>
       clone_source_type(argument, replacements, copied)
     );
+  }
+
+  if (source.fixed_array !== undefined) {
+    result.fixed_array = {
+      length: source.fixed_array.length,
+      element: clone_source_type(
+        source.fixed_array.element,
+        replacements,
+        copied,
+      ),
+    };
   }
 
   if (source.quantified_variables !== undefined) {
@@ -6509,6 +6613,18 @@ function materialize_source_type_from_engine(
       result.type_arguments,
     );
     result.resolved_name = result.name;
+  }
+
+  if (source.fixed_array !== undefined) {
+    result.fixed_array = {
+      length: source.fixed_array.length,
+      element: materialize_source_type_from_engine(
+        source.fixed_array.element,
+        engine,
+        variables,
+        copied,
+      ),
+    };
   }
 
   if (source.quantified_variables !== undefined) {
@@ -6738,8 +6854,14 @@ function source_type_from_canonical(
         false,
       );
 
-    case "fixed_array":
-      return named_type(format_type(type));
+    case "fixed_array": {
+      const result = named_type(format_type(type));
+      result.fixed_array = {
+        length: type.length,
+        element: source_type_from_canonical(type.element, variables),
+      };
+      return result;
+    }
 
     case "sum": {
       const cases = new Map<string, SourceTypeFact>();
@@ -7196,6 +7318,13 @@ function source_type_fact_is_resolved(
         return false;
       }
     }
+  }
+
+  if (
+    type.fixed_array !== undefined &&
+    !source_type_fact_is_resolved(type.fixed_array.element, visiting)
+  ) {
+    return false;
   }
 
   if (type.cases !== undefined) {

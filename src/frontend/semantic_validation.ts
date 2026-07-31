@@ -737,7 +737,7 @@ function validate_statement(
     mark_binding_used(stmt.name, env);
     validate_expr(stmt.index, env, diagnostics);
     validate_expr(stmt.value, env, diagnostics);
-    validate_numeric_boundary(stmt.index, "Index", env, diagnostics);
+    validate_index_boundary(stmt.index, "Index", env, diagnostics);
 
     const binding = env.bindings.get(stmt.name);
 
@@ -811,6 +811,15 @@ function validate_statement(
     }
 
     const actual = infer_type(stmt.value, env);
+    if (!same_type(expected, actual)) {
+      diagnostics.push(source_diagnostic(
+        "DUCK2306",
+        "Struct index update expects " + type_name(expected) + ", got " +
+          type_name(actual),
+        stmt.value,
+      ));
+      return;
+    }
 
     const representation_diagnostic = value_representation_diagnostic(
       "DUCK2306",
@@ -1977,7 +1986,7 @@ function validate_expr(
         const index = expr.args[1];
 
         if (index !== undefined) {
-          validate_numeric_boundary(index, "get index", env, diagnostics);
+          validate_index_boundary(index, "get index", env, diagnostics);
         }
       }
 
@@ -1986,11 +1995,11 @@ function validate_expr(
         const end = expr.args[2];
 
         if (start !== undefined) {
-          validate_numeric_boundary(start, "slice start", env, diagnostics);
+          validate_index_boundary(start, "slice start", env, diagnostics);
         }
 
         if (end !== undefined) {
-          validate_numeric_boundary(end, "slice end", env, diagnostics);
+          validate_index_boundary(end, "slice end", env, diagnostics);
         }
       }
     }
@@ -2335,7 +2344,7 @@ function validate_expr(
       return;
     }
 
-    validate_numeric_boundary(expr.index, "Index", env, diagnostics);
+    validate_index_boundary(expr.index, "Index", env, diagnostics);
 
     if (diagnostics.length !== before) {
       return;
@@ -3572,6 +3581,26 @@ function validate_numeric_boundary(
   diagnostics.push(gpufuck_representation_diagnostic(
     "DUCK2302",
     label + " expects numeric value, got " + name,
+    expr,
+  ));
+}
+
+function validate_index_boundary(
+  expr: FrontExpr,
+  label: string,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  const type = infer_type(expr, env);
+  if (type.tag === "unknown") return;
+  if (type.tag === "int" && type.type === "i32") {
+    if (type.integer === undefined || type.integer.width <= 32) return;
+  }
+
+  diagnostics.push(source_diagnostic(
+    "DUCK2302",
+    label + " expects an integer no wider than 32 bits, got " +
+      type_name(type),
     expr,
   ));
 }

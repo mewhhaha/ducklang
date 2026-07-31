@@ -3,7 +3,10 @@ const derive_scaled_area = (const scale) => (const target) => #Replace (comptime
     .scaled_area = (shape: target) => do
       case shape of
         #Square side => side * side * scale,
-        #Sides pair => pair[0] * pair[1] * scale,
+        #Sides pair => do
+          let [width, height] = pair;
+          width * height * scale
+        end,
         _ => 0;
     end,
   }

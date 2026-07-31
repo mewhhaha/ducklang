@@ -15,8 +15,21 @@ end;
 
 let append = (output, byte) => do
   let buffer = output.buffer;
-  buffer[output.length] = byte
-  Builder.new { .buffer = buffer, .length = output.length + 1 }
+  let capacity = @len buffer;
+  let insertion_index = output.length;
+  if insertion_index >= 0 && insertion_index < capacity then
+    do
+      buffer[insertion_index] = byte
+      Builder.new { .buffer = buffer, .length = insertion_index + 1 }
+    end
+  else
+    output
+  end
+end;
+
+let byte_at = (bytes: Bytes, index: I32) => do
+  let length = @len bytes;
+  if index >= 0 && index < length then @get(bytes, index) else 0 end
 end;
 
 let collect = capacity => do
@@ -36,4 +49,4 @@ let emitted = try do
   ()
 end with collect 4;
 
-emitted[0] + emitted[1]
+byte_at(emitted, 0) + byte_at(emitted, 1)

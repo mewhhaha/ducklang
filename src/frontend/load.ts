@@ -20,12 +20,9 @@ import { checked_value, diagnostics_of } from "./checked.ts";
 import { pattern_bindings } from "./pattern.ts";
 import { bundled_source_text } from "./prelude.ts";
 import {
-  derive_source_span,
+  clone_source_tree,
   has_source_span,
   inherit_source_span,
-  mark_source_span,
-  source_span,
-  source_span_origin,
 } from "./syntax.ts";
 import { map_defined } from "../optional.ts";
 
@@ -1154,40 +1151,7 @@ function parse_import_source(href: string, text: string): SourceNode {
     parsed = cached;
   }
 
-  const cloned: SourceNode = structuredClone(parsed);
-  const pending: [object, object][] = [[parsed, cloned]];
-  const visited = new WeakSet<object>();
-  while (pending.length > 0) {
-    const pair = pending.pop();
-    if (pair === undefined) {
-      throw new Error("Bundled source clone lost a pending syntax node");
-    }
-    const source_node = pair[0];
-    const target_node = pair[1];
-    if (visited.has(source_node)) {
-      continue;
-    }
-    visited.add(source_node);
-    if (has_source_span(source_node)) {
-      const span = source_span(source_node);
-      if (source_span_origin(source_node) === "concrete") {
-        mark_source_span(target_node, span);
-      } else {
-        derive_source_span(target_node, span);
-      }
-    }
-    const target_fields = target_node as Record<string, unknown>;
-    for (const [name, source_field] of Object.entries(source_node)) {
-      const target_field = target_fields[name];
-      if (
-        source_field !== null && typeof source_field === "object" &&
-        target_field !== null && typeof target_field === "object"
-      ) {
-        pending.push([source_field as object, target_field as object]);
-      }
-    }
-  }
-  return cloned;
+  return clone_source_tree(parsed);
 }
 
 function lower_import_source(href: string, text: string): SourceNode {

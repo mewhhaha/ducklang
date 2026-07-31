@@ -26,8 +26,12 @@ let values: Commands = Commands.prepend(
 
 case values of
   #MoreCommands first => do
-    case first[1] of
-      #MoreCommands second => first[0] + second[0],
-      _ => first[0];
+    let [first_value, remaining] = first;
+    case remaining of
+      #MoreCommands second => do
+        let [second_value, _] = second;
+        first_value + second_value
+      end,
+      _ => first_value;
   end,
   _ => 0;

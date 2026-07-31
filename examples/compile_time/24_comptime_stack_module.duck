@@ -13,14 +13,15 @@ const stack_module = (const item_type, const stack_type, const node_type) => com
   end;
   const top = (values: stack_type, fallback: item_type) => do
     if let #Node node = values then
-      node[0]
+      let [head, _] = node;
+      head
     else
       fallback
     end;
   end;
   const rest = (values: stack_type) => do
     if let #Node node = values then
-      let tail: stack_type = node[1];
+      let [_, tail] = node;
       tail
     else
       values

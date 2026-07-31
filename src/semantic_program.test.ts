@@ -688,6 +688,17 @@ Deno.test("Baba indexed assignments reach semantic Core", () => {
     "pair\n";
   const analysis = analyze_duck_source(parse_duck_source(source));
   assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  assert_equals(
+    analysis.control_flow?.blocks.flatMap((block) => block.nodes).find(
+      (node) => node.operation.tag === "index",
+    )?.operation,
+    { tag: "index", length: 2, mode: "write" },
+  );
   const pair = analysis.symbols.get("pair");
   if (pair === undefined) {
     throw new Error("Expected indexed aggregate identities");
@@ -3056,6 +3067,308 @@ Deno.test("FactGraph proves weaker bounds from short-circuit branches", () => {
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
+Deno.test("guarded aggregate indexes carry erased bounds certificates", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => " +
+      "if index >= 0 && index < 2 then values[index] else 0 end;\n" +
+      "read ([20, 22], 1)\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded aggregate index to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("index_bounds"),
+    false,
+  );
+});
+
+Deno.test("guarded indexed updates carry the same bounds certificate", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let update = (values: [I32, I32], index: I32) => do\n" +
+      "if index >= 0 && index < 2 then values[index] = 22; end;\n" +
+      "values\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+  assert_equals(
+    [...guarded.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  assert_equals(
+    guarded.callable_control_flow.values().next().value?.control_flow.blocks
+      .flatMap((block) => block.nodes).find((node) =>
+        node.operation.tag === "index"
+      )?.operation,
+    { tag: "index", length: 2, mode: "write" },
+  );
+
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let update = (values: [I32, I32], index: I32) => do\n" +
+      "values[index] = 22;\n" +
+      "values\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+  assert_equals(unguarded.proofs.size, 0);
+});
+
+Deno.test("unguarded dynamic indexes report the remaining bounds goal", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => values[index];\n" +
+      "read ([20, 22], 1)\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("runtime-sized indexes require an explicit length witness", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => value[index];\n" +
+      "0\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < length(value); this value has no compile-time length measure."
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("runtime length measures prove guarded index bounds", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "if index >= 0 && index < length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+  const certificate = [...guarded.proofs.values()][0]?.semantic_certificate;
+  if (certificate?.tag !== "index_bounds") {
+    throw new Error("Expected dynamic index bounds certificate.");
+  }
+  assert_equals(certificate.requirement.length, undefined);
+  assert_equals(
+    certificate.requirement.length_value === undefined,
+    false,
+  );
+  assert_equals(certificate.requirement.object === undefined, false);
+  assert_equals(checked_value(lower_duck_source(guarded)) !== undefined, true);
+
+  const unrelated = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, other: Text, index: I32) => do\n" +
+      "let length = @len other;\n" +
+      "if index >= 0 && index < length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unrelated.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "this value has no compile-time length measure",
+      )
+    ),
+    true,
+  );
+  assert_equals(unrelated.proofs.size, 0);
+});
+
+Deno.test("raw get obeys the same runtime length obligation", () => {
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => @get(value, index);\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "this value has no compile-time length measure",
+      )
+    ),
+    true,
+  );
+  assert_equals(unguarded.proofs.size, 0);
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "if index >= 0 && index < length then @get(value, index) else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+});
+
+Deno.test("raw get cannot escape its checked call site", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let invoke: ((([I32, I32], I32) -> I32), [I32, I32], I32) -> I32 = " +
+      "(getter, values, index) => getter(values, index);\n" +
+      "invoke (@get, [20, 22], 2)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.message,
+    ]),
+    [[
+      "DUCK2607",
+      "unknown: partial intrinsic @get cannot escape a directly checked call.",
+    ]],
+  );
+});
+
+Deno.test("index operands reject unsupported widths and replacements", () => {
+  for (
+    const source of [
+      "let read = (values: [I32, I32], index: I64) => values[index];\n0\n",
+      "let update = (values: [I32, I32], index: I64) => do " +
+      "values[index] = 1; values end;\n0\n",
+      "let read = (values: [I32, I32], index: F32) => values[index];\n0\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2302" &&
+        diagnostic.message.includes(
+          "Index expects an integer no wider than 32 bits",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+
+  const replacement = analyze_duck_source(parse_duck_source(
+    "let update = (values: [I32, I32], index: I32) => do\n" +
+      'if index >= 0 && index < 2 then values[index] = "wrong"; end;\n' +
+      "values\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    replacement.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2306" &&
+      diagnostic.message.includes("index update expects I32, got Text")
+    ),
+    true,
+  );
+});
+
+Deno.test("fixed arrays expose exact static index bounds", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32; 2], index: I32) => " +
+      "if index >= 0 && index < 2 then values[index] else 0 end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+
+  for (
+    const source of [
+      "let read = (values: [I32; 0]) => values[0];\n0\n",
+      "let read = (values: [I32, Text]) => values[2];\n0\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2607"),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("indexes in impossible range iterations are unreachable", () => {
+  for (
+    const body of [
+      "for unused in 0..0 do values[index]; end;",
+      "for unused in 2..0 do values[index]; end;",
+      "for unused in 0..2 by -1 do values[index]; end;",
+      "for unused in 0..2 do if false then values[index]; end; end;",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "let read = (values: [I32, I32], index: I32) => do " +
+        body + " 0 end;\n0\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("statically invalid indexes are disproved before Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], unused: I32) => values[2];\n" +
+      "read ([20, 22], 0)\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("statically unreachable indexes create no bounds obligation", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => " +
+      "if false then values[index] else 0 end;\n" +
+      "0\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(
+    checked_value(lower_duck_source(analysis)) !== undefined,
+    true,
+  );
+});
+
 Deno.test("short-circuit ordered facts preserve every machine polarity", () => {
   for (const value_type of ["I32", "U32"]) {
     let suffix = "";
@@ -3225,9 +3538,11 @@ Deno.test("range guards establish bounds on every loop visit", () => {
   for (
     const [range, requirement] of [
       ["0..3", "value < 3"],
+      ["0..3", "0 <= value"],
       ["0..=3", "value <= 3"],
       ["3..0 by -1", "0 < value"],
       ["3..=0 by -1", "0 <= value"],
+      ["3..=0 by -1", "value <= 3"],
     ]
   ) {
     const analysis = analyze_duck_source(parse_duck_source(
@@ -3246,6 +3561,63 @@ Deno.test("range guards establish bounds on every loop visit", () => {
     assert_equals(
       [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
       "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("wrapping range edges do not establish induction bounds", () => {
+  for (
+    const [range, requirement] of [
+      ["2147483646..=2147483647", "0 <= value"],
+      ["-2147483647..=-2147483648 by -1", "value <= 0"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type run = () -> I32\n" +
+        "let run = () => do\n" +
+        `for index in ${range} do consume index; end;\n` +
+        "0\n" +
+        "end;\n" +
+        "run ()\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("range loops establish static aggregate index bounds", () => {
+  for (const range of ["0..2", "1..=0 by -1"]) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "let read = (values: [I32, I32]) => do\n" +
+        "let total = 0;\n" +
+        `for index in ${range} do\n` +
+        "total = total + values[index];\n" +
+        "end;\n" +
+        "total\n" +
+        "end;\n" +
+        "0\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "index_bounds",
     );
     assert_equals(
       checked_value(lower_duck_source(analysis)) !== undefined,

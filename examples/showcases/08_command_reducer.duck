@@ -36,8 +36,9 @@ loop do
   let #MoreCommands node = pending else do
     break;
   end;
-  pending = node[1]
-  vault = apply_command(vault, node[0])
+  let [command, remaining] = node;
+  pending = remaining
+  vault = apply_command(vault, command)
 end;
 
 vault.stored

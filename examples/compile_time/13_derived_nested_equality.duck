@@ -1,84 +1,48 @@
 const { .struct } = import "duck:prelude" ();
-const { .length } = import "duck:prelude/runtime" ();
-
 type Point = struct { .x = Int, .y = Int }
 type Pixels = [Int; 2]
 type Shape = | #Point Point | #Code Int
-
-const fold = rec (values, index, state, next) => do
-  if index == length values then
-    state
-  else
-    rec(values, index + 1, next(state, values[index]), next)
-  end;
-end;
-
-const range = rec (index, length) => do
-  if index == length then
-    []
-  else
-    [index, ...rec(index + 1, length)]
-  end;
-end;
 
 const derive_equal = rec (const target) => do
   const description = @describe_type target;
 
   if description.kind == #record then
-    const add_field = (const equal, const field) => do
-      const field_equal = derive_equal field.type;
-
-      const compare = (left, right) => do
-        if equal(left, right) then
-          field_equal(@project(left, field), @project(right, field))
-        else
-          false
-        end;
-      end;
-
-      compare
-    end;
-
-    fold(@describe_fields target, 0, (left, right) => true, add_field)
+    const [first, second] = @describe_fields target;
+    const first_equal = derive_equal first.type;
+    const second_equal = derive_equal second.type;
+    (left, right) =>
+      first_equal(@project(left, first), @project(right, first)) &&
+      second_equal(@project(left, second), @project(right, second))
   else
     if description.kind == #array then
       const element_equal = derive_equal description.element;
-      const indices = range(0, description.length);
-
-      const add_index = (const equal, const index) => do
-        const compare = (left, right) => do
-          if equal(left, right) then
-            element_equal(left[index], right[index])
-          else
-            false
-          end;
-        end;
-
-        compare
-      end;
-
-      fold(indices, 0, (left, right) => true, add_index)
+      (left, right) => do
+        let [left_first, left_second] = left;
+        let [right_first, right_second] = right;
+        element_equal(left_first, right_first) &&
+          element_equal(left_second, right_second)
+      end
     else
       if description.kind == #sum then
-        const add_case = (const equal, const variant) => do
-          const payload_equal = derive_equal variant.type;
-
-          const compare = (left, right) => do
-            if @is_case(left, variant) then
-              if @is_case(right, variant) then
-                payload_equal(@project(left, variant), @project(right, variant))
-              else
-                false
-              end;
-            else
-              equal(left, right)
-            end;
-          end;
-
-          compare
-        end;
-
-        fold(@describe_cases target, 0, (left, right) => false, add_case)
+        const [first, second] = @describe_cases target;
+        const first_equal = derive_equal first.type;
+        const second_equal = derive_equal second.type;
+        (left, right) => do
+          if @is_case(left, first) then
+            @is_case(right, first) &&
+              first_equal(
+                @project(left, first),
+                @project(right, first),
+              )
+          else
+            @is_case(left, second) &&
+              @is_case(right, second) &&
+              second_equal(
+                @project(left, second),
+                @project(right, second),
+              )
+          end
+        end
       else
         (left, right) => left == right
       end;

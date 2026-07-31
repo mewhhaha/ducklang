@@ -11,6 +11,13 @@ const origin = "expression:0:1:0" as never;
 const span = { start: 0, end: 1 };
 const bool_type = { tag: "scalar", name: "Bool" } as const;
 const i32_type = { tag: "scalar", name: "I32" } as const;
+const pair_type = {
+  tag: "product",
+  fields: [
+    { label: undefined, type: i32_type },
+    { label: undefined, type: i32_type },
+  ],
+} as const;
 
 Deno.test("semantic CFG preserves typed operations and stable value identities", () => {
   const builder = new SemanticCfgBuilder("cfg-test");
@@ -489,6 +496,85 @@ Deno.test("semantic CFG rejects duplicate explicit output identities", () => {
     [i32_type],
   )[0];
   assert_equals(retried, fresh);
+});
+
+Deno.test("semantic CFG rejects forged indexed read and write types", () => {
+  const builder = new SemanticCfgBuilder("cfg-index-types");
+  const entry = builder.add_block(origin);
+  const values = "index-values" as ValueId;
+  builder.add_parameter(values, pair_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const index = builder.add_node(
+    entry,
+    origin,
+    { start: 1, end: 2 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  const replacement = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 42 },
+    [],
+    [i32_type],
+  )[0];
+  if (index === undefined || replacement === undefined) {
+    throw new Error("Expected indexed operation inputs.");
+  }
+  const read = builder.add_node(
+    entry,
+    origin,
+    { start: 3, end: 4 },
+    { tag: "index", length: 2, mode: "read" },
+    [values, index],
+    [i32_type],
+  )[0];
+  const write = builder.add_node(
+    entry,
+    origin,
+    { start: 4, end: 5 },
+    { tag: "index", length: 2, mode: "write" },
+    [values, index, replacement],
+    [pair_type],
+  )[0];
+  if (read === undefined || write === undefined) {
+    throw new Error("Expected indexed operation outputs.");
+  }
+  builder.terminate(entry, { tag: "return", value: write });
+  const control_flow = builder.finish();
+  assert_equals(semantic_cfg_is_well_formed(control_flow), true);
+
+  const forged_read = {
+    ...control_flow,
+    values: control_flow.values.map((value) => {
+      if (value.value !== read) return value;
+      return { ...value, type: bool_type };
+    }),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged_read), false);
+
+  const forged_replacement = {
+    ...control_flow,
+    values: control_flow.values.map((value) => {
+      if (value.value !== replacement) return value;
+      return { ...value, type: bool_type };
+    }),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged_replacement), false);
+
+  const forged_write = {
+    ...control_flow,
+    values: control_flow.values.map((value) => {
+      if (value.value !== write) return value;
+      return { ...value, type: i32_type };
+    }),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged_write), false);
 });
 
 Deno.test("semantic CFG rejects representation key collisions at phis", () => {

@@ -24,6 +24,7 @@ import {
   compiler_diagnostic,
   CompilerDiagnosticError,
   diagnostic_codes,
+  type DiagnosticCode,
 } from "../../src/diagnostic.ts";
 import { expect } from "../../src/expect.ts";
 import type { Source as SourceNode } from "../../src/frontend/ast.ts";
@@ -38,6 +39,7 @@ import { extract_prefix_source_metadata } from "../../src/frontend/prefix_signat
 import {
   load_source_fragment_file_with_dependencies,
   type LoadedSourceFragment,
+  resolve_bundled_source_imports,
   source_file_url,
   type SourceDependency,
 } from "../../src/frontend/load.ts";
@@ -54,6 +56,11 @@ import {
 
 const maximum_gpufuck_compilation_steps = 10_000_000;
 const maximum_cached_compiler_entries = 64;
+const index_semantic_diagnostic_codes = new Set<DiagnosticCode>([
+  diagnostic_codes.operand_type_mismatch,
+  diagnostic_codes.annotation_type_mismatch,
+  diagnostic_codes.partial_operation_unproved,
+]);
 
 export type DuckRunOptions =
   & Omit<WasmRunOptions, "init">
@@ -615,29 +622,36 @@ function lower_duck_text(source_text: string): LoweredDuckGpufuckModule {
       ),
     );
   }
-  const source_metadata = extract_prefix_source_metadata(parsed);
-  const has_unsafe_definition = source_metadata.definitions.some(
-    (definition) => definition.unsafe_span !== undefined,
+  const analysis = analyze_duck_source(parsed);
+  const metadata = extract_prefix_source_metadata(parsed);
+  const index_diagnostic = analysis.diagnostics.find((candidate) =>
+    index_semantic_diagnostic_codes.has(candidate.code)
   );
-  const has_proof_definition = source_metadata.definitions.some(
-    (definition) => definition.callable_proof_body !== undefined,
+  if (index_diagnostic !== undefined) {
+    throw new CompilerDiagnosticError(index_diagnostic);
+  }
+  const proof_definition = metadata.definitions.find((definition) =>
+    definition.callable_proof_body !== undefined ||
+    definition.unsafe_span !== undefined
   );
   if (
-    source_metadata.signatures.length === 0 &&
-    !has_unsafe_definition &&
-    !has_proof_definition
+    analysis.diagnostics.length > 0 &&
+    metadata.signatures.length === 0 &&
+    proof_definition === undefined
   ) {
     const lowered = lower_baba_source(parsed);
-    const diagnostic = diagnostics_of(lowered)[0];
-    if (diagnostic !== undefined) {
-      throw new CompilerDiagnosticError(diagnostic);
+    const lowering_diagnostic = diagnostics_of(lowered)[0];
+    if (lowering_diagnostic !== undefined) {
+      throw new CompilerDiagnosticError(lowering_diagnostic);
     }
     const source = checked_value(lowered);
-    expect(source !== undefined, "Baba compiler lowering failed silently.");
+    expect(source !== undefined, "Baba source lowering failed silently.");
     const source_byte_length = new TextEncoder().encode(source_text).byteLength;
-    return lower_gpufuck_source(source, source_byte_length);
+    return lower_duck_source_to_gpufuck(
+      resolve_bundled_source_imports(source),
+      source_byte_length,
+    );
   }
-  const analysis = analyze_duck_source(parsed);
   const semantic_program = lower_duck_source(analysis);
   const diagnostic = diagnostics_of(semantic_program)[0];
   if (diagnostic !== undefined) {
@@ -665,6 +679,7 @@ type LoadedDuckFile = {
   dependencies: readonly SourceDependency[];
   linked_source: string;
   source: SourceNode;
+  semantic_checked: true;
   semantic_program?: {
     program: DuckSemanticProgram;
     source: SourceNode;
@@ -694,7 +709,14 @@ function load_duck_file(
   ) {
     const dependency: SourceDependency = { uri, text };
     const parsed = parse_duck_source(dependency.text);
+    const analysis = analyze_duck_source(parsed);
     const metadata = extract_prefix_source_metadata(parsed);
+    const analysis_diagnostic = analysis.diagnostics.find((diagnostic) =>
+      index_semantic_diagnostic_codes.has(diagnostic.code)
+    );
+    if (analysis_diagnostic !== undefined) {
+      throw new CompilerDiagnosticError(analysis_diagnostic);
+    }
     const signature = metadata.signatures[0];
     const proof_definition = metadata.definitions.find((definition) =>
       definition.callable_proof_body !== undefined
@@ -710,7 +732,6 @@ function load_duck_file(
       continue;
     }
     if (signature === undefined) {
-      const analysis = analyze_duck_source(parsed);
       const checked_program = lower_duck_source(analysis);
       const diagnostic = diagnostics_of(checked_program)[0];
       if (diagnostic !== undefined) {
@@ -734,7 +755,6 @@ function load_duck_file(
         ),
       );
     }
-    const analysis = analyze_duck_source(parsed);
     const checked_program = lower_duck_source(analysis);
     const diagnostic = diagnostics_of(checked_program)[0];
     if (diagnostic !== undefined) {
@@ -777,6 +797,7 @@ function load_duck_file(
     dependencies: ordered_dependencies,
     linked_source,
     source,
+    semantic_checked: true,
     semantic_program,
   };
 }
@@ -878,16 +899,13 @@ function lower_loaded_duck_file(
       input.semantic_program.source_byte_length,
     );
   }
+  expect(
+    input.semantic_checked,
+    "Loaded Duck file bypassed semantic checking.",
+  );
   const source_byte_length = new TextEncoder().encode(input.linked_source)
     .byteLength;
-  return lower_gpufuck_source(input.source, source_byte_length);
-}
-
-function lower_gpufuck_source(
-  source: SourceNode,
-  source_byte_length: number,
-): LoweredDuckGpufuckModule {
-  return lower_duck_source_to_gpufuck(source, source_byte_length);
+  return lower_duck_source_to_gpufuck(input.source, source_byte_length);
 }
 
 function successful_modules(

@@ -48,11 +48,13 @@ import { source_with_expanded_attributes } from "../../src/frontend/attribute_ex
 import { infer_default_effect_handlers } from "../../src/frontend/default_handler.ts";
 import { specialize_front_effects } from "../../src/frontend/effect_specialize.ts";
 import { source_with_host_callable_exports } from "../../src/frontend/host_exports.ts";
+import { clone_source_tree } from "../../src/frontend/syntax.ts";
 import { tokenize } from "../../src/frontend/tokenize.ts";
 import {
   format_type_expr,
   parse_type_expr,
 } from "../../src/frontend/type_expr.ts";
+import { fixed_array_length } from "../../src/frontend/fixed_array_type.ts";
 import type { TypeExpr } from "../../src/type_syntax.ts";
 import type { Prim } from "../../src/op.ts";
 import { expect } from "../../src/expect.ts";
@@ -132,9 +134,10 @@ export function lower_duck_semantic_program_to_gpufuck(
     is_checked_duck_semantic_program_for_source(program, source),
     "Gpufuck lowering requires a checked semantic program for its source.",
   );
+  const lowering = prepare_duck_core_lowering(clone_source_tree(source));
   return lower_prepared_duck_core(
-    prepare_duck_core_lowering(source),
-    program.core,
+    lowering,
+    core_from_source(lowering.compiled_source),
     source_byte_length,
   );
 }
@@ -2183,7 +2186,12 @@ class DuckCoreLowering {
     }
 
     if (expression.tag === "index") {
-      return this.lower_index(expression.object, expression.index, environment);
+      return this.lower_index(
+        expression.object,
+        expression.index,
+        environment,
+        expected,
+      );
     }
 
     if (expression.tag === "struct_update") {
@@ -5173,6 +5181,7 @@ class DuckCoreLowering {
     object: CoreExpr,
     index: CoreExpr,
     environment: ReadonlyMap<string, TypeSchema>,
+    expected: TypeSchema | undefined,
   ): LoweredExpression {
     const lowered_object = this.lower_expression(object, environment);
     if (
@@ -5220,55 +5229,149 @@ class DuckCoreLowering {
     }
     if (lowered_object.type?.kind === "tuple") {
       if (
-        index.tag !== "num" || index.type !== "i32" ||
-        typeof index.value !== "number" || !Number.isInteger(index.value) ||
-        index.value < 0
+        index.tag === "num" && index.type === "i32" &&
+        typeof index.value === "number" && Number.isInteger(index.value) &&
+        index.value >= 0
       ) {
-        throw new Error("Duck gpufuck tuple index must be a nonnegative I32");
+        let selected = lowered_object.expression;
+        let selected_type: TypeSchema = lowered_object.type;
+        let remaining_index = index.value;
+
+        while (selected_type.kind === "tuple") {
+          const first = this.temporary("tuple_first");
+          const rest = this.temporary("tuple_rest");
+          if (remaining_index === 0) {
+            return {
+              expression: {
+                kind: "case",
+                value: selected,
+                arms: [{
+                  constructor: "$Tuple",
+                  binders: [first, rest],
+                  body: surface.name(first),
+                }],
+              },
+              type: selected_type.values[0],
+            };
+          }
+
+          selected = {
+            kind: "case",
+            value: selected,
+            arms: [{
+              constructor: "$Tuple",
+              binders: [first, rest],
+              body: surface.name(rest),
+            }],
+          };
+          selected_type = selected_type.values[1];
+          remaining_index -= 1;
+        }
+
+        if (remaining_index === 0 && selected_type.kind !== "unit") {
+          return { expression: selected, type: selected_type };
+        }
+        let trap_type = expected;
+        if (trap_type === undefined) {
+          let candidate_type: TypeSchema = lowered_object.type;
+          while (candidate_type.kind === "tuple") {
+            if (trap_type === undefined) {
+              trap_type = candidate_type.values[0];
+            } else if (!this.same_type(trap_type, candidate_type.values[0])) {
+              trap_type = undefined;
+              break;
+            }
+            candidate_type = candidate_type.values[1];
+          }
+          if (
+            candidate_type.kind !== "unit" &&
+            trap_type !== undefined &&
+            !this.same_type(trap_type, candidate_type)
+          ) {
+            trap_type = undefined;
+          }
+        }
+        expect(
+          trap_type !== undefined,
+          "Duck gpufuck unreachable tuple index " +
+            index.value.toString() + " has no contextual result type.",
+        );
+        return this.runtime_trap(
+          trap_type,
+          "Duck index is outside its tuple",
+        );
       }
 
-      let selected = lowered_object.expression;
+      const lowered_index = this.lower_expression(
+        index,
+        environment,
+        integer_type,
+      );
+      const layers: {
+        value: SurfaceExpression;
+        first: string;
+        rest: string;
+      }[] = [];
+      const binders: string[] = [];
+      const field_types: TypeSchema[] = [];
       let selected_type: TypeSchema = lowered_object.type;
-      let remaining_index = index.value;
-
+      let selected_value = lowered_object.expression;
       while (selected_type.kind === "tuple") {
         const first = this.temporary("tuple_first");
         const rest = this.temporary("tuple_rest");
-        if (remaining_index === 0) {
-          return {
-            expression: {
-              kind: "case",
-              value: selected,
-              arms: [{
-                constructor: "$Tuple",
-                binders: [first, rest],
-                body: surface.name(first),
-              }],
-            },
-            type: selected_type.values[0],
-          };
+        layers.push({ value: selected_value, first, rest });
+        binders.push(first);
+        field_types.push(selected_type.values[0]);
+        selected_value = surface.name(rest);
+        selected_type = selected_type.values[1];
+      }
+      if (selected_type.kind !== "unit") {
+        const final_layer = layers.at(-1);
+        if (final_layer === undefined) {
+          throw new Error("Duck gpufuck dynamic tuple index lost its fields");
         }
-
+        binders.push(final_layer.rest);
+        field_types.push(selected_type);
+      }
+      const field_type = field_types[0];
+      if (field_type === undefined) {
+        throw new Error("Duck gpufuck dynamic tuple index has no fields");
+      }
+      for (const candidate of field_types.slice(1)) {
+        if (!this.same_type(field_type, candidate)) {
+          throw new Error(
+            "Duck gpufuck dynamic tuple index requires uniform fields",
+          );
+        }
+      }
+      let selected = this.index_selection(
+        binders,
+        lowered_index.expression,
+        field_type,
+      );
+      for (
+        let layer_index = layers.length - 1;
+        layer_index >= 0;
+        layer_index--
+      ) {
+        const layer = layers[layer_index];
+        if (layer === undefined) {
+          throw new Error(
+            "Duck gpufuck dynamic tuple index lost layer " +
+              layer_index.toString(),
+          );
+        }
         selected = {
           kind: "case",
-          value: selected,
+          value: layer.value,
           arms: [{
             constructor: "$Tuple",
-            binders: [first, rest],
-            body: surface.name(rest),
+            binders: [layer.first, layer.rest],
+            body: selected,
           }],
         };
-        selected_type = selected_type.values[1];
-        remaining_index -= 1;
       }
-
-      if (remaining_index === 0 && selected_type.kind !== "unit") {
-        return { expression: selected, type: selected_type };
-      }
-      throw new Error(
-        "Duck gpufuck tuple index " + index.value.toString() +
-          " is outside its product",
-      );
+      return { expression: selected, type: field_type };
     }
     const name = this.named_type_name(
       lowered_object.type,
@@ -5276,7 +5379,22 @@ class DuckCoreLowering {
     );
     const definition = this.require_definition(name);
     if (definition.fields.length === 0) {
-      throw new Error("Duck gpufuck indexed type has no fields: " + name);
+      const resolved_type = this.resolve_type_expr_aliases(
+        parse_type_expr(tokenize(name)),
+        new Set(),
+      );
+      expect(
+        resolved_type.tag === "array" &&
+          fixed_array_length(resolved_type.length) === 0,
+        "Duck gpufuck indexed empty aggregate is not a fixed array: " + name,
+      );
+      const element_type = this.schema_from_type_name(
+        format_type_expr(resolved_type.element),
+      );
+      return this.runtime_trap(
+        element_type,
+        "Duck index is outside its empty aggregate",
+      );
     }
     if (
       index.tag === "num" && index.type === "i32" &&
@@ -5284,10 +5402,18 @@ class DuckCoreLowering {
     ) {
       const field = definition.fields[index.value];
       if (field === undefined) {
-        throw new Error(
-          "Duck gpufuck index " + index.value.toString() + " is outside " +
-            name + " with " + definition.fields.length.toString() +
-            " fields",
+        let trap_type = expected;
+        if (trap_type === undefined) {
+          trap_type = definition.fields[0]?.type;
+        }
+        expect(
+          trap_type !== undefined,
+          "Duck gpufuck unreachable index " + index.value.toString() +
+            " has no contextual result type in " + name + ".",
+        );
+        return this.runtime_trap(
+          trap_type,
+          "Duck index is outside " + name,
         );
       }
       const binders = definition.fields.map((candidate) =>
@@ -5428,6 +5554,185 @@ class DuckCoreLowering {
         type: HostTypes.bytes,
       };
     }
+    if (object_type.kind === "tuple") {
+      const lowered_index = this.lower_expression(
+        index,
+        environment,
+        integer_type,
+      );
+      const layers: {
+        value: SurfaceExpression;
+        first: string;
+        rest: string;
+      }[] = [];
+      const binders: string[] = [];
+      const field_types: TypeSchema[] = [];
+      let selected_type: TypeSchema = object_type;
+      let selected_value = object;
+      while (selected_type.kind === "tuple") {
+        const first = this.temporary("tuple_first");
+        const rest = this.temporary("tuple_rest");
+        layers.push({ value: selected_value, first, rest });
+        binders.push(first);
+        field_types.push(selected_type.values[0]);
+        selected_value = surface.name(rest);
+        selected_type = selected_type.values[1];
+      }
+      if (selected_type.kind !== "unit") {
+        const final_layer = layers.at(-1);
+        if (final_layer === undefined) {
+          throw new Error(
+            "Duck gpufuck tuple index update lost its fields",
+          );
+        }
+        binders.push(final_layer.rest);
+        field_types.push(selected_type);
+      }
+      const field_type = field_types[0];
+      if (field_type === undefined) {
+        throw new Error("Duck gpufuck tuple index update has no fields");
+      }
+      if (
+        index.tag === "num" && index.type === "i32" &&
+        typeof index.value === "number" && Number.isInteger(index.value)
+      ) {
+        const replacement_type = field_types[index.value];
+        if (replacement_type === undefined) {
+          return {
+            expression: this.index_update_selection(
+              0,
+              lowered_index.expression,
+              object,
+              object,
+            ),
+            type: object_type,
+          };
+        }
+        const lowered_value = this.lower_expression(
+          value,
+          environment,
+          replacement_type,
+        );
+        const fields = binders.map((binder, field_index) => {
+          if (field_index === index.value) {
+            return lowered_value.expression;
+          }
+          return surface.name(binder);
+        });
+        const final_field = fields.at(-1);
+        expect(
+          final_field !== undefined,
+          "Tuple index update lost its final field.",
+        );
+        let rebuilt: SurfaceExpression = final_field;
+        for (
+          let field_index = fields.length - 2;
+          field_index >= 0;
+          field_index--
+        ) {
+          const field = fields[field_index];
+          expect(
+            field !== undefined,
+            "Tuple index update lost field " + field_index.toString() + ".",
+          );
+          rebuilt = this.tuple_expression(field, rebuilt);
+        }
+        let selected = this.index_update_selection(
+          fields.length,
+          lowered_index.expression,
+          rebuilt,
+          object,
+        );
+        for (
+          let layer_index = layers.length - 1;
+          layer_index >= 0;
+          layer_index--
+        ) {
+          const layer = layers[layer_index];
+          expect(
+            layer !== undefined,
+            "Tuple index update lost layer " + layer_index.toString() + ".",
+          );
+          selected = {
+            kind: "case",
+            value: layer.value,
+            arms: [{
+              constructor: "$Tuple",
+              binders: [layer.first, layer.rest],
+              body: selected,
+            }],
+          };
+        }
+        return { expression: selected, type: object_type };
+      }
+      for (const candidate of field_types.slice(1)) {
+        if (!this.same_type(field_type, candidate)) {
+          throw new Error(
+            "Duck gpufuck tuple index update requires uniform fields",
+          );
+        }
+      }
+      const lowered_value = this.lower_expression(
+        value,
+        environment,
+        field_type,
+      );
+      const fields = binders.map((binder, field_index) => ({
+        kind: "if" as const,
+        condition: surface.binary(
+          BinaryOperator.Equal,
+          lowered_index.expression,
+          surface.integer(field_index),
+        ),
+        consequent: lowered_value.expression,
+        alternate: surface.name(binder),
+      }));
+      const final_field = fields.at(-1);
+      expect(
+        final_field !== undefined,
+        "Tuple index update lost its final field.",
+      );
+      let rebuilt: SurfaceExpression = final_field;
+      for (
+        let field_index = fields.length - 2;
+        field_index >= 0;
+        field_index--
+      ) {
+        const field = fields[field_index];
+        expect(
+          field !== undefined,
+          "Tuple index update lost field " + field_index.toString() + ".",
+        );
+        rebuilt = this.tuple_expression(field, rebuilt);
+      }
+      let selected = this.index_update_selection(
+        fields.length,
+        lowered_index.expression,
+        rebuilt,
+        object,
+      );
+      for (
+        let layer_index = layers.length - 1;
+        layer_index >= 0;
+        layer_index--
+      ) {
+        const layer = layers[layer_index];
+        expect(
+          layer !== undefined,
+          "Tuple index update lost layer " + layer_index.toString() + ".",
+        );
+        selected = {
+          kind: "case",
+          value: layer.value,
+          arms: [{
+            constructor: "$Tuple",
+            binders: [layer.first, layer.rest],
+            body: selected,
+          }],
+        };
+      }
+      return { expression: selected, type: object_type };
+    }
     const name = this.named_type_name(object_type, "indexed assignment");
     const definition = this.require_definition(name);
     const lowered_index = this.lower_expression(
@@ -5435,23 +5740,37 @@ class DuckCoreLowering {
       environment,
       integer_type,
     );
-    const field_type = definition.fields[0]?.type;
-    const lowered_value = this.lower_expression(value, environment, field_type);
     const binders = definition.fields.map((field) =>
       this.temporary(field.name)
     );
-    const fields = binders.map((binder, field_index) => ({
-      kind: "if" as const,
-      condition: surface.binary(
-        BinaryOperator.Equal,
-        lowered_index.expression,
-        surface.integer(field_index),
-      ),
-      consequent: lowered_value.expression,
-      alternate: surface.name(binder),
-    }));
-    return {
-      expression: {
+    if (
+      index.tag === "num" && index.type === "i32" &&
+      typeof index.value === "number" && Number.isInteger(index.value)
+    ) {
+      const replacement_type = definition.fields[index.value]?.type;
+      if (replacement_type === undefined) {
+        return {
+          expression: this.index_update_selection(
+            0,
+            lowered_index.expression,
+            object,
+            object,
+          ),
+          type: object_type,
+        };
+      }
+      const lowered_value = this.lower_expression(
+        value,
+        environment,
+        replacement_type,
+      );
+      const fields = binders.map((binder, field_index) => {
+        if (field_index === index.value) {
+          return lowered_value.expression;
+        }
+        return surface.name(binder);
+      });
+      const rebuilt: SurfaceExpression = {
         kind: "case",
         value: object,
         arms: [{
@@ -5462,7 +5781,59 @@ class DuckCoreLowering {
             ...fields,
           ),
         }],
-      },
+      };
+      return {
+        expression: this.index_update_selection(
+          fields.length,
+          lowered_index.expression,
+          rebuilt,
+          object,
+        ),
+        type: object_type,
+      };
+    }
+    const field_type = definition.fields[0]?.type;
+    expect(
+      field_type !== undefined,
+      "Duck gpufuck dynamic index update has no fields in " + name + ".",
+    );
+    for (const field of definition.fields.slice(1)) {
+      expect(
+        this.same_type(field_type, field.type),
+        "Duck gpufuck dynamic index update requires uniform fields in " +
+          name + ".",
+      );
+    }
+    const lowered_value = this.lower_expression(value, environment, field_type);
+    const fields = binders.map((binder, field_index) => ({
+      kind: "if" as const,
+      condition: surface.binary(
+        BinaryOperator.Equal,
+        lowered_index.expression,
+        surface.integer(field_index),
+      ),
+      consequent: lowered_value.expression,
+      alternate: surface.name(binder),
+    }));
+    const rebuilt: SurfaceExpression = {
+      kind: "case",
+      value: object,
+      arms: [{
+        constructor: this.struct_constructor(name),
+        binders,
+        body: surface.apply(
+          surface.name(this.struct_constructor(name)),
+          ...fields,
+        ),
+      }],
+    };
+    return {
+      expression: this.index_update_selection(
+        fields.length,
+        lowered_index.expression,
+        rebuilt,
+        object,
+      ),
       type: object_type,
     };
   }
@@ -6208,6 +6579,25 @@ class DuckCoreLowering {
 
       return result;
     }
+    if (resolved_type.tag === "array") {
+      const length = fixed_array_length(resolved_type.length);
+      const element = this.schema_from_type_name(
+        format_type_expr(resolved_type.element),
+      );
+      if (!this.#types.has(canonical_name)) {
+        const fields: { name: string; type: TypeSchema }[] = [];
+        for (let index = 0; index < length; index += 1) {
+          fields.push({ name: "item_" + index.toString(), type: element });
+        }
+        this.#types.set(canonical_name, {
+          name: canonical_name,
+          shape: "struct",
+          fields,
+          cases: [],
+        });
+      }
+      return this.named_type(canonical_name);
+    }
     if (resolved_type.tag === "apply") {
       const application = source_type_application(canonical_name);
       expect(
@@ -6721,6 +7111,37 @@ class DuckCoreLowering {
           surface.integer(field_index),
         ),
         consequent: surface.name(binder),
+        alternate: selected,
+      };
+    }
+    return selected;
+  }
+
+  private index_update_selection(
+    length: number,
+    index: SurfaceExpression,
+    updated: SurfaceExpression,
+    fallback: SurfaceExpression,
+  ): SurfaceExpression {
+    const trap_result = this.temporary("index_trap");
+    let selected: SurfaceExpression = {
+      kind: "let",
+      name: trap_result,
+      value: this.runtime_trap(
+        unit_type,
+        "Duck index is outside its aggregate",
+      ).expression,
+      body: fallback,
+    };
+    for (let field_index = length - 1; field_index >= 0; field_index -= 1) {
+      selected = {
+        kind: "if",
+        condition: surface.binary(
+          BinaryOperator.Equal,
+          index,
+          surface.integer(field_index),
+        ),
+        consequent: updated,
         alternate: selected,
       };
     }
