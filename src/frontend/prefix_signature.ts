@@ -169,7 +169,7 @@ export type PrefixTacticCommand =
   }
   | { tag: "intro"; name: string; span: PrefixSpan }
   | {
-    tag: "assumption" | "constructor" | "left" | "right";
+    tag: "assumption" | "constructor" | "left" | "right" | "decide";
     span: PrefixSpan;
   };
 
@@ -1179,7 +1179,8 @@ function snapshot_proof_term(
         }
         if (
           command_tag === "assumption" || command_tag === "constructor" ||
-          command_tag === "left" || command_tag === "right"
+          command_tag === "left" || command_tag === "right" ||
+          command_tag === "decide"
         ) {
           stable_commands.push(Object.freeze({
             tag: command_tag,

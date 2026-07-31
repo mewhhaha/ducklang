@@ -592,7 +592,13 @@ function tactic_command_from_node(
     };
   }
   for (
-    const tag of ["assumption", "constructor", "left", "right"] as const
+    const tag of [
+      "assumption",
+      "constructor",
+      "left",
+      "right",
+      "decide",
+    ] as const
   ) {
     if (
       node.children.some((child) => child.kind === `"${tag}"`) ||

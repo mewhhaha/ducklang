@@ -3167,6 +3167,19 @@
               "name": "_tactic_space"
             }
           ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "decide"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
         }
       ]
     },
@@ -3188,6 +3201,10 @@
         {
           "type": "STRING",
           "value": "right"
+        },
+        {
+          "type": "STRING",
+          "value": "decide"
         }
       ]
     },

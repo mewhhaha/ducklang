@@ -320,6 +320,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
       { tag: "apply", proof: applied, span: { start: 45, end: 58 } },
       { tag: "cases", proof: applied, span: { start: 59, end: 72 } },
       { tag: "rewrite", proof: applied, span: { start: 73, end: 88 } },
+      { tag: "decide", span: { start: 89, end: 95 } },
     ],
     span: { start: 10, end: 46 },
   };
@@ -375,6 +376,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
     name: "theorem",
     span: { start: 45, end: 52 },
   });
+  assert_equals(body.commands[5]?.tag, "decide");
   assert_equals(Object.isFrozen(body.commands), true);
 });
 

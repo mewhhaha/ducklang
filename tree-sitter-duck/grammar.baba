@@ -539,6 +539,7 @@ prefix_tactic_command = (
                           | ("constructor" _tactic_space)
                           | ("left" _tactic_space)
                           | ("right" _tactic_space)
+                          | ("decide" _tactic_space)
                         ) ;
 
 prefix_final_tactic_command = (
@@ -546,6 +547,7 @@ prefix_final_tactic_command = (
                                 | "constructor"
                                 | "left"
                                 | "right"
+                                | "decide"
                               ) ;
 
 prefix_proof_term = (

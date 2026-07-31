@@ -6,6 +6,7 @@ import {
   integer_minimum,
   integer_type_from_name,
   integer_type_name,
+  normalize_integer,
 } from "./integer.ts";
 import {
   type Prim,
@@ -5967,9 +5968,32 @@ function prefix_kernel_term(
       facts,
     );
   }
+  let signed_number: { literal: PrefixTerm; sign: bigint } | undefined;
+  if (term.shape.tag === "unary") {
+    let candidate = term;
+    let sign = 1n;
+    while (true) {
+      if (candidate.shape.tag === "parenthesized") {
+        candidate = candidate.shape.value;
+        continue;
+      }
+      if (
+        candidate.shape.tag !== "unary" ||
+        (candidate.shape.operator !== "+" && candidate.shape.operator !== "-")
+      ) {
+        break;
+      }
+      if (candidate.shape.operator === "-") sign = -sign;
+      candidate = candidate.shape.operand;
+    }
+    if (candidate.shape.tag === "number") {
+      signed_number = { literal: candidate, sign };
+    }
+  }
   if (
     term.shape.tag !== "number" && term.shape.tag !== "string" &&
-    term.shape.tag !== "character" && term.shape.tag !== "boolean"
+    term.shape.tag !== "character" && term.shape.tag !== "boolean" &&
+    signed_number === undefined
   ) {
     return undefined;
   }
@@ -5990,6 +6014,26 @@ function prefix_kernel_term(
     const literal = parse_number_expr(term.text);
     expect(literal.tag === "num", "Parsed proof number is not numeric.");
     literal_key = literal.value.toString();
+  }
+  if (signed_number !== undefined) {
+    const integer_type = integer_type_from_name(type_name);
+    expect(
+      integer_type !== undefined,
+      `Signed proof literal has non-integer type ${type_name}.`,
+    );
+    let magnitude: bigint;
+    const fixed_width = prefix_integer_literal(signed_number.literal.text);
+    if (fixed_width !== undefined) {
+      magnitude = fixed_width.value;
+    } else {
+      magnitude = BigInt(
+        signed_number.literal.text.replaceAll("_", ""),
+      );
+    }
+    literal_key = normalize_integer(
+      integer_type,
+      signed_number.sign * magnitude,
+    ).toString();
   }
   const name = "literal:" + type_name + ":" + literal_key;
   context.declarations.set(type_name, type_sort(0));
@@ -6849,6 +6893,23 @@ function elaborate_prefix_tactics(
             proof,
           });
         },
+      });
+      continue;
+    }
+    if (command.tag === "decide") {
+      const environment = KernelEnvironment.from(
+        current.context.declarations,
+      );
+      if (!machine_reflection_holds(current.goal, environment)) {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "decide found no total compile-time decision for the current goal.",
+          command.span,
+        ));
+      }
+      current.accept({
+        tag: "machine_reflect",
+        proposition: current.goal,
       });
       continue;
     }
@@ -8778,10 +8839,16 @@ function check_prefix_term_type(
     );
   }
   if (shape.tag === "unary") {
-    if (shape.operator === "-" && shape.operand.shape.tag === "number") {
+    let literal_operand = shape.operand;
+    while (literal_operand.shape.tag === "parenthesized") {
+      literal_operand = literal_operand.shape.value;
+    }
+    if (
+      shape.operator === "-" && literal_operand.shape.tag === "number"
+    ) {
       return check_prefix_negative_number_type(
         declaration_name,
-        shape.operand,
+        literal_operand,
       );
     }
     const operand = check_prefix_term_type(

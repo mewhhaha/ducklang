@@ -9027,6 +9027,10 @@
     "named": false
   },
   {
+    "type": "decide",
+    "named": false
+  },
+  {
     "type": "declare",
     "named": false
   },

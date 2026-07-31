@@ -1395,11 +1395,31 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "Proof forall (inner: I32). left = left\n" +
       "let rewrite_under_forall = (left, right, equality, evidence) => " +
       "by { rewrite equality intro inner exact evidence };\n" +
+      "type decide_closed = () -> Proof 1i32 < 2i32\n" +
+      "let decide_closed = () => by { decide };\n" +
+      "type decide_negative = () -> Proof -1i8 < 0i8\n" +
+      "let decide_negative = () => by { decide };\n" +
+      "type decide_parenthesized_negative = () -> Proof -(1i8) < 0i8\n" +
+      "let decide_parenthesized_negative = () => by { decide };\n" +
+      "type decide_signed_minimum = () -> Proof -128i8 = -128i8\n" +
+      "let decide_signed_minimum = () => by { decide };\n" +
+      "type decide_parenthesized_minimum = () -> " +
+      "Proof -(128i8) = -128i8\n" +
+      "let decide_parenthesized_minimum = () => by { decide };\n" +
+      "type decide_unary_plus = () -> Proof +((1i8)) = 1i8\n" +
+      "let decide_unary_plus = () => by { decide };\n" +
+      "type decide_plus_negative = () -> Proof +(-1i8) = -1i8\n" +
+      "let decide_plus_negative = () => by { decide };\n" +
+      "type decide_wrapping_negation = () -> Proof -(-128i8) = -128i8\n" +
+      "let decide_wrapping_negation = () => by { decide };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 14);
-  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+  assert_equals(analysis.proofs.size, 22);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements,
+    [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
+  );
 });
 
 Deno.test("tactic blocks report the command that cannot solve its goal", () => {
@@ -1412,6 +1432,7 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
       ["by { apply true_intro }", "apply proof conclusion does not match"],
       ["by { cases true_intro }", "cases requires disjunction"],
       ["by { rewrite true_intro }", "rewrite requires equality"],
+      ["by { decide }", "decide found no total compile-time decision"],
       ["by { exact true_intro assumption }", "has no remaining goal"],
       ["by {}", "leaves 1 unresolved goal"],
     ] as const
@@ -6398,6 +6419,21 @@ Deno.test("logical numbers preserve suffixes and ranges", () => {
       "42\n",
   ));
   assert_equals(negative_minimums.diagnostics, []);
+
+  const parenthesized_unsigned_negative = analyze_duck_source(
+    parse_duck_source(
+      "type p = (value: U8) -> Prop\n" +
+        "fact p = value => value = -(1u8);\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(
+    parenthesized_unsigned_negative.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("negates unsigned logical number")
+    ),
+    true,
+  );
 
   const absurd_width = analyze_duck_source(parse_duck_source(
     "type p = (value: I32) -> Prop\n" +
