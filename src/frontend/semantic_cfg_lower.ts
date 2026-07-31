@@ -1451,14 +1451,34 @@ function lower_expression(
     const right_type = context.value_types.get(right);
     expect(left_type !== undefined, "Primitive left operand lost its type.");
     expect(right_type !== undefined, "Primitive right operand lost its type.");
+    let integer: { signed: boolean; width: number } | undefined;
     if (
       left_type.tag === "scalar" && right_type.tag === "scalar" &&
       left_type.name === right_type.name
     ) {
-      const integer = integer_type_from_name(left_type.name);
-      if (integer !== undefined) {
-        primitive = specialize_prim_for_integer(primitive, integer.signed);
-      }
+      integer = integer_type_from_name(left_type.name);
+    } else if (
+      left_type.tag === "integer" && right_type.tag === "integer" &&
+      left_type.signed === right_type.signed &&
+      left_type.width === right_type.width
+    ) {
+      integer = {
+        signed: left_type.signed,
+        width: left_type.width,
+      };
+    }
+    if (integer !== undefined) {
+      const val_type = integer_val_type(integer);
+      expect(
+        val_type !== undefined,
+        `Primitive integer width ${integer.width} has no runtime value type.`,
+      );
+      primitive = specialize_prim_for_operands(
+        primitive,
+        val_type,
+        val_type,
+      );
+      primitive = specialize_prim_for_integer(primitive, integer.signed);
     }
     const value = emit_operation(
       operands.block,

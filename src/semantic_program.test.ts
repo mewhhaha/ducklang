@@ -1742,6 +1742,173 @@ Deno.test("type-test branches establish negative membership evidence", () => {
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
+Deno.test("integer division and remainder require trap evidence", () => {
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => left / right;\n0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.message,
+    ]),
+    [[
+      "DUCK2607",
+      "unknown: cannot prove divisor != 0 and (dividend != -2147483648 or divisor != -1) before i32.div_s.",
+    ]],
+  );
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right != 0 && right != -1 then left / right else 0 end;\n" +
+      "divide (84, 2)\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(
+    [...guarded.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "primitive_safety"
+    ),
+    true,
+  );
+
+  const pathwise_overflow_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "left / right else 0 end;\n" +
+      "divide (84, 2)\n",
+  ));
+  assert_equals(pathwise_overflow_guard.diagnostics, []);
+  assert_equals(
+    [...pathwise_overflow_guard.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "primitive_safety" &&
+      proof.semantic_certificate.requirement.overflow_guard ===
+        "pathwise_disjunction"
+    ),
+    true,
+  );
+
+  const loop_invariant_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && right != -1 then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(loop_invariant_guard.diagnostics, []);
+
+  const loop_pathwise_overflow_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(loop_pathwise_overflow_guard.diagnostics, []);
+  assert_equals(
+    [...loop_pathwise_overflow_guard.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "primitive_safety" &&
+      proof.semantic_certificate.requirement.overflow_guard ===
+        "pathwise_disjunction"
+    ),
+    true,
+  );
+
+  const nested_loop_invariant_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && right != -1 then " +
+      "for outer in 0..2 do " +
+      "for inner in 0..2 do left / right; end; " +
+      "end; end; 0 end;\n0\n",
+  ));
+  assert_equals(nested_loop_invariant_guard.diagnostics, []);
+
+  const nested_loop_mutation = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && left != -2147483648i32 then " +
+      "for outer in 0..2 do for inner in 0..2 do " +
+      "left = left + 1; left / right; " +
+      "end; end; end; 0 end;\n0\n",
+  ));
+  assert_equals(
+    nested_loop_mutation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607"
+    ),
+    true,
+  );
+
+  const unsigned = analyze_duck_source(parse_duck_source(
+    "let remainder = (left: U32, right: U32) => " +
+      "if right != 0u32 then left % right else 0u32 end;\n" +
+      "remainder (84u32, 30u32)\n",
+  ));
+  assert_equals(unsigned.diagnostics, []);
+
+  const unsigned_64_callable = analyze_duck_source(parse_duck_source(
+    "let divide = (left: U64, right: U64) => " +
+      "if right != 0u64 then left / right else 0u64 end;\n" +
+      "let remainder = (left: U64, right: U64) => " +
+      "if right != 0u64 then left % right else 0u64 end;\n0\n",
+  ));
+  assert_equals(unsigned_64_callable.diagnostics, []);
+  assert_equals(unsigned_64_callable.callable_control_flow.size, 2);
+
+  const unsigned_64 = analyze_duck_source(parse_duck_source(
+    "(84u64 / 2u64, 84u64 % 30u64, " +
+      "84u64 / 18446744073709551615u64)\n",
+  ));
+  assert_equals(unsigned_64.diagnostics, []);
+
+  for (
+    const [source, message] of [
+      [
+        "84 / 0\n",
+        "disproved: cannot prove divisor != 0 and (dividend != -2147483648 or divisor != -1) before i32.div_s.",
+      ],
+      [
+        "(-2147483648i32) / (-1i32)\n",
+        "disproved: cannot prove divisor != 0 and (dividend != -2147483648 or divisor != -1) before i32.div_s.",
+      ],
+      [
+        "84 % 0\n",
+        "disproved: cannot prove divisor != 0 before i32.rem_s.",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2607" &&
+        diagnostic.message === message
+      ),
+      true,
+    );
+  }
+});
+
+Deno.test("unreachable integer traps create no proof obligation", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if false then left / right else 0 end;\n0\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("partial Wasm intrinsics cannot escape checked call sites", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let invoke: (((I32, I32) -> I32), I32, I32) -> I32 = " +
+      "(operation, left, right) => operation(left, right);\n" +
+      "invoke (@wasm.div_i32, 84, 0)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "partial intrinsic @wasm.div_i32 cannot escape",
+      )
+    ),
+    true,
+  );
+});
+
 Deno.test("remainder branches establish exact expression evidence", () => {
   for (
     const [value_type, divisor, expected] of [
@@ -1884,7 +2051,12 @@ Deno.test("incompatible bitmask and remainder branches are unreachable", () => {
         "guarded 4\n",
     ));
     assert_equals(analysis.diagnostics, []);
-    assert_equals(analysis.proofs.size, 0);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag !== "primitive_safety"
+      ).length,
+      0,
+    );
     assert_equals(
       checked_value(lower_duck_source(analysis)) !== undefined,
       true,
@@ -2616,7 +2788,12 @@ Deno.test("ordered comparison branches establish call evidence", () => {
         "guarded 5\n",
     ));
     assert_equals(analysis.diagnostics, []);
-    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
+    );
     assert_equals(
       checked_value(lower_duck_source(analysis)) !== undefined,
       true,
@@ -2753,7 +2930,12 @@ Deno.test("value equalities compose and transport disequality", () => {
         "guarded (5, 5, 5)\n",
     ));
     assert_equals(analysis.diagnostics, []);
-    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
+    );
     assert_equals(
       [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
       "machine_fact",
@@ -2798,10 +2980,11 @@ Deno.test("reduced scalar endpoints certify value disequality", () => {
         case_.call,
     ));
     assert_equals(analysis.diagnostics, []);
-    assert_equals(analysis.proofs.size, 1);
     assert_equals(
-      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
-      "machine_fact",
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
     );
     assert_equals(
       checked_value(lower_duck_source(analysis)) !== undefined,
@@ -2827,10 +3010,11 @@ Deno.test("value equality survives nonconvex facts in either order", () => {
         "guarded (4, 4)\n",
     ));
     assert_equals(analysis.diagnostics, []);
-    assert_equals(analysis.proofs.size, 1);
     assert_equals(
-      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
-      "machine_fact",
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
     );
     assert_equals(
       checked_value(lower_duck_source(analysis)) !== undefined,

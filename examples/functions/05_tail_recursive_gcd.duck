@@ -2,7 +2,11 @@ let gcd = rec (left, right) => do
   if right == 0 then
     left
   else
-    rec(right, left % right)
+    if left > right then
+      rec(left - right, right)
+    else
+      rec(right - left, left)
+    end
   end;
 end;
 

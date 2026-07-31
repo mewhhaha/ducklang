@@ -58,6 +58,7 @@ import { fixed_array_length } from "../../src/frontend/fixed_array_type.ts";
 import type { TypeExpr } from "../../src/type_syntax.ts";
 import type { Prim } from "../../src/op.ts";
 import { expect } from "../../src/expect.ts";
+import { normalize_integer } from "../../src/integer.ts";
 import {
   type DuckSemanticProgram,
   is_checked_duck_semantic_program_for_source,
@@ -2008,7 +2009,10 @@ class DuckCoreLowering {
       }
       if (expression.type === "i64" && typeof expression.value === "bigint") {
         return {
-          expression: surface.signedInteger64(expression.value),
+          expression: surface.signedInteger64(normalize_integer(
+            { signed: true, width: 64 },
+            expression.value,
+          )),
           type: { kind: "signed-integer-64" },
         };
       }
@@ -4792,6 +4796,26 @@ class DuckCoreLowering {
         type: conversion.result,
       };
     }
+    if (
+      expression.prim === "i32.div_u" ||
+      expression.prim === "i32.rem_u" ||
+      expression.prim === "i64.div_u" ||
+      expression.prim === "i64.rem_u"
+    ) {
+      const left = this.lower_expression(
+        this.required_arg(expression.args, 0, expression.prim),
+        environment,
+      );
+      const right = this.lower_expression(
+        this.required_arg(expression.args, 1, expression.prim),
+        environment,
+      );
+      return this.lower_unsigned_integer_primitive(
+        expression.prim,
+        left,
+        right,
+      );
+    }
     const binary = lower_binary_primitive(expression.prim);
     if (binary !== undefined) {
       const left = this.lower_expression(
@@ -4853,6 +4877,126 @@ class DuckCoreLowering {
     throw new Error(
       "Duck gpufuck lowering does not support primitive " + expression.prim,
     );
+  }
+
+  private lower_unsigned_integer_primitive(
+    primitive:
+      | "i32.div_u"
+      | "i32.rem_u"
+      | "i64.div_u"
+      | "i64.rem_u",
+    left: LoweredExpression,
+    right: LoweredExpression,
+  ): LoweredExpression {
+    // Gpufuck exposes signed division only. Flipping the sign bit gives
+    // unsigned order, and halving a negative dividend keeps signed division
+    // in range before reconstructing the exact quotient.
+    let result_type = integer_type;
+    let zero = surface.integer(0);
+    let one = surface.integer(1);
+    let sign_bit = surface.integer(-2147483648);
+    let less: BinaryOperator = BinaryOperator.Less;
+    let greater_equal: BinaryOperator = BinaryOperator.GreaterEqual;
+    let add: BinaryOperator = BinaryOperator.Add;
+    let subtract: BinaryOperator = BinaryOperator.Subtract;
+    let multiply: BinaryOperator = BinaryOperator.Multiply;
+    let divide: BinaryOperator = BinaryOperator.Divide;
+    let bitwise_xor: BinaryOperator = BinaryOperator.BitwiseXor;
+    let shift_right_unsigned: BinaryOperator =
+      BinaryOperator.ShiftRightUnsigned;
+    if (primitive.startsWith("i64.")) {
+      result_type = { kind: "signed-integer-64" };
+      zero = surface.signedInteger64(0n);
+      one = surface.signedInteger64(1n);
+      sign_bit = surface.signedInteger64(-9223372036854775808n);
+      less = BinaryOperator.LessSignedInteger64;
+      greater_equal = BinaryOperator.GreaterEqualSignedInteger64;
+      add = BinaryOperator.AddSignedInteger64;
+      subtract = BinaryOperator.SubtractSignedInteger64;
+      multiply = BinaryOperator.MultiplySignedInteger64;
+      divide = BinaryOperator.DivideSignedInteger64;
+      bitwise_xor = BinaryOperator.BitwiseXorSignedInteger64;
+      shift_right_unsigned = BinaryOperator.ShiftRightUnsignedSignedInteger64;
+    }
+    const left_name = this.temporary("unsigned_dividend");
+    const right_name = this.temporary("unsigned_divisor");
+    const half_quotient_name = this.temporary("unsigned_half_quotient");
+    const quotient_name = this.temporary("unsigned_quotient");
+    const left_value = surface.name(left_name);
+    const right_value = surface.name(right_name);
+    const unsigned_greater_equal = (
+      first: SurfaceExpression,
+      second: SurfaceExpression,
+    ): SurfaceExpression =>
+      surface.binary(
+        greater_equal,
+        surface.binary(bitwise_xor, first, sign_bit),
+        surface.binary(bitwise_xor, second, sign_bit),
+      );
+    const half_quotient = surface.binary(
+      divide,
+      surface.binary(shift_right_unsigned, left_value, one),
+      right_value,
+    );
+    const doubled_quotient = surface.binary(
+      add,
+      surface.name(half_quotient_name),
+      surface.name(half_quotient_name),
+    );
+    const remainder_after_doubling = surface.binary(
+      subtract,
+      left_value,
+      surface.binary(multiply, doubled_quotient, right_value),
+    );
+    const negative_dividend_quotient = surface.let(
+      half_quotient_name,
+      half_quotient,
+      surface.binary(
+        add,
+        doubled_quotient,
+        surface.if(
+          unsigned_greater_equal(
+            remainder_after_doubling,
+            right_value,
+          ),
+          one,
+          zero,
+        ),
+      ),
+    );
+    const quotient = surface.if(
+      surface.binary(less, right_value, zero),
+      surface.if(
+        unsigned_greater_equal(left_value, right_value),
+        one,
+        zero,
+      ),
+      surface.if(
+        surface.binary(less, left_value, zero),
+        negative_dividend_quotient,
+        surface.binary(divide, left_value, right_value),
+      ),
+    );
+    let result = surface.name(quotient_name);
+    if (primitive.endsWith(".rem_u")) {
+      result = surface.binary(
+        subtract,
+        left_value,
+        surface.binary(multiply, result, right_value),
+      );
+    }
+    return {
+      expression: surface.let(
+        left_name,
+        left.expression,
+        surface.let(
+          right_name,
+          right.expression,
+          surface.let(quotient_name, quotient, result),
+        ),
+      ),
+      type: result_type,
+    };
   }
 
   private lower_struct_value(

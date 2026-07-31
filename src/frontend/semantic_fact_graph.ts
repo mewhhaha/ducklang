@@ -5,6 +5,7 @@ import {
   integer_val_type,
   normalize_integer,
 } from "../integer.ts";
+import { type Prim, primitive_trap_conditions } from "../op.ts";
 import {
   assume_machine_bitmask,
   assume_machine_congruence,
@@ -39,6 +40,7 @@ import {
   type SemanticNode,
   unique_semantic_call_at_span,
   unique_semantic_index_at_span,
+  unique_semantic_primitive_at_span,
 } from "./semantic_cfg.ts";
 import {
   type RepresentationType,
@@ -48,6 +50,7 @@ import {
   semantic_bounded_offset_certificate,
   semantic_index_bounds_certificate,
   semantic_machine_certificate,
+  semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
   semantic_type_certificate,
@@ -58,6 +61,8 @@ import {
   type SemanticIndexBoundsRequirement,
   type SemanticMachineCertificate,
   type SemanticMachineRequirement,
+  type SemanticPrimitiveSafetyCertificate,
+  type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderCertificate,
   type SemanticRemainderDivisibilityCertificate,
   type SemanticRemainderDivisibilityRequirement,
@@ -221,6 +226,176 @@ export function semantic_index_is_unreachable(
   ) === "unreachable";
 }
 
+export function infer_semantic_primitive_safety_certificate(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  primitive: Prim,
+): SemanticPrimitiveSafetyCertificate | undefined {
+  if (!semantic_cfg_is_well_formed(control_flow)) return undefined;
+  const target = unique_semantic_primitive_at_span(
+    control_flow,
+    operation_span,
+    primitive,
+  );
+  if (
+    target === undefined ||
+    target.node.inputs.length !== 2 ||
+    target.node.outputs.length !== 1
+  ) {
+    return undefined;
+  }
+  const dividend = target.node.inputs[0];
+  const divisor = target.node.inputs[1];
+  const result = target.node.outputs[0];
+  if (
+    dividend === undefined || divisor === undefined || result === undefined
+  ) {
+    return undefined;
+  }
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
+  const dividend_type = value_types.get(dividend);
+  const divisor_type = value_types.get(divisor);
+  const result_type = value_types.get(result);
+  let dividend_range: { signed: boolean; width: number } | undefined;
+  let divisor_range: { signed: boolean; width: number } | undefined;
+  let result_range: { signed: boolean; width: number } | undefined;
+  if (dividend_type?.tag === "scalar") {
+    dividend_range = integer_type_from_name(dividend_type.name);
+  } else if (dividend_type?.tag === "integer") {
+    dividend_range = {
+      signed: dividend_type.signed,
+      width: dividend_type.width,
+    };
+  }
+  if (divisor_type?.tag === "scalar") {
+    divisor_range = integer_type_from_name(divisor_type.name);
+  } else if (divisor_type?.tag === "integer") {
+    divisor_range = {
+      signed: divisor_type.signed,
+      width: divisor_type.width,
+    };
+  }
+  if (result_type?.tag === "scalar") {
+    result_range = integer_type_from_name(result_type.name);
+  } else if (result_type?.tag === "integer") {
+    result_range = {
+      signed: result_type.signed,
+      width: result_type.width,
+    };
+  }
+  if (
+    dividend_range === undefined || divisor_range === undefined ||
+    result_range === undefined ||
+    dividend_range.signed !== divisor_range.signed ||
+    dividend_range.width !== divisor_range.width ||
+    dividend_range.signed !== result_range.signed ||
+    dividend_range.width !== result_range.width
+  ) {
+    return undefined;
+  }
+  const val_type = integer_val_type(dividend_range);
+  if (val_type === undefined) return undefined;
+  let expected_primitive = val_type + ".rem_";
+  if (primitive.includes(".div_")) expected_primitive = val_type + ".div_";
+  if (dividend_range.signed) {
+    expected_primitive += "s";
+  } else {
+    expected_primitive += "u";
+  }
+  if (primitive !== expected_primitive) return undefined;
+  const trap_conditions = primitive_trap_conditions(primitive);
+  if (!trap_conditions.includes("nonzero_divisor")) return undefined;
+  const nonzero: SemanticMachineRequirement = {
+    tag: "exclusion",
+    value: divisor,
+    expected: 0n,
+  };
+  if (
+    semantic_cfg_machine_path_result_at_target(
+      control_flow,
+      target,
+      nonzero,
+    ) !== "proved"
+  ) {
+    return undefined;
+  }
+  const requirement: SemanticPrimitiveSafetyRequirement = {
+    primitive,
+    dividend,
+    divisor,
+  };
+  if (trap_conditions.includes("signed_division_overflow")) {
+    if (!dividend_range.signed) return undefined;
+    const dividend_guard: SemanticMachineRequirement = {
+      tag: "exclusion",
+      value: dividend,
+      expected: integer_minimum(dividend_range),
+    };
+    if (
+      semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        dividend_guard,
+      ) === "proved"
+    ) {
+      requirement.overflow_guard = "dividend_not_minimum";
+    } else {
+      const divisor_guard: SemanticMachineRequirement = {
+        tag: "exclusion",
+        value: divisor,
+        expected: -1n,
+      };
+      if (
+        semantic_cfg_machine_path_result_at_target(
+          control_flow,
+          target,
+          divisor_guard,
+        ) !== "proved"
+      ) {
+        if (
+          semantic_cfg_machine_path_result_at_target(
+            control_flow,
+            target,
+            dividend_guard,
+            undefined,
+            divisor_guard,
+          ) !== "proved"
+        ) {
+          return undefined;
+        }
+        requirement.overflow_guard = "pathwise_disjunction";
+      } else {
+        requirement.overflow_guard = "divisor_not_negative_one";
+      }
+    }
+  }
+  return semantic_primitive_safety_certificate(
+    operation_span,
+    requirement,
+  );
+}
+
+export function semantic_primitive_is_unreachable(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  primitive: Prim,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_primitive_at_span(
+    control_flow,
+    operation_span,
+    primitive,
+  );
+  if (target === undefined) return false;
+  return semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    undefined,
+  ) === "unreachable";
+}
+
 export function infer_semantic_type_certificate(
   control_flow: SemanticCfg,
   call_span: SourceSpan,
@@ -340,6 +515,8 @@ function semantic_cfg_machine_path_result_at_target(
   target: { block: SemanticBlock; node: SemanticNode },
   requirement: SemanticMachineRequirement | undefined,
   bounded_offset?: SemanticBoundedOffsetRequirement,
+  alternative_requirement?: SemanticMachineRequirement,
+  check_repetition = true,
 ): SemanticMachinePathResult {
   const ranges = new Map<ValueId, { signed: boolean; width: number }>();
   for (const value of control_flow.values) {
@@ -361,6 +538,12 @@ function semantic_cfg_machine_path_result_at_target(
   ) {
     return "unknown";
   }
+  if (
+    alternative_requirement !== undefined &&
+    !requirement_has_range(alternative_requirement, ranges)
+  ) {
+    return "unknown";
+  }
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
   );
@@ -376,7 +559,7 @@ function semantic_cfg_machine_path_result_at_target(
   ) {
     return "unreachable";
   }
-  if (target_block_can_repeat(target.block.id, blocks)) {
+  if (check_repetition && target_block_can_repeat(target.block.id, blocks)) {
     if (bounded_offset !== undefined) return "unknown";
     if (
       requirement !== undefined &&
@@ -386,6 +569,7 @@ function semantic_cfg_machine_path_result_at_target(
         requirement,
         ranges,
         producers,
+        alternative_requirement,
       )
     ) {
       return "proved";
@@ -429,9 +613,21 @@ function semantic_cfg_machine_path_result_at_target(
         paths += 1;
         if (
           requirement !== undefined &&
-          !machine_requirement_holds(
-            domain,
-            aliased_machine_requirement(requirement, aliases),
+          !(
+            machine_requirement_holds(
+              domain,
+              aliased_machine_requirement(requirement, aliases),
+            ) ||
+            (
+              alternative_requirement !== undefined &&
+              machine_requirement_holds(
+                domain,
+                aliased_machine_requirement(
+                  alternative_requirement,
+                  aliases,
+                ),
+              )
+            )
           )
         ) {
           return "unproved";
@@ -1060,10 +1256,127 @@ function repeating_call_requirement_holds(
   requirement: SemanticMachineRequirement,
   ranges: ReadonlyMap<ValueId, { signed: boolean; width: number }>,
   producers: ReadonlyMap<ValueId, SemanticNode>,
+  alternative_requirement?: SemanticMachineRequirement,
 ): boolean {
   const dominators = semantic_block_dominators(control_flow);
   const target_dominators = dominators.get(target.block.id);
   if (target_dominators === undefined) return false;
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  let aliases = new Map<ValueId, ValueId>();
+  let aliases_changed = true;
+  while (aliases_changed) {
+    aliases_changed = false;
+    for (const block of control_flow.blocks) {
+      for (const node of block.nodes) {
+        const output = node.outputs[0];
+        if (
+          node.operation.tag !== "phi" ||
+          output === undefined ||
+          node.operation.incoming.length === 0 ||
+          aliases.has(output)
+        ) {
+          continue;
+        }
+        let invariant: ValueId | undefined;
+        let varies = false;
+        for (const incoming of node.operation.incoming) {
+          const resolved = resolved_alias(incoming.value, aliases);
+          if (resolved === undefined) {
+            varies = true;
+            break;
+          }
+          if (resolved === output) continue;
+          if (invariant === undefined) {
+            invariant = resolved;
+            continue;
+          }
+          if (resolved !== invariant) varies = true;
+        }
+        if (!varies && invariant !== undefined) {
+          aliases.set(output, invariant);
+          aliases_changed = true;
+        }
+      }
+    }
+  }
+  const resolved_requirement = aliased_machine_requirement(
+    requirement,
+    aliases,
+  );
+  let resolved_alternative: SemanticMachineRequirement | undefined;
+  if (alternative_requirement !== undefined) {
+    resolved_alternative = aliased_machine_requirement(
+      alternative_requirement,
+      aliases,
+    );
+  }
+  let invariant_requirement = true;
+  const requirement_values = [requirement_value(resolved_requirement)];
+  if (
+    resolved_requirement.tag === "difference" ||
+    resolved_requirement.tag === "equality" ||
+    resolved_requirement.tag === "disequality"
+  ) {
+    requirement_values.push(resolved_requirement.right);
+  }
+  if (resolved_alternative !== undefined) {
+    requirement_values.push(requirement_value(resolved_alternative));
+    if (
+      resolved_alternative.tag === "difference" ||
+      resolved_alternative.tag === "equality" ||
+      resolved_alternative.tag === "disequality"
+    ) {
+      requirement_values.push(resolved_alternative.right);
+    }
+  }
+  for (const value of requirement_values) {
+    const producer = producers.get(value);
+    if (producer === undefined) continue;
+    const producer_block = control_flow.blocks.find((block) =>
+      block.nodes.includes(producer)
+    );
+    if (
+      producer_block !== undefined &&
+      target_block_can_repeat(producer_block.id, blocks)
+    ) {
+      invariant_requirement = false;
+    }
+  }
+  let loop_entry: SemanticBlock | undefined;
+  let loop_entry_depth = Number.POSITIVE_INFINITY;
+  for (const block_id of target_dominators) {
+    if (block_id === target.block.id) continue;
+    const block = blocks.get(block_id);
+    const block_dominators = dominators.get(block_id);
+    if (
+      block === undefined ||
+      block.nodes.length === 0 ||
+      block_dominators === undefined ||
+      !target_block_can_repeat(block_id, blocks) ||
+      block_dominators.size >= loop_entry_depth
+    ) {
+      continue;
+    }
+    loop_entry = block;
+    loop_entry_depth = block_dominators.size;
+  }
+  const loop_entry_node = loop_entry?.nodes[0];
+  if (
+    invariant_requirement && loop_entry !== undefined &&
+    loop_entry_node !== undefined
+  ) {
+    const entry_result = semantic_cfg_machine_path_result_at_target(
+      control_flow,
+      { block: loop_entry, node: loop_entry_node },
+      resolved_requirement,
+      undefined,
+      resolved_alternative,
+      false,
+    );
+    if (entry_result === "proved") return true;
+  }
   let domain = machine_fact_domain(ranges);
   for (const block of control_flow.blocks) {
     if (block.id === target.block.id) continue;
@@ -1080,6 +1393,40 @@ function repeating_call_requirement_holds(
     if (branch_value === undefined) continue;
     const comparison = producers.get(block.terminator.condition);
     if (comparison === undefined) continue;
+    const repeating_block = target_block_can_repeat(block.id, blocks);
+    if (repeating_block) {
+      if (
+        comparison.operation.tag !== "primitive" ||
+        !comparison.operation.name.startsWith("range-has-next:")
+      ) {
+        continue;
+      }
+      const range_requirement = semantic_comparison_requirement(
+        comparison,
+        branch_value,
+        ranges,
+        producers,
+      );
+      if (range_requirement !== undefined) {
+        domain = assume_machine_requirement(
+          domain,
+          aliased_machine_requirement(range_requirement, aliases),
+        );
+      }
+      const range_invariant = semantic_range_induction_requirement(
+        comparison,
+        branch_value,
+        ranges,
+        producers,
+      );
+      if (range_invariant !== undefined) {
+        domain = assume_machine_requirement(
+          domain,
+          aliased_machine_requirement(range_invariant, aliases),
+        );
+      }
+      continue;
+    }
     const premise = semantic_comparison_requirement(
       comparison,
       branch_value,
@@ -1087,7 +1434,10 @@ function repeating_call_requirement_holds(
       producers,
     );
     if (premise !== undefined) {
-      domain = assume_machine_requirement(domain, premise);
+      domain = assume_machine_requirement(
+        domain,
+        aliased_machine_requirement(premise, aliases),
+      );
     }
     const range_invariant = semantic_range_induction_requirement(
       comparison,
@@ -1096,7 +1446,10 @@ function repeating_call_requirement_holds(
       producers,
     );
     if (range_invariant !== undefined) {
-      domain = assume_machine_requirement(domain, range_invariant);
+      domain = assume_machine_requirement(
+        domain,
+        aliased_machine_requirement(range_invariant, aliases),
+      );
     }
     const bitmask_premise = semantic_bitmask_requirement(
       comparison,
@@ -1106,7 +1459,10 @@ function repeating_call_requirement_holds(
       new Map(),
     );
     if (bitmask_premise !== undefined) {
-      domain = assume_machine_requirement(domain, bitmask_premise);
+      domain = assume_machine_requirement(
+        domain,
+        aliased_machine_requirement(bitmask_premise, aliases),
+      );
     }
     const congruence_premise = semantic_remainder_congruence_requirement(
       comparison,
@@ -1116,10 +1472,12 @@ function repeating_call_requirement_holds(
       new Map(),
     );
     if (congruence_premise !== undefined) {
-      domain = assume_machine_requirement(domain, congruence_premise);
+      domain = assume_machine_requirement(
+        domain,
+        aliased_machine_requirement(congruence_premise, aliases),
+      );
     }
   }
-  let aliases = new Map<ValueId, ValueId>();
   let booleans = new Map<ValueId, boolean>();
   for (const node of target.block.nodes) {
     if (node === target.node) break;
@@ -1135,9 +1493,16 @@ function repeating_call_requirement_holds(
     booleans = transferred.booleans;
     aliases = transferred.aliases;
   }
-  return machine_requirement_holds(
+  const requirement_holds = machine_requirement_holds(
     domain,
     aliased_machine_requirement(requirement, aliases),
+  );
+  if (requirement_holds || alternative_requirement === undefined) {
+    return requirement_holds;
+  }
+  return machine_requirement_holds(
+    domain,
+    aliased_machine_requirement(alternative_requirement, aliases),
   );
 }
 

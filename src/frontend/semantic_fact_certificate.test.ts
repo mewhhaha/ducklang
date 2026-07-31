@@ -5,6 +5,7 @@ import {
   semantic_index_bounds_certificate,
   semantic_machine_certificate,
   semantic_predicate_certificate,
+  semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
   semantic_type_certificate,
@@ -12,6 +13,7 @@ import {
   type SemanticBoundedOffsetRequirement,
   type SemanticIndexBoundsRequirement,
   type SemanticMachineRequirement,
+  type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   type SemanticTypeRequirement,
@@ -19,6 +21,7 @@ import {
   verify_semantic_index_bounds_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
+  verify_semantic_primitive_safety_certificate,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
   verify_semantic_type_certificate,
@@ -27,6 +30,7 @@ import {
 import {
   infer_semantic_index_bounds_certificate,
   infer_semantic_machine_certificate,
+  infer_semantic_primitive_safety_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
 } from "./semantic_fact_graph.ts";
@@ -49,6 +53,117 @@ const pair_type = {
     { label: undefined, type: i32_type },
   ],
 } as const;
+
+Deno.test("semantic primitive certificates verify integer trap conditions", () => {
+  const builder = new SemanticCfgBuilder("primitive-safety");
+  const entry = builder.add_block(origin);
+  const dividend = "primitive-dividend" as ValueId;
+  builder.add_parameter(dividend, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const divisor = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 2 },
+    [],
+    [i32_type],
+  )[0];
+  if (divisor === undefined) throw new Error("Expected primitive divisor.");
+  const operation_span = { start: 0, end: 3 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    operation_span,
+    { tag: "primitive", name: "i32.div_s" },
+    [dividend, divisor],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected division result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const certificate = infer_semantic_primitive_safety_certificate(
+    control_flow,
+    operation_span,
+    "i32.div_s",
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected primitive safety certificate.");
+  }
+  assert_equals(
+    certificate.requirement.overflow_guard,
+    "divisor_not_negative_one",
+  );
+  assert_equals(
+    verify_semantic_primitive_safety_certificate(
+      certificate,
+      control_flow,
+      operation_span,
+      certificate.requirement,
+    ),
+    true,
+  );
+  const forged: SemanticPrimitiveSafetyRequirement = {
+    ...certificate.requirement,
+    divisor: "forged-divisor" as ValueId,
+  };
+  assert_equals(
+    verify_semantic_primitive_safety_certificate(
+      semantic_primitive_safety_certificate(operation_span, forged),
+      control_flow,
+      operation_span,
+      forged,
+    ),
+    false,
+  );
+
+  const mismatched_builder = new SemanticCfgBuilder(
+    "primitive-safety-mismatch",
+  );
+  const mismatched_entry = mismatched_builder.add_block(origin);
+  const unsigned_dividend = "unsigned-dividend" as ValueId;
+  mismatched_builder.add_parameter(unsigned_dividend, u32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const unsigned_divisor = mismatched_builder.add_node(
+    mismatched_entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 2 },
+    [],
+    [u32_type],
+  )[0];
+  if (unsigned_divisor === undefined) {
+    throw new Error("Expected unsigned divisor.");
+  }
+  const unsigned_result = mismatched_builder.add_node(
+    mismatched_entry,
+    origin,
+    operation_span,
+    { tag: "primitive", name: "i32.div_s" },
+    [unsigned_dividend, unsigned_divisor],
+    [u32_type],
+  )[0];
+  if (unsigned_result === undefined) {
+    throw new Error("Expected mismatched division result.");
+  }
+  mismatched_builder.terminate(mismatched_entry, {
+    tag: "return",
+    value: unsigned_result,
+  });
+  assert_equals(
+    infer_semantic_primitive_safety_certificate(
+      mismatched_builder.finish(),
+      operation_span,
+      "i32.div_s",
+    ),
+    undefined,
+  );
+});
 
 Deno.test("semantic type certificates verify positive branch membership", () => {
   const builder = new SemanticCfgBuilder("positive-type-certificate");

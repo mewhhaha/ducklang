@@ -593,6 +593,42 @@ export function semantic_indexes_at_span(
   return indexes;
 }
 
+export function unique_semantic_primitive_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+  primitive: string,
+): { block: SemanticBlock; node: SemanticNode } | undefined {
+  const primitives = semantic_primitives_at_span(
+    control_flow,
+    span,
+    primitive,
+  );
+  if (primitives.length !== 1) return undefined;
+  return primitives[0];
+}
+
+export function semantic_primitives_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+  primitive: string,
+): readonly { block: SemanticBlock; node: SemanticNode }[] {
+  const primitives: { block: SemanticBlock; node: SemanticNode }[] = [];
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "primitive" ||
+        node.operation.name !== primitive ||
+        node.span.start !== span.start ||
+        node.span.end !== span.end
+      ) {
+        continue;
+      }
+      primitives.push({ block, node });
+    }
+  }
+  return primitives;
+}
+
 export type SemanticCallableControlFlow = {
   callable: ValueId;
   parameters: readonly ValueId[];

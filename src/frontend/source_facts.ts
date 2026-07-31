@@ -33,6 +33,7 @@ import {
   integer_literal_fits,
   integer_type_from_name,
   integer_type_name,
+  integer_val_type,
 } from "../integer.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import {
@@ -7446,8 +7447,16 @@ function compatible_equality_operands(
   }
 
   if (is_numeric_type(left)) {
-    if (left.resolved_name === "I64") {
-      return prim.startsWith("i64.");
+    const integer = integer_type_from_name(left.resolved_name);
+
+    if (integer !== undefined) {
+      const value_type = integer_val_type(integer);
+
+      if (value_type === undefined) {
+        return false;
+      }
+
+      return prim.startsWith(value_type + ".");
     }
 
     if (left.resolved_name === "F32") {

@@ -361,6 +361,42 @@ Deno.test("Duck compiler updates statically selected heterogeneous fields", asyn
   try {
     const result = await compiler.run(source);
     assert_equals(result.value, { kind: "integer", value: 42 });
+    const unsigned_quotient = await compiler.run(
+      "(0u64 - 1u64) / 2u64\n",
+    );
+    assert_equals(unsigned_quotient.value, {
+      kind: "signed-integer-64",
+      value: 9223372036854775807n,
+    });
+    const unsigned_remainder = await compiler.run(
+      "(0u64 - 1u64) % 2u64\n",
+    );
+    assert_equals(unsigned_remainder.value, {
+      kind: "signed-integer-64",
+      value: 1n,
+    });
+    const unsigned_32_quotient = await compiler.run(
+      "(0u32 - 1u32) / 2u32\n",
+    );
+    assert_equals(unsigned_32_quotient.value, {
+      kind: "integer",
+      value: 2147483647,
+    });
+    const unsigned_32_remainder = await compiler.run(
+      "(0u32 - 1u32) % 2u32\n",
+    );
+    assert_equals(unsigned_32_remainder.value, {
+      kind: "integer",
+      value: 1,
+    });
+    const unsigned_32_large_divisor = await compiler.run(
+      "let divisor = 0u32 - 1u32; " +
+        "if divisor != 0u32 then 84u32 / divisor else 0u32 end\n",
+    );
+    assert_equals(unsigned_32_large_divisor.value, {
+      kind: "integer",
+      value: 0,
+    });
   } finally {
     compiler.destroy();
   }
@@ -1538,6 +1574,103 @@ Deno.test("Duck compiler lowers Duck remainder primitives", () => {
   const remainder_module = encode_duck_module("84 % 30");
 
   assert_equals(remainder_module.nodeCount, 3);
+});
+
+Deno.test("Duck compiler rejects unproved integer traps", () => {
+  for (
+    const [source, message] of [
+      [
+        "let divide = (left: I32, right: I32) => left / right;\n0\n",
+        "unknown: cannot prove divisor != 0",
+      ],
+      ["84 / 0\n", "disproved: cannot prove divisor != 0"],
+      ["84 % 0\n", "disproved: cannot prove divisor != 0"],
+    ] as const
+  ) {
+    assert_throws(() => encode_duck_module(source), message);
+  }
+});
+
+Deno.test("Duck compiler rejects first-class partial Wasm intrinsics", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let invoke: (((I32, I32) -> I32), I32, I32) -> I32 = " +
+          "(operation, left, right) => operation(left, right);\n" +
+          "invoke (@wasm.div_i32, 84, 0)\n",
+      ),
+    "partial intrinsic @wasm.div_i32 cannot escape",
+  );
+});
+
+Deno.test("Duck compiler executes guarded integer division", async () => {
+  encode_duck_module("84u64 / 2u64\n");
+  encode_duck_module(
+    "let divide = (left: U64, right: U64) => " +
+      "if right != 0u64 then left / right else 0u64 end;\n0\n",
+  );
+  encode_duck_module(
+    "let divide = (left: I32, right: I32) => " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "left / right else 0 end;\n" +
+      "divide (84, 2)\n",
+  );
+  encode_duck_module(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && right != -1 then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  );
+  encode_duck_module(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  );
+  const source = "let divide = (left: I32, right: I32) => " +
+    "if right != 0 && right != -1 then left / right else 0 end;\n" +
+    "divide (84, 2)\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+    const high_divisor_quotient = await compiler.run(
+      "84u64 / 18446744073709551615u64\n",
+    );
+    assert_equals(high_divisor_quotient.value, {
+      kind: "signed-integer-64",
+      value: 0n,
+    });
+    const high_divisor_remainder = await compiler.run(
+      "84u64 % 18446744073709551615u64\n",
+    );
+    assert_equals(high_divisor_remainder.value, {
+      kind: "signed-integer-64",
+      value: 84n,
+    });
+    const guarded_high_divisor = await compiler.run(
+      "let divide = (left: U64, right: U64) => " +
+        "if right != 0u64 then left / right else 0u64 end;\n" +
+        "divide (84u64, 18446744073709551615u64)\n",
+    );
+    assert_equals(guarded_high_divisor.value, {
+      kind: "signed-integer-64",
+      value: 0n,
+    });
+    const guarded_high_remainder = await compiler.run(
+      "let remainder = (left: U64, right: U64) => " +
+        "if right != 0u64 then left % right else 0u64 end;\n" +
+        "remainder (84u64, 18446744073709551615u64)\n",
+    );
+    assert_equals(guarded_high_remainder.value, {
+      kind: "signed-integer-64",
+      value: 84n,
+    });
+  } finally {
+    compiler.destroy();
+  }
 });
 
 Deno.test("Duck compiler preserves annotated function result types", async () => {

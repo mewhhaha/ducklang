@@ -3,9 +3,15 @@ import type { Core } from "./core/ast.ts";
 import { core_from_source } from "./core/from_source.ts";
 import {
   integer_maximum,
+  integer_minimum,
   integer_type_from_name,
   integer_type_name,
 } from "./integer.ts";
+import {
+  type Prim,
+  primitive_trap_conditions,
+  wasm_intrinsic_prim,
+} from "./op.ts";
 import {
   compiler_diagnostic,
   type CompilerDiagnostic,
@@ -101,11 +107,13 @@ import {
   infer_semantic_bounded_offset_certificate,
   infer_semantic_index_bounds_certificate,
   infer_semantic_machine_certificate,
+  infer_semantic_primitive_safety_certificate,
   infer_semantic_remainder_certificate,
   infer_semantic_remainder_divisibility_certificate,
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
   semantic_index_is_unreachable,
+  semantic_primitive_is_unreachable,
   type SemanticMachineRequirement,
   type SemanticTypeRequirement,
 } from "./frontend/semantic_fact_graph.ts";
@@ -115,6 +123,7 @@ import {
   type SemanticControlFlowCertificate,
   type SemanticIndexBoundsRequirement,
   type SemanticPredicateAtom,
+  type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   verify_semantic_bounded_offset_certificate,
@@ -122,6 +131,8 @@ import {
   verify_semantic_index_unreachable,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
+  verify_semantic_primitive_safety_certificate,
+  verify_semantic_primitive_unreachable,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
   verify_semantic_type_certificate,
@@ -447,10 +458,16 @@ export function analyze_duck_source(
     transparent_types,
   );
   let index_coverage_diagnostics: CompilerDiagnostic[] = [];
+  let primitive_coverage_diagnostics: CompilerDiagnostic[] = [];
   if (!has_error_diagnostics(precontract_diagnostics)) {
     index_coverage_diagnostics = validate_index_obligation_coverage(
       source_analysis.source,
       binding_index,
+      inferred_control_flow,
+      inferred_callable_control_flow,
+    );
+    primitive_coverage_diagnostics = validate_primitive_obligation_coverage(
+      source_analysis.source,
       inferred_control_flow,
       inferred_callable_control_flow,
     );
@@ -459,11 +476,17 @@ export function analyze_duck_source(
     inferred_control_flow,
     inferred_callable_control_flow,
   );
+  const primitive_validation = validate_partial_primitive_obligations(
+    inferred_control_flow,
+    inferred_callable_control_flow,
+  );
   const diagnostics = diagnostic_sequence([
     ...precontract_diagnostics,
     ...contract_validation.diagnostics,
     ...index_coverage_diagnostics,
     ...index_validation.diagnostics,
+    ...primitive_coverage_diagnostics,
+    ...primitive_validation.diagnostics,
   ], options.uri);
   let control_flow: SemanticCfg | undefined;
   let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
@@ -488,6 +511,7 @@ export function analyze_duck_source(
     proofs: new FrozenMap([
       ...contract_validation.proofs,
       ...index_validation.proofs,
+      ...primitive_validation.proofs,
     ]),
     origins: new FrozenMap(origins),
     function_summaries: new FrozenMap<string, FunctionFactSummary>([]),
@@ -1401,6 +1425,74 @@ function source_aggregate_length(
   return undefined;
 }
 
+function validate_primitive_obligation_coverage(
+  source: SourceNode,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): CompilerDiagnostic[] {
+  const covered_spans = new Set<string>();
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (const candidate of control_flows) {
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (
+          node.operation.tag !== "primitive" ||
+          primitive_trap_conditions(node.operation.name).length === 0
+        ) {
+          continue;
+        }
+        covered_spans.add(
+          node.span.start.toString() + ":" + node.span.end.toString(),
+        );
+      }
+    }
+  }
+  const checks: Checked<null>[] = [];
+  for (const expression of source_facts(source).expressions) {
+    if (
+      (expression.tag === "var" || expression.tag === "linear") &&
+      expression.name.startsWith("@wasm.") &&
+      has_source_span(expression)
+    ) {
+      const primitive = wasm_intrinsic_prim(
+        expression.name.slice("@wasm.".length),
+      );
+      if (
+        primitive !== undefined &&
+        primitive_trap_conditions(primitive).length > 0
+      ) {
+        checks.push(fail(compiler_diagnostic(
+          diagnostic_codes.partial_operation_unproved,
+          "unknown: partial intrinsic " + expression.name +
+            " cannot escape a directly checked call.",
+          source_span(expression),
+        )));
+      }
+      continue;
+    }
+    if (
+      expression.tag !== "prim" ||
+      primitive_trap_conditions(expression.prim).length === 0 ||
+      !has_source_span(expression)
+    ) {
+      continue;
+    }
+    const span = source_span(expression);
+    const key = span.start.toString() + ":" + span.end.toString();
+    if (covered_spans.has(key)) continue;
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: the compiler could not construct a primitive trap obligation.",
+      span,
+    )));
+  }
+  return diagnostics_of(all(checks));
+}
+
 function validate_index_obligations(
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
@@ -1587,6 +1679,171 @@ function validate_index_obligations(
             }),
           }),
         );
+      }
+    }
+  }
+  const proofs = new Map<string, CheckedKernelCertificate>();
+  for (const check of checks) {
+    const checked = checked_value(check);
+    if (checked !== undefined) proofs.set(checked.key, checked.proof);
+  }
+  return {
+    diagnostics: diagnostics_of(all(checks)),
+    proofs,
+  };
+}
+
+function validate_partial_primitive_obligations(
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): {
+  diagnostics: CompilerDiagnostic[];
+  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+} {
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (let flow_index = 0; flow_index < control_flows.length; flow_index += 1) {
+    const candidate = control_flows[flow_index];
+    expect(
+      candidate !== undefined,
+      `Primitive validation lost CFG ${flow_index}.`,
+    );
+    const producers = new Map<ValueId, SemanticNode>();
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        for (const output of node.outputs) producers.set(output, node);
+      }
+    }
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "primitive") continue;
+        const trap_conditions = primitive_trap_conditions(
+          node.operation.name,
+        );
+        if (trap_conditions.length === 0) continue;
+        const primitive = node.operation.name as Prim;
+        if (
+          semantic_primitive_is_unreachable(candidate, node.span, primitive)
+        ) {
+          expect(
+            verify_semantic_primitive_unreachable(
+              candidate,
+              node.span,
+              primitive,
+            ),
+            "FactGraph and the independent verifier disagree about an unreachable primitive.",
+          );
+          continue;
+        }
+        const certificate = infer_semantic_primitive_safety_certificate(
+          candidate,
+          node.span,
+          primitive,
+        );
+        if (certificate === undefined) {
+          const dividend = node.inputs[0];
+          const divisor = node.inputs[1];
+          expect(
+            dividend !== undefined && divisor !== undefined,
+            "Partial primitive lost its operands.",
+          );
+          const divisor_constant = producers.get(divisor);
+          let divisor_value: bigint | undefined;
+          if (
+            divisor_constant?.operation.tag === "constant" &&
+            (typeof divisor_constant.operation.value === "number" ||
+              typeof divisor_constant.operation.value === "bigint") &&
+            (typeof divisor_constant.operation.value === "bigint" ||
+              Number.isSafeInteger(divisor_constant.operation.value))
+          ) {
+            divisor_value = BigInt(divisor_constant.operation.value);
+          }
+          let status = "unknown";
+          if (divisor_value === 0n) status = "disproved";
+          let goal = "divisor != 0";
+          if (trap_conditions.includes("signed_division_overflow")) {
+            const semantic_value = candidate.values.find((value) =>
+              value.value === dividend
+            );
+            let integer: { signed: boolean; width: number } | undefined;
+            if (semantic_value?.type.tag === "scalar") {
+              integer = integer_type_from_name(semantic_value.type.name);
+            } else if (semantic_value?.type.tag === "integer") {
+              integer = {
+                signed: semantic_value.type.signed,
+                width: semantic_value.type.width,
+              };
+            }
+            expect(
+              integer !== undefined && integer.signed,
+              "Signed division primitive lost its signed integer type.",
+            );
+            goal += " and (dividend != " +
+              integer_minimum(integer).toString() + " or divisor != -1)";
+            const dividend_node = producers.get(dividend);
+            let dividend_value: bigint | undefined;
+            if (
+              dividend_node?.operation.tag === "constant" &&
+              (typeof dividend_node.operation.value === "number" ||
+                typeof dividend_node.operation.value === "bigint") &&
+              (typeof dividend_node.operation.value === "bigint" ||
+                Number.isSafeInteger(dividend_node.operation.value))
+            ) {
+              dividend_value = BigInt(dividend_node.operation.value);
+            }
+            if (
+              dividend_value === integer_minimum(integer) &&
+              divisor_value === -1n
+            ) {
+              status = "disproved";
+            }
+          }
+          checks.push(fail(compiler_diagnostic(
+            diagnostic_codes.partial_operation_unproved,
+            status + ": cannot prove " + goal + " before " + primitive + ".",
+            node.span,
+          )));
+          continue;
+        }
+        const requirement: SemanticPrimitiveSafetyRequirement =
+          certificate.requirement;
+        expect(
+          verify_semantic_primitive_safety_certificate(
+            certificate,
+            candidate,
+            node.span,
+            requirement,
+          ),
+          "FactGraph produced an invalid primitive safety certificate.",
+        );
+        const environment = KernelEnvironment.empty();
+        const term_context = snapshot_kernel_context([]);
+        const kernel_certificate = check_proof(
+          { tag: "true_intro" },
+          { tag: "true" },
+          {
+            allow_unsafe: false,
+            require_safe: true,
+            environment,
+            term_context,
+          },
+        );
+        checks.push(ok({
+          key: "primitive:" + flow_index.toString() + ":" +
+            node.span.start.toString() + ":" + node.id.toString(),
+          proof: Object.freeze({
+            certificate: kernel_certificate,
+            environment,
+            term_context,
+            semantic_certificate: certificate,
+          }),
+        }));
       }
     }
   }
