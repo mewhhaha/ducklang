@@ -318,7 +318,7 @@ Deno.test("prefix source extraction retains tactic blocks", () => {
     "type prove = (evidence: Proof True) -> Proof True and True\n" +
     "let prove = evidence => " +
     "by { constructor exact evidence apply evidence cases evidence " +
-    "rewrite evidence decide simp [evidence] };\n";
+    "rewrite evidence decide simp [evidence] omega };\n";
   const metadata = extract_prefix_source_metadata(parse_duck_source(source));
   const proof = metadata.definitions[0]?.callable_proof_body;
   assert_equals(proof?.tag, "tactics");
@@ -327,7 +327,16 @@ Deno.test("prefix source extraction retains tactic blocks", () => {
   }
   assert_equals(
     proof.commands.map((command) => command.tag),
-    ["constructor", "exact", "apply", "cases", "rewrite", "decide", "simp"],
+    [
+      "constructor",
+      "exact",
+      "apply",
+      "cases",
+      "rewrite",
+      "decide",
+      "simp",
+      "omega",
+    ],
   );
   const exact = proof.commands[1];
   assert_equals(exact?.tag, "exact");
@@ -356,6 +365,7 @@ Deno.test("prefix source extraction retains tactic blocks", () => {
       span: { start: 175, end: 183 },
     }]);
   }
+  assert_equals(proof.commands[7]?.tag, "omega");
 });
 
 Deno.test("prefix source extraction retains equality transformations", () => {

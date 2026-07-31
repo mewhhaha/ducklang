@@ -366,6 +366,185 @@ Deno.test("kernel checks closed machine-integer reflection", () => {
   );
 });
 
+Deno.test("kernel verifies omega difference reflection", () => {
+  const i32: KernelType = { tag: "constant", name: "I32" };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "I32", type: type_sort(0) },
+  ]);
+  const first: KernelTerm = { tag: "var", index: 0 };
+  const second: KernelTerm = { tag: "var", index: 1 };
+  const third: KernelTerm = { tag: "var", index: 2 };
+  const first_step: Proposition = {
+    tag: "atom",
+    name: "builtin:less",
+    arguments: [first, second],
+  };
+  const second_step: Proposition = {
+    tag: "atom",
+    name: "builtin:less_equal",
+    arguments: [second, third],
+  };
+  const conclusion: Proposition = {
+    tag: "atom",
+    name: "builtin:less",
+    arguments: [first, third],
+  };
+  const goal: Proposition = {
+    tag: "implies",
+    premise: first_step,
+    conclusion: {
+      tag: "implies",
+      premise: second_step,
+      conclusion,
+    },
+  };
+  const certificate = check_proof(
+    {
+      tag: "implies_intro",
+      premise: first_step,
+      body: {
+        tag: "implies_intro",
+        premise: second_step,
+        body: {
+          tag: "omega_reflect",
+          proposition: conclusion,
+          hypotheses: [0, 1],
+        },
+      },
+    },
+    goal,
+    {
+      allow_unsafe: false,
+      environment: reflection_environment,
+      term_context: [i32, i32, i32],
+    },
+  );
+  assert_equals(certificate.safety, { tag: "safe" });
+});
+
+Deno.test("kernel rejects invalid omega reflection", () => {
+  const i3: KernelType = { tag: "constant", name: "I3" };
+  const u3: KernelType = { tag: "constant", name: "U3" };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "I3", type: type_sort(0) },
+    { tag: "declaration", name: "U3", type: type_sort(0) },
+  ]);
+  const malformed: Proposition = {
+    tag: "atom",
+    name: "builtin:less",
+    arguments: [{ tag: "var", index: 0 }, { tag: "var", index: 1 }],
+  };
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "implies_intro",
+          premise: malformed,
+          body: {
+            tag: "omega_reflect",
+            proposition: { tag: "false" },
+            hypotheses: [0],
+          },
+        },
+        { tag: "implies", premise: malformed, conclusion: { tag: "false" } },
+        {
+          allow_unsafe: false,
+          environment: reflection_environment,
+          term_context: [i3, u3],
+        },
+      ),
+    "Omega reflection certificate does not establish its proposition.",
+  );
+
+  let length_read = false;
+  const accessor_backed = Object.defineProperty({}, "length", {
+    get() {
+      length_read = true;
+      return 0;
+    },
+  }) as readonly number[];
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "omega_reflect",
+          proposition: { tag: "true" },
+          hypotheses: accessor_backed,
+        },
+        { tag: "true" },
+        { allow_unsafe: false },
+      ),
+    "Omega reflection hypotheses must be an array.",
+  );
+  assert_equals(length_read, false);
+});
+
+Deno.test("omega reflection ignores mutable collection prototypes", () => {
+  const u3: KernelType = { tag: "constant", name: "U3" };
+  const reflection_environment = KernelEnvironment.from_definitions([
+    { tag: "declaration", name: "U3", type: type_sort(0) },
+  ]);
+  const value: KernelTerm = { tag: "var", index: 0 };
+  const false_goal: Proposition = {
+    tag: "atom",
+    name: "builtin:less",
+    arguments: [value, value],
+  };
+  const original_has = Set.prototype.has;
+  Set.prototype.has = (() => true) as typeof Set.prototype.has;
+  try {
+    assert_throws(
+      () =>
+        check_proof(
+          {
+            tag: "omega_reflect",
+            proposition: false_goal,
+            hypotheses: [],
+          },
+          false_goal,
+          {
+            allow_unsafe: false,
+            environment: reflection_environment,
+            term_context: [u3],
+          },
+        ),
+      "Omega reflection certificate does not establish its proposition.",
+    );
+  } finally {
+    Set.prototype.has = original_has;
+  }
+});
+
+Deno.test("omega reflection keeps kernel hypotheses under mutable array prototypes", () => {
+  const premise: Proposition = { tag: "true" };
+  const goal: Proposition = {
+    tag: "implies",
+    premise,
+    conclusion: { tag: "false" },
+  };
+  const proof: ProofTerm = {
+    tag: "implies_intro",
+    premise,
+    body: {
+      tag: "omega_reflect",
+      proposition: { tag: "false" },
+      hypotheses: [0],
+    },
+  };
+  const original_push = Array.prototype.push;
+  Array.prototype.push = function forged_push(this: unknown[]) {
+    return original_push.call(this, { tag: "false" });
+  } as typeof Array.prototype.push;
+  try {
+    assert_throws(
+      () => check_proof(proof, goal, { allow_unsafe: false }),
+      "Omega reflection certificate does not establish its proposition.",
+    );
+  } finally {
+    Array.prototype.push = original_push;
+  }
+});
+
 Deno.test("kernel rejects false machine-integer reflection", () => {
   const i32: KernelType = { tag: "constant", name: "I32" };
   const one: KernelTerm = {

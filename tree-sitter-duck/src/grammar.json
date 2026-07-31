@@ -3186,6 +3186,19 @@
           "members": [
             {
               "type": "STRING",
+              "value": "omega"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
               "value": "simp"
             },
             {
@@ -3243,6 +3256,10 @@
         {
           "type": "STRING",
           "value": "decide"
+        },
+        {
+          "type": "STRING",
+          "value": "omega"
         },
         {
           "type": "SEQ",

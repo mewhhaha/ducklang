@@ -1444,14 +1444,102 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "by { simp [forward, backward] };\n" +
       "type simp_empty = () -> Proof True\n" +
       "let simp_empty = () => by { simp [] };\n" +
+      "type omega_difference = " +
+      "(first: I32, second: I32, third: I32, " +
+      "first_step: Proof first < second, " +
+      "second_step: Proof second <= third) -> Proof first < third\n" +
+      "let omega_difference = " +
+      "(first, second, third, first_step, second_step) => by { omega };\n" +
+      "type omega_equality = " +
+      "(left: U32, right: U32, forward: Proof left <= right, " +
+      "reverse: Proof right <= left) -> Proof left = right\n" +
+      "let omega_equality = " +
+      "(left, right, forward, reverse) => by { omega };\n" +
+      "type omega_negated_order = " +
+      "(left: I32, right: I32, not_less: Proof not left < right) -> " +
+      "Proof right <= left\n" +
+      "let omega_negated_order = (left, right, not_less) => by { omega };\n" +
+      "type omega_disequality = " +
+      "(left: U32, right: U32, ordered: Proof left < right) -> " +
+      "Proof left != right\n" +
+      "let omega_disequality = (left, right, ordered) => by { omega };\n" +
+      "type omega_machine_bound = (value: U8) -> Proof 0u8 <= value\n" +
+      "let omega_machine_bound = value => by { omega };\n" +
+      "type omega_weaker_upper = " +
+      "(value: I32, upper: Proof value <= 5i32) -> Proof value <= 6i32\n" +
+      "let omega_weaker_upper = (value, upper) => by { omega };\n" +
+      "type omega_weaker_lower = " +
+      "(value: I32, lower: Proof -5i32 <= value) -> Proof -6i32 <= value\n" +
+      "let omega_weaker_lower = (value, lower) => by { omega };\n" +
+      "type omega_contradiction = " +
+      "(value: I32, impossible: Proof value < value) -> Proof False\n" +
+      "let omega_contradiction = (value, impossible) => by { omega };\n" +
+      "type omega_wrapping = () -> Proof 127i8 + 1i8 = -128i8\n" +
+      "let omega_wrapping = () => by { omega };\n" +
+      "type omega_congruence = " +
+      "(value: I32, lower: Proof 0i32 <= value, " +
+      "upper: Proof value < 8i32, residue: Proof value % 3i32 = 1i32) -> " +
+      "Proof not value = 2i32\n" +
+      "let omega_congruence = " +
+      "(value, lower, upper, residue) => by { omega };\n" +
+      "type omega_divisibility = " +
+      "(value: I32, divisible: Proof value % 12i32 = 0i32) -> " +
+      "Proof value % 3i32 = 0i32\n" +
+      "let omega_divisibility = (value, divisible) => by { omega };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 32);
+  assert_equals(analysis.proofs.size, 43);
   assert_equals(
     checked_value(lower_duck_source(analysis))?.core.statements,
     [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
   );
+});
+
+Deno.test("omega preserves wrapping semantics and consistent exclusions", () => {
+  for (
+    const source of [
+      "type broken = (value: I8, exact: Proof value = 127i8) -> " +
+      "Proof value < value + 1i8\n" +
+      "let broken = (value, exact) => by { omega };\n42\n",
+      "type broken = " +
+      "(value: U8, exact: Proof value = 0u8, " +
+      "excluded: Proof value != 255u8) -> Proof False\n" +
+      "let broken = (value, exact, excluded) => by { omega };\n42\n",
+      "type broken = " +
+      "(value: I32, divisible: Proof value % 6i32 = 0i32) -> " +
+      "Proof value % 4i32 = 0i32\n" +
+      "let broken = (value, divisible) => by { omega };\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        (diagnostic.message.includes("omega could not prove") ||
+          diagnostic.message.includes("omega exceeded"))
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("omega does not emit oversized hypothesis certificates", () => {
+  const parameters = ["value: I8"];
+  const arguments_ = ["value"];
+  for (let index = 0; index < 65; index += 1) {
+    parameters.push(`h${index}: Proof value = value`);
+    arguments_.push(`h${index}`);
+  }
+  const source =
+    `type many = (${parameters.join(", ")}) -> Proof value = value\n` +
+    `let many = (${arguments_.join(", ")}) => by { omega };\n42\n`;
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
 Deno.test("tactic blocks report the command that cannot solve its goal", () => {
@@ -5183,6 +5271,13 @@ Deno.test("direct equality transformations produce checked kernel terms", () => 
       "let shadowed_substitute = (actual_left, actual_right, same, known) => " +
       "by transport(same, actual_left => predicate(actual_left), known);\n" +
       "42\n",
+      "type arithmetic_substitute = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof left + 0 = left + 0) -> " +
+      "Proof right + 0 = right + 0\n" +
+      "let arithmetic_substitute = (left, right, equality, evidence) => " +
+      "by transport(" +
+      "equality, value => value + 0 = value + 0, evidence);\n42\n",
     ]
   ) {
     const analysis = analyze_duck_source(parse_duck_source(source));
@@ -5215,7 +5310,7 @@ Deno.test("invalid equality transformations fail before Core", () => {
         "Proof left = right\n" +
         "let bad = (left, right, equality) => " +
         "by congr(value => value + 1, equality);\n42\n",
-        "Unsupported congruence function value + 1",
+        "not #0 = #1",
       ],
       [
         "type predicate = (value: I32) -> Prop\n" +
@@ -5236,16 +5331,6 @@ Deno.test("invalid equality transformations fail before Core", () => {
         "let bad = (left, right, equality, evidence) => " +
         "by transport(equality, value => predicate(missing), evidence);\n42\n",
         "refers to unbound logical value missing",
-      ],
-      [
-        "type bad = " +
-        "(left: I32, right: I32, equality: Proof left = right, " +
-        "evidence: Proof left + 0 = left + 0) -> " +
-        "Proof right + 0 = right + 0\n" +
-        "let bad = (left, right, equality, evidence) => " +
-        "by transport(" +
-        "equality, value => value + 0 = value + 0, evidence);\n42\n",
-        "transport motive requires structured kernel terms",
       ],
     ] as const
   ) {
@@ -5368,13 +5453,13 @@ Deno.test("invalid direct quantified proof terms fail before Core", () => {
         "type bad = " +
         "() -> Proof forall (value: I32). predicate(value + 1)\n" +
         "let bad = () => by value => true_intro;\n42\n",
-        "cannot quantify over holds until every referenced logical term has a structured kernel representation",
+        "Proof establishes True, not fact:root:predicate",
       ],
       [
         "type bad = " +
         "() -> Proof forall (value: I32). value + 0 = value\n" +
         "let bad = () => by value => refl;\n42\n",
-        "cannot quantify over equal until every referenced logical term has a structured kernel representation",
+        "Reflexivity term does not match both equality sides",
       ],
     ] as const
   ) {

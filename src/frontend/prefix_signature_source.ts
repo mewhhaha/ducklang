@@ -617,6 +617,7 @@ function tactic_command_from_node(
       "left",
       "right",
       "decide",
+      "omega",
     ] as const
   ) {
     if (

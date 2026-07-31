@@ -328,6 +328,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
       { tag: "rewrite", proof: applied, span: { start: 73, end: 88 } },
       { tag: "decide", span: { start: 89, end: 95 } },
       { tag: "simp", lemmas: [simplified], span: { start: 96, end: 109 } },
+      { tag: "omega", span: { start: 110, end: 115 } },
     ],
     span: { start: 10, end: 46 },
   };
@@ -393,6 +394,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
       span: { start: 101, end: 109 },
     }]);
   }
+  assert_equals(body.commands[7]?.tag, "omega");
   assert_equals(Object.isFrozen(body.commands), true);
 });
 

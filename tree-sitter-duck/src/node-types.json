@@ -9232,6 +9232,10 @@
     "named": false
   },
   {
+    "type": "omega",
+    "named": false
+  },
+  {
     "type": "opaque",
     "named": false
   },

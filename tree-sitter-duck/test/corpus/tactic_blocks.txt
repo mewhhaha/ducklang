@@ -154,11 +154,11 @@ let prove = () => by { decide };
       (number))))
 
 ==================
-Simplification tactic
+Omega tactic
 ==================
 
 type prove = () -> Proof True implies True
-let prove = () => by { simp };
+let prove = () => by { omega };
 42
 
 ---

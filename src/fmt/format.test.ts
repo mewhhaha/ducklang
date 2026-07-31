@@ -98,7 +98,10 @@ Deno.test("format_text round trips tactic blocks", () => {
     "let obvious=()=>by{simp};\n" +
     "type simplify=(left:I32,right:I32,equality:Proof left=right)->" +
     "Proof left=right\n" +
-    "let simplify=(left,right,equality)=>by{simp [equality]};\n";
+    "let simplify=(left,right,equality)=>by{simp [equality]};\n" +
+    "type ordered=(left:I32,right:I32,evidence:Proof left<right)->" +
+    "Proof left<=right\n" +
+    "let ordered=(left,right,evidence)=>by{omega};\n";
   const formatted = format_text(source);
   assert_equals(
     formatted,
@@ -125,7 +128,11 @@ Deno.test("format_text round trips tactic blocks", () => {
       "type simplify =\n" +
       "  (left: I32, right: I32, equality: Proof left = right) -> " +
       "Proof left = right\n" +
-      "let simplify = (left, right, equality) => by { simp [equality] };\n",
+      "let simplify = (left, right, equality) => by { simp [equality] };\n" +
+      "type ordered =\n" +
+      "  (left: I32, right: I32, evidence: Proof left < right) -> " +
+      "Proof left <= right\n" +
+      "let ordered = (left, right, evidence) => by { omega };\n",
   );
   assert_equals(format_text(formatted), formatted);
 });

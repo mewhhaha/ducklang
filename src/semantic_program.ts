@@ -197,6 +197,11 @@ import {
 } from "./frontend/prefix_signature.ts";
 import { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
 import { proof_limits } from "./frontend/proof_limits.ts";
+import {
+  infer_omega_reflection,
+  type OmegaHypothesis,
+  OmegaReflectionInvariantError,
+} from "./frontend/omega_reflection.ts";
 
 export type SemanticSymbolIndex = ReadonlyMap<string, readonly ValueId[]>;
 export type SemanticTypeIndex = ReadonlyMap<ValueId, RepresentationType>;
@@ -5209,6 +5214,17 @@ function prefix_term_has_kernel_representation(term: PrefixTerm): boolean {
   if (term.shape.tag === "parenthesized") {
     return prefix_term_has_kernel_representation(term.shape.value);
   }
+  if (term.shape.tag === "unary") {
+    return (term.shape.operator === "+" || term.shape.operator === "-") &&
+      prefix_term_has_kernel_representation(term.shape.operand);
+  }
+  if (term.shape.tag === "binary") {
+    return (
+      term.shape.operator === "+" || term.shape.operator === "-" ||
+      term.shape.operator === "*" || term.shape.operator === "%"
+    ) && prefix_term_has_kernel_representation(term.shape.left) &&
+      prefix_term_has_kernel_representation(term.shape.right);
+  }
   return false;
 }
 
@@ -5534,6 +5550,7 @@ function check_prefix_proof_definition(
       }),
     });
   } catch (error) {
+    if (error instanceof OmegaReflectionInvariantError) throw error;
     let message = String(error);
     if (error instanceof Error) message = error.message;
     return fail(
@@ -5995,7 +6012,107 @@ function prefix_kernel_term(
     term.shape.tag !== "character" && term.shape.tag !== "boolean" &&
     signed_number === undefined
   ) {
-    return undefined;
+    const logical_type = checked_value(
+      check_prefix_term_type(
+        declaration_name,
+        term,
+        context.term_types,
+        facts,
+        new Set(),
+      ),
+    );
+    if (logical_type === undefined) return undefined;
+    const type_name = logical_type.representation;
+    const integer_type = integer_type_from_name(type_name);
+    if (
+      integer_type === undefined || integer_type.width < 1 ||
+      integer_type.width > 128
+    ) {
+      return undefined;
+    }
+    const type: KernelType = { tag: "constant", name: type_name };
+    context.declarations.set(type_name, type_sort(0));
+    if (term.shape.tag === "unary") {
+      if (term.shape.operator === "+") {
+        return prefix_kernel_term(
+          declaration_name,
+          term.shape.operand,
+          context,
+          facts,
+        );
+      }
+      if (term.shape.operator !== "-") return undefined;
+      const operand = prefix_kernel_term(
+        declaration_name,
+        term.shape.operand,
+        context,
+        facts,
+      );
+      if (operand === undefined || operand.type_name !== type_name) {
+        return undefined;
+      }
+      const function_type: KernelType = {
+        tag: "pi",
+        domain: type,
+        codomain: type,
+      };
+      const name = "primitive:negate:" + type_name;
+      context.declarations.set(name, function_type);
+      return {
+        term: {
+          tag: "app",
+          function: { tag: "constant", name, type: function_type },
+          argument: operand.term,
+        },
+        type,
+        type_name,
+      };
+    }
+    if (term.shape.tag !== "binary") return undefined;
+    let operation: "add" | "subtract" | "multiply" | "remainder";
+    if (term.shape.operator === "+") operation = "add";
+    else if (term.shape.operator === "-") operation = "subtract";
+    else if (term.shape.operator === "*") operation = "multiply";
+    else if (term.shape.operator === "%") operation = "remainder";
+    else return undefined;
+    const left = prefix_kernel_term(
+      declaration_name,
+      term.shape.left,
+      context,
+      facts,
+    );
+    const right = prefix_kernel_term(
+      declaration_name,
+      term.shape.right,
+      context,
+      facts,
+    );
+    if (
+      left === undefined || right === undefined ||
+      left.type_name !== type_name || right.type_name !== type_name
+    ) {
+      return undefined;
+    }
+    const function_type: KernelType = {
+      tag: "pi",
+      domain: type,
+      codomain: { tag: "pi", domain: type, codomain: type },
+    };
+    const name = "primitive:" + operation + ":" + type_name;
+    context.declarations.set(name, function_type);
+    return {
+      term: {
+        tag: "app",
+        function: {
+          tag: "app",
+          function: { tag: "constant", name, type: function_type },
+          argument: left.term,
+        },
+        argument: right.term,
+      },
+      type,
+      type_name,
+    };
   }
   const logical_type = checked_value(
     check_prefix_term_type(
@@ -6017,10 +6134,9 @@ function prefix_kernel_term(
   }
   if (signed_number !== undefined) {
     const integer_type = integer_type_from_name(type_name);
-    expect(
-      integer_type !== undefined,
-      `Signed proof literal has non-integer type ${type_name}.`,
-    );
+    if (integer_type === undefined || integer_type.width > 128) {
+      return undefined;
+    }
     let magnitude: bigint;
     const fixed_width = prefix_integer_literal(signed_number.literal.text);
     if (fixed_width !== undefined) {
@@ -6573,11 +6689,15 @@ function charge_prefix_tactic_proof(
 ): boolean {
   if (!charge_prefix_tactic_node(search_budget)) return false;
   if (proof.tag === "assumption" || proof.tag === "true_intro") return true;
-  if (proof.tag === "machine_reflect" || proof.tag === "unsafe_assume") {
+  if (
+    proof.tag === "machine_reflect" || proof.tag === "omega_reflect" ||
+    proof.tag === "unsafe_assume"
+  ) {
     return charge_prefix_tactic_proposition(
       search_budget,
       proof.proposition,
-    );
+    ) && (proof.tag !== "omega_reflect" ||
+      proof.hypotheses.every(() => charge_prefix_tactic_node(search_budget)));
   }
   if (proof.tag === "refl") {
     return charge_prefix_tactic_type(search_budget, proof.type) &&
@@ -7089,6 +7209,47 @@ function elaborate_prefix_tactics(
       current.accept({
         tag: "machine_reflect",
         proposition: current.goal,
+      });
+      continue;
+    }
+    if (command.tag === "omega") {
+      const hypotheses: OmegaHypothesis[] = [];
+      for (const [name, index] of current.context.proof_indices) {
+        const proposition = current.context.proof_propositions.get(name);
+        expect(
+          proposition !== undefined,
+          `Omega hypothesis ${name} lost its proposition.`,
+        );
+        hypotheses.push({ index, proposition });
+      }
+      const remaining_steps = proof_limits.compiler_search_steps -
+        search_budget.steps;
+      const reflected = infer_omega_reflection(
+        current.goal,
+        hypotheses,
+        current.context.term_context,
+        KernelEnvironment.from(current.context.declarations),
+        remaining_steps,
+      );
+      search_budget.steps += reflected.steps;
+      if (reflected.tag === "budget_exhausted") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "omega exceeded the compiler proof-search budget.",
+          command.span,
+        ));
+      }
+      if (reflected.tag === "unknown") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "omega could not prove the current machine-integer goal.",
+          command.span,
+        ));
+      }
+      current.accept({
+        tag: "omega_reflect",
+        proposition: current.goal,
+        hypotheses: reflected.hypotheses,
       });
       continue;
     }

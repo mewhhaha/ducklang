@@ -540,6 +540,7 @@ prefix_tactic_command = (
                           | ("left" _tactic_space)
                           | ("right" _tactic_space)
                           | ("decide" _tactic_space)
+                          | ("omega" _tactic_space)
                           | (
                               "simp"
                               _tactic_space
@@ -555,6 +556,7 @@ prefix_final_tactic_command = (
                                 | "left"
                                 | "right"
                                 | "decide"
+                                | "omega"
                                 | (
                                     "simp"
                                     _tactic_space

@@ -21,11 +21,19 @@ import {
   term_sequences_equal,
   type_equal,
 } from "./kernel_terms.ts";
+import {
+  OmegaReflectionInvariantError,
+  verify_omega_reflection,
+} from "./omega_reflection.ts";
+import { proof_limits } from "./proof_limits.ts";
+import type { Proposition } from "./proposition.ts";
+export type { Proposition } from "./proposition.ts";
 
 const MAP_CONSTRUCTOR = Map;
 const ARRAY_CONSTRUCTOR = Array;
 const ARRAY_IS_ARRAY = Array.isArray;
 const ARRAY_PROTOTYPE = Array.prototype;
+const ARRAY_PUSH = ARRAY_PROTOTYPE.push;
 const BIGINT_CONSTRUCTOR = BigInt;
 const NUMBER_CONSTRUCTOR = Number;
 const NUMBER_IS_SAFE_INTEGER = Number.isSafeInteger;
@@ -55,27 +63,15 @@ const WEAK_SET_HAS = WEAK_SET_CONSTRUCTOR.prototype.has;
 const MACHINE_TYPE_PATTERN = /^([IU])([1-9][0-9]*)$/;
 const DECIMAL_INTEGER_PATTERN = /^-?[0-9]+$/;
 
-export type Proposition =
-  | { tag: "true" }
-  | { tag: "false" }
-  | { tag: "atom"; name: string; arguments: readonly KernelTerm[] }
-  | {
-    tag: "equal";
-    type: KernelType;
-    left: KernelTerm;
-    right: KernelTerm;
-  }
-  | { tag: "and"; left: Proposition; right: Proposition }
-  | { tag: "or"; left: Proposition; right: Proposition }
-  | { tag: "implies"; premise: Proposition; conclusion: Proposition }
-  | { tag: "not"; proposition: Proposition }
-  | { tag: "forall"; domain: KernelType; body: Proposition }
-  | { tag: "exists"; domain: KernelType; body: Proposition };
-
 export type ProofTerm =
   | { tag: "assumption"; index: number }
   | { tag: "true_intro" }
   | { tag: "machine_reflect"; proposition: Proposition }
+  | {
+    tag: "omega_reflect";
+    proposition: Proposition;
+    hypotheses: readonly number[];
+  }
   | { tag: "refl"; type: KernelType; term: KernelTerm }
   | { tag: "congr"; function: KernelTerm; proof: ProofTerm }
   | { tag: "symm"; proof: ProofTerm }
@@ -813,6 +809,29 @@ function snapshot_proof(
         ),
       };
       break;
+    case "omega_reflect":
+      snapshot = {
+        tag: "omega_reflect",
+        proposition: snapshot_proposition(
+          required_property(
+            properties,
+            "proposition",
+            "Omega reflection proof",
+          ),
+          depth + 1,
+          active,
+          budget,
+        ),
+        hypotheses: snapshot_omega_hypotheses(
+          required_property(
+            properties,
+            "hypotheses",
+            "Omega reflection proof",
+          ),
+          budget,
+        ),
+      };
+      break;
     case "refl": {
       const type = snapshot_kernel_type(
         required_property(properties, "type", "Reflexivity proof"),
@@ -1502,6 +1521,73 @@ function snapshot_predicate_arguments(
     });
   }
   return OBJECT_FREEZE(arguments_);
+}
+
+function snapshot_omega_hypotheses(
+  value: unknown,
+  budget: SnapshotBudget,
+): readonly number[] {
+  expect(
+    value !== null && typeof value === "object" &&
+      REFLECT_APPLY(ARRAY_IS_ARRAY, ARRAY_CONSTRUCTOR, [value]),
+    "Omega reflection hypotheses must be an array.",
+  );
+  expect(
+    OBJECT_GET_PROTOTYPE_OF(value) === ARRAY_PROTOTYPE,
+    "Omega reflection hypotheses must be an ordinary array.",
+  );
+  const length_descriptor = OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(value, "length");
+  expect(
+    length_descriptor !== undefined &&
+      length_descriptor.get === undefined &&
+      length_descriptor.set === undefined &&
+      NUMBER_IS_SAFE_INTEGER(length_descriptor.value) &&
+      length_descriptor.value >= 0,
+    "Omega reflection hypotheses have an invalid length.",
+  );
+  const length = length_descriptor.value as number;
+  expect(
+    length <= proof_limits.maximum_relational_terms_per_function,
+    "Omega reflection hypotheses exceed " +
+      proof_limits.maximum_relational_terms_per_function.toString() +
+      " entries.",
+  );
+  const keys = REFLECT_OWN_KEYS(value);
+  expect(
+    keys.length === length + 1,
+    "Omega reflection hypotheses cannot contain holes or extra properties.",
+  );
+  budget.nodes += length + 1;
+  expect(
+    budget.nodes <= MAX_SNAPSHOT_NODES,
+    `Proof snapshot exceeded ${MAX_SNAPSHOT_NODES} nodes.`,
+  );
+  const hypotheses = new ARRAY_CONSTRUCTOR<number>(length);
+  let previous = -1;
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(
+      value,
+      STRING_CONSTRUCTOR(index),
+    );
+    expect(
+      descriptor !== undefined &&
+        descriptor.get === undefined &&
+        descriptor.set === undefined,
+      `Omega reflection hypothesis ${index} must be an own data property.`,
+    );
+    const hypothesis = descriptor.value;
+    expect(
+      NUMBER_IS_SAFE_INTEGER(hypothesis) && hypothesis >= 0,
+      `Omega reflection hypothesis ${index} must be a non-negative safe integer.`,
+    );
+    expect(
+      hypothesis > previous,
+      "Omega reflection hypothesis indices must be strictly increasing.",
+    );
+    hypotheses[index] = hypothesis;
+    previous = hypothesis;
+  }
+  return OBJECT_FREEZE(hypotheses);
 }
 
 type KernelHypothesis = KernelResult;
@@ -2274,6 +2360,38 @@ function check_proof_term(
         "Machine reflection certificate does not establish its proposition.",
       );
       return { proposition: proof.proposition, safety: { tag: "safe" } };
+    case "omega_reflect": {
+      check_proposition(proof.proposition, term_context, environment);
+      const hypotheses: Proposition[] = [];
+      let safety: ProofSafety = { tag: "safe" };
+      for (let position = 0; position < proof.hypotheses.length; position++) {
+        const index = proof.hypotheses[position];
+        expect(
+          index !== undefined,
+          `Omega reflection hypothesis ${position} is missing.`,
+        );
+        const hypothesis = context[index];
+        expect(
+          hypothesis !== undefined,
+          `Omega reflection hypothesis ${index} is out of scope.`,
+        );
+        REFLECT_APPLY(ARRAY_PUSH, hypotheses, [hypothesis.proposition]);
+        safety = merge_safety(safety, hypothesis.safety);
+      }
+      const reflected = verify_omega_reflection(
+        proof.proposition,
+        hypotheses,
+        term_context,
+        environment,
+        proof_limits.compiler_search_steps,
+      );
+      if (reflected.tag !== "proved") {
+        throw new OmegaReflectionInvariantError(
+          "Omega reflection certificate does not establish its proposition.",
+        );
+      }
+      return { proposition: proof.proposition, safety };
+    }
     case "refl": {
       check_type(proof.type, term_context, environment);
       check_kernel_term(
