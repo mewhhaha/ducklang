@@ -1,5 +1,9 @@
 import { expect } from "../expect.ts";
-import { integer_type_from_name, integer_val_type } from "../integer.ts";
+import {
+  integer_type_from_name,
+  integer_val_type,
+  type IntegerType,
+} from "../integer.ts";
 import {
   numeric_builtin_prim,
   specialize_prim_for_integer,
@@ -1493,6 +1497,57 @@ function lower_expression(
     return { tag: "value", block: operands.block, value, type };
   }
   if (expression.tag === "app") {
+    if (
+      expression.func.tag === "var" &&
+      expression.func.name === "@integer.narrow" &&
+      expression.args.length === 2
+    ) {
+      const argument = expression.args[0];
+      expect(argument !== undefined, "@integer.narrow lost its value.");
+      const lowered = lower_expression(argument, block, context);
+      if (lowered.tag === "terminated") return lowered;
+      let source_type = lowered.type;
+      let target_type = type;
+      while (source_type.tag === "owned") source_type = source_type.value;
+      while (target_type.tag === "owned") target_type = target_type.value;
+      let source_integer: IntegerType | undefined;
+      let target_integer: IntegerType | undefined;
+      if (source_type.tag === "scalar") {
+        source_integer = integer_type_from_name(source_type.name);
+      } else if (source_type.tag === "integer") {
+        source_integer = {
+          signed: source_type.signed,
+          width: source_type.width,
+        };
+      }
+      if (target_type.tag === "scalar") {
+        target_integer = integer_type_from_name(target_type.name);
+      } else if (target_type.tag === "integer") {
+        target_integer = {
+          signed: target_type.signed,
+          width: target_type.width,
+        };
+      }
+      if (source_integer === undefined || target_integer === undefined) {
+        throw new SemanticCfgUnavailable(
+          "@integer.narrow requires resolved integer representations.",
+        );
+      }
+      const value = emit_operation(
+        lowered.block,
+        expression,
+        {
+          tag: "narrow_integer",
+          source: source_integer,
+          target: target_integer,
+        },
+        [lowered.value],
+        type,
+        undefined,
+        context,
+      );
+      return { tag: "value", block: lowered.block, value, type };
+    }
     if (
       expression.func.tag === "var" &&
       expression.func.name === "@len" &&

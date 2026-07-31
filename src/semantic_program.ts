@@ -107,6 +107,7 @@ import type { FactState } from "./frontend/fact_graph.ts";
 import {
   infer_semantic_bounded_offset_certificate,
   infer_semantic_index_bounds_certificate,
+  infer_semantic_integer_narrowing_certificate,
   infer_semantic_machine_certificate,
   infer_semantic_primitive_safety_certificate,
   infer_semantic_remainder_certificate,
@@ -115,6 +116,7 @@ import {
   infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
   semantic_index_is_unreachable,
+  semantic_integer_narrowing_is_unreachable,
   semantic_primitive_is_unreachable,
   semantic_slice_is_unreachable,
   type SemanticMachineRequirement,
@@ -125,6 +127,7 @@ import {
   type SemanticBoundedOffsetRequirement,
   type SemanticControlFlowCertificate,
   type SemanticIndexBoundsRequirement,
+  type SemanticIntegerNarrowingRequirement,
   type SemanticPredicateAtom,
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
@@ -134,6 +137,8 @@ import {
   verify_semantic_bounded_offset_certificate,
   verify_semantic_index_bounds_certificate,
   verify_semantic_index_unreachable,
+  verify_semantic_integer_narrowing_certificate,
+  verify_semantic_integer_narrowing_unreachable,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_primitive_safety_certificate,
@@ -465,6 +470,7 @@ export function analyze_duck_source(
     transparent_types,
   );
   let index_coverage_diagnostics: CompilerDiagnostic[] = [];
+  let narrowing_coverage_diagnostics: CompilerDiagnostic[] = [];
   let primitive_coverage_diagnostics: CompilerDiagnostic[] = [];
   let slice_coverage_diagnostics: CompilerDiagnostic[] = [];
   if (!has_error_diagnostics(precontract_diagnostics)) {
@@ -480,6 +486,12 @@ export function analyze_duck_source(
       inferred_control_flow,
       inferred_callable_control_flow,
     );
+    narrowing_coverage_diagnostics =
+      validate_integer_narrowing_obligation_coverage(
+        facts,
+        inferred_control_flow,
+        inferred_callable_control_flow,
+      );
     slice_coverage_diagnostics = validate_slice_obligation_coverage(
       facts,
       inferred_control_flow,
@@ -494,6 +506,10 @@ export function analyze_duck_source(
     inferred_control_flow,
     inferred_callable_control_flow,
   );
+  const narrowing_validation = validate_integer_narrowing_obligations(
+    inferred_control_flow,
+    inferred_callable_control_flow,
+  );
   const slice_validation = validate_slice_obligations(
     inferred_control_flow,
     inferred_callable_control_flow,
@@ -505,6 +521,8 @@ export function analyze_duck_source(
     ...index_validation.diagnostics,
     ...primitive_coverage_diagnostics,
     ...primitive_validation.diagnostics,
+    ...narrowing_coverage_diagnostics,
+    ...narrowing_validation.diagnostics,
     ...slice_coverage_diagnostics,
     ...slice_validation.diagnostics,
   ], options.uri);
@@ -532,6 +550,7 @@ export function analyze_duck_source(
       ...contract_validation.proofs,
       ...index_validation.proofs,
       ...primitive_validation.proofs,
+      ...narrowing_validation.proofs,
       ...slice_validation.proofs,
     ]),
     origins: new FrozenMap(origins),
@@ -1514,6 +1533,71 @@ function validate_slice_obligation_coverage(
   return diagnostics_of(all(checks));
 }
 
+function validate_integer_narrowing_obligation_coverage(
+  facts: ReturnType<typeof source_facts>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): CompilerDiagnostic[] {
+  const direct_calls: FrontExpr[] = [];
+  const direct_callees = new Set<FrontExpr>();
+  for (const expression of facts.expressions) {
+    if (
+      expression.tag !== "app" ||
+      expression.func.tag !== "var" ||
+      expression.func.name !== "@integer.narrow"
+    ) {
+      continue;
+    }
+    direct_calls.push(expression);
+    direct_callees.add(expression.func);
+  }
+  const escaped_references = facts.expressions.filter((expression) =>
+    expression.tag === "var" &&
+    expression.name === "@integer.narrow" &&
+    !direct_callees.has(expression) &&
+    has_source_span(expression)
+  );
+  if (direct_calls.length === 0 && escaped_references.length === 0) {
+    return [];
+  }
+  const covered_spans = new Set<string>();
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (const candidate of control_flows) {
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "narrow_integer") continue;
+        covered_spans.add(
+          node.span.start.toString() + ":" + node.span.end.toString(),
+        );
+      }
+    }
+  }
+  const checks: Checked<null>[] = [];
+  for (const expression of direct_calls) {
+    if (!has_source_span(expression)) continue;
+    const span = source_span(expression);
+    const key = span.start.toString() + ":" + span.end.toString();
+    if (covered_spans.has(key)) continue;
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: the compiler could not construct an integer narrowing proof obligation.",
+      span,
+    )));
+  }
+  for (const expression of escaped_references) {
+    checks.push(fail(compiler_diagnostic(
+      diagnostic_codes.partial_operation_unproved,
+      "unknown: partial intrinsic @integer.narrow cannot escape a directly checked call.",
+      source_span(expression),
+    )));
+  }
+  return diagnostics_of(all(checks));
+}
+
 function validate_primitive_obligation_coverage(
   facts: ReturnType<typeof source_facts>,
   control_flow: SemanticCfg | undefined,
@@ -2001,6 +2085,142 @@ function validate_slice_obligations(
         );
         checks.push(ok({
           key: "slice:" + flow_index.toString() + ":" +
+            node.span.start.toString() + ":" + node.id.toString(),
+          proof: Object.freeze({
+            certificate: kernel_certificate,
+            environment,
+            term_context,
+            semantic_certificate: certificate,
+          }),
+        }));
+      }
+    }
+  }
+  const proofs = new Map<string, CheckedKernelCertificate>();
+  for (const check of checks) {
+    const checked = checked_value(check);
+    if (checked !== undefined) proofs.set(checked.key, checked.proof);
+  }
+  return {
+    diagnostics: diagnostics_of(all(checks)),
+    proofs,
+  };
+}
+
+function validate_integer_narrowing_obligations(
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): {
+  diagnostics: CompilerDiagnostic[];
+  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+} {
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
+  const control_flows: SemanticCfg[] = [];
+  if (control_flow !== undefined) control_flows.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    control_flows.push(callable.control_flow);
+  }
+  for (let flow_index = 0; flow_index < control_flows.length; flow_index += 1) {
+    const candidate = control_flows[flow_index];
+    expect(
+      candidate !== undefined,
+      `Integer narrowing validation lost CFG ${flow_index}.`,
+    );
+    const producers = new Map<ValueId, SemanticNode>();
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        for (const output of node.outputs) producers.set(output, node);
+      }
+    }
+    for (const block of candidate.blocks) {
+      for (const node of block.nodes) {
+        if (node.operation.tag !== "narrow_integer") continue;
+        if (
+          semantic_integer_narrowing_is_unreachable(candidate, node.span)
+        ) {
+          expect(
+            verify_semantic_integer_narrowing_unreachable(
+              candidate,
+              node.span,
+            ),
+            "FactGraph and the independent verifier disagree about an unreachable integer narrowing.",
+          );
+          continue;
+        }
+        const value = node.inputs[0];
+        expect(
+          value !== undefined,
+          "Semantic integer narrowing lost its input ValueId.",
+        );
+        const requirement: SemanticIntegerNarrowingRequirement = {
+          value,
+          source: node.operation.source,
+          target: node.operation.target,
+        };
+        const certificate = infer_semantic_integer_narrowing_certificate(
+          candidate,
+          node.span,
+          requirement,
+        );
+        if (certificate === undefined) {
+          let status = "unknown";
+          const producer = producers.get(value);
+          if (producer?.operation.tag === "constant") {
+            const constant = producer.operation.value;
+            let integer: bigint | undefined;
+            if (typeof constant === "bigint") {
+              integer = constant;
+            } else if (
+              typeof constant === "number" &&
+              Number.isSafeInteger(constant)
+            ) {
+              integer = BigInt(constant);
+            }
+            if (
+              integer !== undefined &&
+              (
+                integer < integer_minimum(requirement.target) ||
+                integer > integer_maximum(requirement.target)
+              )
+            ) {
+              status = "disproved";
+            }
+          }
+          checks.push(fail(compiler_diagnostic(
+            diagnostic_codes.partial_operation_unproved,
+            status + ": cannot prove integer narrowing requirement " +
+              integer_minimum(requirement.target).toString() +
+              " <= value <= " +
+              integer_maximum(requirement.target).toString() + ".",
+            node.span,
+          )));
+          continue;
+        }
+        expect(
+          verify_semantic_integer_narrowing_certificate(
+            certificate,
+            candidate,
+            node.span,
+            requirement,
+          ),
+          "FactGraph produced an invalid integer narrowing certificate.",
+        );
+        const environment = KernelEnvironment.empty();
+        const term_context = snapshot_kernel_context([]);
+        const kernel_certificate = check_proof(
+          { tag: "true_intro" },
+          { tag: "true" },
+          {
+            allow_unsafe: false,
+            require_safe: true,
+            environment,
+            term_context,
+          },
+        );
+        checks.push(ok({
+          key: "integer-narrowing:" + flow_index.toString() + ":" +
             node.span.start.toString() + ":" + node.id.toString(),
           proof: Object.freeze({
             certificate: kernel_certificate,

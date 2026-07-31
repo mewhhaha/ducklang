@@ -1892,6 +1892,143 @@ Deno.test("unreachable integer traps create no proof obligation", () => {
   assert_equals(analysis.diagnostics, []);
 });
 
+Deno.test("integer narrowing requires a proved target range", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => " +
+      "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+      "@integer.narrow(value, I32) else 0 end;\n0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(
+    [...guarded.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "integer_narrowing"
+    ),
+    true,
+  );
+
+  const unsigned = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I32) => " +
+      "if value >= 0 && value <= 255 then " +
+      "@integer.narrow(value, U8) else 0u8 end;\n0\n",
+  ));
+  assert_equals(unsigned.diagnostics, []);
+
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => @integer.narrow(value, I32);\n0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const in_range = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(42i64, I32)\n",
+  ));
+  assert_equals(in_range.diagnostics, []);
+
+  const out_of_range = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(2147483648i64, I32)\n",
+  ));
+  assert_equals(
+    out_of_range.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const widening = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(42, I64)\n",
+  ));
+  assert_equals(
+    widening.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow target I64 does not narrow source I32"
+    ),
+    true,
+  );
+
+  const non_integer = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(1.0f32, I32)\n",
+  ));
+  assert_equals(
+    non_integer.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow value must have an I<N> or U<N> type, got F32"
+    ),
+    true,
+  );
+
+  const oversized_target = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(1, I9007199254740991)\n",
+  ));
+  assert_equals(
+    oversized_target.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow target must be no wider than 64 bits, got I9007199254740991"
+    ),
+    true,
+  );
+
+  const oversized_source = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(1i65, I32)\n",
+  ));
+  assert_equals(
+    oversized_source.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow value must be no wider than 64 bits, got I65"
+    ),
+    true,
+  );
+});
+
+Deno.test("integer narrowing proofs survive loops but not value mutation", () => {
+  const loop_invariant = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => do " +
+      "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+      "for unused in 0..3 do @integer.narrow(value, I32); end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(loop_invariant.diagnostics, []);
+
+  const loop_mutation = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => do " +
+      "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+      "for unused in 0..3 do " +
+      "value = value + 1i64; @integer.narrow(value, I32); end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(
+    loop_mutation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "unknown: cannot prove integer narrowing requirement",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("partial integer narrowing cannot escape a checked call site", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let operation = @integer.narrow;\n0\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "partial intrinsic @integer.narrow cannot escape",
+      )
+    ),
+    true,
+  );
+});
+
 Deno.test("partial Wasm intrinsics cannot escape checked call sites", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "let invoke: (((I32, I32) -> I32), I32, I32) -> I32 = " +

@@ -223,26 +223,74 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
       }
 
       if (
-        expr.func.tag === "var" && expr.func.name === "@integer.wrap" &&
+        expr.func.tag === "var" &&
+        (expr.func.name === "@integer.wrap" ||
+          expr.func.name === "@integer.narrow") &&
         !ctx.aliases.has(expr.func.name)
       ) {
         const args = compiler_builtin_args(expr);
         expect(
           args.length === 2,
-          "@integer.wrap expects 2 arguments, got " + args.length.toString(),
+          expr.func.name + " expects 2 arguments, got " +
+            args.length.toString(),
         );
         const value = args[0];
         const target = args[1];
-        expect(value, "Missing @integer.wrap value argument");
+        expect(value, "Missing " + expr.func.name + " value argument");
         expect(
-          target && target.tag === "var",
-          "@integer.wrap target must be an integer type value",
+          target &&
+            (target.tag === "var" || target.tag === "type_name"),
+          expr.func.name + " target must be an integer type value",
         );
-        const integer = integer_type_from_name(target.name);
-        expect(integer, "@integer.wrap target must be I<N> or U<N>");
+        const target_name = resolve_core_annotation(ctx, target.name);
+        expect(
+          target_name !== undefined,
+          expr.func.name + " target lost its resolved type",
+        );
+        const integer = integer_type_from_name(target_name);
+        expect(
+          integer,
+          expr.func.name + " target must be I<N> or U<N>",
+        );
+        const lowered_value = core_expr(value, ctx);
+        let source_integer = front_expr_integer_type(value, ctx);
+        if (source_integer === undefined && value.tag === "num") {
+          if (value.type === "i32") {
+            source_integer = { signed: true, width: 32 };
+          } else if (value.type === "i64") {
+            source_integer = { signed: true, width: 64 };
+          }
+        }
+        if (expr.func.name === "@integer.narrow") {
+          expect(
+            source_integer !== undefined,
+            "@integer.narrow lost its checked source integer type",
+          );
+          expect(
+            source_integer.width <= 64 && integer.width <= 64,
+            "@integer.narrow reached Core with a non-runtime integer type",
+          );
+          if (source_integer.width > 32 && integer.width <= 32) {
+            return {
+              tag: "prim",
+              prim: "i32.wrap_i64",
+              args: [lowered_value],
+              integer,
+            };
+          }
+          if (source_integer.width <= 32 && integer.width > 32) {
+            return {
+              tag: "prim",
+              prim: "i64.extend_i32_s",
+              args: [lowered_value],
+              integer,
+            };
+          }
+          return lowered_value;
+        }
         return core_integer_wrap(
-          core_expr(value, ctx),
-          front_expr_integer_type(value, ctx),
+          lowered_value,
+          source_integer,
           integer,
           ctx,
         );
@@ -699,11 +747,21 @@ export function front_expr_integer_type(
   if (expr.tag === "app") {
     const args = compiler_builtin_args(expr);
 
-    if (expr.func.tag === "var" && expr.func.name === "@integer.wrap") {
+    if (
+      expr.func.tag === "var" &&
+      (expr.func.name === "@integer.wrap" ||
+        expr.func.name === "@integer.narrow")
+    ) {
       const target = args[1];
 
-      if (target && target.tag === "var") {
-        return integer_type_from_name(target.name);
+      if (
+        target &&
+        (target.tag === "var" || target.tag === "type_name")
+      ) {
+        const target_name = resolve_core_annotation(ctx, target.name);
+        if (target_name !== undefined) {
+          return integer_type_from_name(target_name);
+        }
       }
     }
 

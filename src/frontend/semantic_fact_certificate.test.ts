@@ -3,6 +3,7 @@ import { normalize_machine_integer } from "./fact_graph.ts";
 import {
   semantic_bounded_offset_certificate,
   semantic_index_bounds_certificate,
+  semantic_integer_narrowing_certificate,
   semantic_machine_certificate,
   semantic_predicate_certificate,
   semantic_primitive_safety_certificate,
@@ -13,6 +14,7 @@ import {
   semantic_unreachable_certificate,
   type SemanticBoundedOffsetRequirement,
   type SemanticIndexBoundsRequirement,
+  type SemanticIntegerNarrowingRequirement,
   type SemanticMachineRequirement,
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
@@ -21,6 +23,7 @@ import {
   type SemanticTypeRequirement,
   verify_semantic_bounded_offset_certificate,
   verify_semantic_index_bounds_certificate,
+  verify_semantic_integer_narrowing_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_primitive_safety_certificate,
@@ -32,6 +35,7 @@ import {
 } from "./semantic_fact_certificate.ts";
 import {
   infer_semantic_index_bounds_certificate,
+  infer_semantic_integer_narrowing_certificate,
   infer_semantic_machine_certificate,
   infer_semantic_primitive_safety_certificate,
   infer_semantic_slice_bounds_certificate,
@@ -46,6 +50,7 @@ import type { ValueId } from "./semantic_identity.ts";
 
 const origin = "fact-certificate:0:1:0" as never;
 const i32_type = { tag: "scalar", name: "I32" } as const;
+const i64_type = { tag: "scalar", name: "I64" } as const;
 const u32_type = { tag: "scalar", name: "U32" } as const;
 const u64_type = { tag: "integer", signed: false, width: 64 } as const;
 const bool_type = { tag: "scalar", name: "Bool" } as const;
@@ -164,6 +169,115 @@ Deno.test("semantic primitive certificates verify integer trap conditions", () =
       mismatched_builder.finish(),
       operation_span,
       "i32.div_s",
+    ),
+    undefined,
+  );
+});
+
+Deno.test("semantic narrowing certificates verify the target range", () => {
+  const builder = new SemanticCfgBuilder("integer-narrowing");
+  const entry = builder.add_block(origin);
+  const value = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 2 },
+    { tag: "constant", value: 42n },
+    [],
+    [i64_type],
+  )[0];
+  if (value === undefined) throw new Error("Expected narrowing input.");
+  const operation_span = { start: 0, end: 24 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    operation_span,
+    {
+      tag: "narrow_integer",
+      source: { signed: true, width: 64 },
+      target: { signed: true, width: 32 },
+    },
+    [value],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected narrowing result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const requirement: SemanticIntegerNarrowingRequirement = {
+    value,
+    source: { signed: true, width: 64 },
+    target: { signed: true, width: 32 },
+  };
+  const certificate = infer_semantic_integer_narrowing_certificate(
+    control_flow,
+    operation_span,
+    requirement,
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected integer narrowing certificate.");
+  }
+  assert_equals(
+    verify_semantic_integer_narrowing_certificate(
+      certificate,
+      control_flow,
+      operation_span,
+      requirement,
+    ),
+    true,
+  );
+
+  const forged: SemanticIntegerNarrowingRequirement = {
+    ...requirement,
+    target: { signed: false, width: 8 },
+  };
+  assert_equals(
+    verify_semantic_integer_narrowing_certificate(
+      semantic_integer_narrowing_certificate(operation_span, forged),
+      control_flow,
+      operation_span,
+      forged,
+    ),
+    false,
+  );
+
+  const out_of_range_builder = new SemanticCfgBuilder(
+    "integer-narrowing-out-of-range",
+  );
+  const out_of_range_entry = out_of_range_builder.add_block(origin);
+  const out_of_range_value = out_of_range_builder.add_node(
+    out_of_range_entry,
+    origin,
+    { start: 0, end: 10 },
+    { tag: "constant", value: 2147483648n },
+    [],
+    [i64_type],
+  )[0];
+  if (out_of_range_value === undefined) {
+    throw new Error("Expected out-of-range narrowing input.");
+  }
+  const out_of_range_result = out_of_range_builder.add_node(
+    out_of_range_entry,
+    origin,
+    operation_span,
+    {
+      tag: "narrow_integer",
+      source: { signed: true, width: 64 },
+      target: { signed: true, width: 32 },
+    },
+    [out_of_range_value],
+    [i32_type],
+  )[0];
+  if (out_of_range_result === undefined) {
+    throw new Error("Expected out-of-range narrowing result.");
+  }
+  out_of_range_builder.terminate(out_of_range_entry, {
+    tag: "return",
+    value: out_of_range_result,
+  });
+  assert_equals(
+    infer_semantic_integer_narrowing_certificate(
+      out_of_range_builder.finish(),
+      operation_span,
+      { ...requirement, value: out_of_range_value },
     ),
     undefined,
   );

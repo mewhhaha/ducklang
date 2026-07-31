@@ -266,6 +266,77 @@ Deno.test("Duck compiler rejects unchecked slices before encoding", () => {
   );
 });
 
+Deno.test("Duck compiler erases integer narrowing proofs", async () => {
+  const signed_source = "let narrow = (value: I64) => " +
+    "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+    "@integer.narrow(value, I32) else 0 end;\n" +
+    "narrow(-42i64)\n";
+  const analysis = analyze_duck_source(parse_duck_source(signed_source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded integer narrowing to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core, (_key, value) => {
+      if (typeof value === "bigint") return value.toString();
+      return value;
+    }).includes("integer_narrowing"),
+    false,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const signed = await compiler.run(signed_source);
+    assert_equals(signed.value, { kind: "integer", value: -42 });
+    const unsigned = await compiler.run(
+      "let narrow = (value: I32) => " +
+        "if value >= 0 && value <= 255 then " +
+        "@integer.narrow(value, U8) else 0u8 end;\n" +
+        "narrow(200)\n",
+    );
+    assert_equals(unsigned.value, { kind: "integer", value: 200 });
+    const aliased = await compiler.run(
+      "type Small = I8\n@integer.narrow(42i64, Small)\n",
+    );
+    assert_equals(aliased.value, { kind: "integer", value: 42 });
+    const wide_signed = await compiler.run(
+      "type Medium = I40\n@integer.narrow(-42i64, Medium)\n",
+    );
+    assert_equals(wide_signed.value, {
+      kind: "signed-integer-64",
+      value: -42n,
+    });
+    const cross_carrier = await compiler.run(
+      "@integer.narrow(42, U64)\n",
+    );
+    assert_equals(cross_carrier.value, {
+      kind: "signed-integer-64",
+      value: 42n,
+    });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects unchecked integer narrowing", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let narrow = (value: I64) => @integer.narrow(value, I32);\n0\n",
+      ),
+    "unknown: cannot prove integer narrowing requirement",
+  );
+  assert_throws(
+    () => encode_duck_module("@integer.narrow(2147483648i64, I32)\n"),
+    "disproved: cannot prove integer narrowing requirement",
+  );
+  assert_throws(
+    () => encode_duck_module("let operation = @integer.narrow;\n0\n"),
+    "partial intrinsic @integer.narrow cannot escape",
+  );
+});
+
 Deno.test("Duck compiler rejects first-class get before encoding", () => {
   assert_throws(
     () =>

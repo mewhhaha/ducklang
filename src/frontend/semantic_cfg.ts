@@ -1,4 +1,10 @@
 import { expect } from "../expect.ts";
+import {
+  integer_maximum,
+  integer_minimum,
+  integer_type_from_name,
+  type IntegerType,
+} from "../integer.ts";
 import type { BabaSourceNodeId } from "./baba_parser.ts";
 import {
   SemanticIdentityAllocator,
@@ -24,6 +30,11 @@ export type SemanticOperation =
   | { tag: "constant"; value: string | number | bigint | boolean }
   | { tag: "primitive"; name: string }
   | { tag: "type_test"; type: string }
+  | {
+    tag: "narrow_integer";
+    source: IntegerType;
+    target: IntegerType;
+  }
   | {
     tag: "index";
     length: number | undefined;
@@ -314,6 +325,65 @@ export function semantic_cfg_is_well_formed(
             tag: "scalar",
             name: "Bool",
           })
+        ) {
+          return false;
+        }
+      }
+      if (node.operation.tag === "narrow_integer") {
+        if (node.inputs.length !== 1 || node.outputs.length !== 1) {
+          return false;
+        }
+        if (
+          !Number.isSafeInteger(node.operation.source.width) ||
+          node.operation.source.width < 1 ||
+          node.operation.source.width > 64 ||
+          !Number.isSafeInteger(node.operation.target.width) ||
+          node.operation.target.width < 1 ||
+          node.operation.target.width > 64
+        ) {
+          return false;
+        }
+        const input_value = node.inputs[0];
+        const output_value = node.outputs[0];
+        if (input_value === undefined || output_value === undefined) {
+          return false;
+        }
+        let input_type = values.get(input_value)?.type;
+        let output_type = values.get(output_value)?.type;
+        if (input_type === undefined || output_type === undefined) {
+          return false;
+        }
+        while (input_type.tag === "owned") input_type = input_type.value;
+        while (output_type.tag === "owned") output_type = output_type.value;
+        let source: IntegerType | undefined;
+        let target: IntegerType | undefined;
+        if (input_type.tag === "scalar") {
+          source = integer_type_from_name(input_type.name);
+        } else if (input_type.tag === "integer") {
+          source = {
+            signed: input_type.signed,
+            width: input_type.width,
+          };
+        }
+        if (output_type.tag === "scalar") {
+          target = integer_type_from_name(output_type.name);
+        } else if (output_type.tag === "integer") {
+          target = {
+            signed: output_type.signed,
+            width: output_type.width,
+          };
+        }
+        if (
+          source === undefined ||
+          target === undefined ||
+          source.signed !== node.operation.source.signed ||
+          source.width !== node.operation.source.width ||
+          target.signed !== node.operation.target.signed ||
+          target.width !== node.operation.target.width ||
+          (
+            integer_minimum(target) <= integer_minimum(source) &&
+            integer_maximum(target) >= integer_maximum(source)
+          )
         ) {
           return false;
         }
@@ -685,6 +755,29 @@ export function semantic_slices_at_span(
     }
   }
   return slices;
+}
+
+export function unique_semantic_narrowing_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): { block: SemanticBlock; node: SemanticNode } | undefined {
+  let narrowing:
+    | { block: SemanticBlock; node: SemanticNode }
+    | undefined;
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "narrow_integer" ||
+        node.span.start !== span.start ||
+        node.span.end !== span.end
+      ) {
+        continue;
+      }
+      if (narrowing !== undefined) return undefined;
+      narrowing = { block, node };
+    }
+  }
+  return narrowing;
 }
 
 export function unique_semantic_primitive_at_span(
@@ -1352,6 +1445,26 @@ function snapshot_operation(operation: SemanticOperation): SemanticOperation {
       return Object.freeze({
         tag: "type_test",
         type: required_text(operation.type),
+      });
+    case "narrow_integer":
+      expect(
+        typeof operation.source.signed === "boolean" &&
+          Number.isSafeInteger(operation.source.width) &&
+          operation.source.width > 0 &&
+          operation.source.width <= 64,
+        "CFG narrowing source must be a runtime integer type.",
+      );
+      expect(
+        typeof operation.target.signed === "boolean" &&
+          Number.isSafeInteger(operation.target.width) &&
+          operation.target.width > 0 &&
+          operation.target.width <= 64,
+        "CFG narrowing target must be a runtime integer type.",
+      );
+      return Object.freeze({
+        tag: "narrow_integer",
+        source: Object.freeze({ ...operation.source }),
+        target: Object.freeze({ ...operation.target }),
       });
     case "index":
       expect(

@@ -19,6 +19,7 @@ import {
   type SemanticNode,
   unique_semantic_call_at_span,
   unique_semantic_index_at_span,
+  unique_semantic_narrowing_at_span,
   unique_semantic_primitive_at_span,
   unique_semantic_slice_at_span,
 } from "./semantic_cfg.ts";
@@ -109,6 +110,18 @@ export type SemanticSliceBoundsCertificate = {
   tag: "slice_bounds";
   operation_span: SourceSpan;
   requirement: SemanticSliceBoundsRequirement;
+};
+
+export type SemanticIntegerNarrowingRequirement = {
+  value: ValueId;
+  source: IntegerType;
+  target: IntegerType;
+};
+
+export type SemanticIntegerNarrowingCertificate = {
+  tag: "integer_narrowing";
+  operation_span: SourceSpan;
+  requirement: SemanticIntegerNarrowingRequirement;
 };
 
 export type SemanticPrimitiveSafetyRequirement = {
@@ -203,6 +216,7 @@ export type SemanticUnreachableCertificate = {
 export type SemanticControlFlowCertificate =
   | SemanticBoundedOffsetCertificate
   | SemanticIndexBoundsCertificate
+  | SemanticIntegerNarrowingCertificate
   | SemanticMachineCertificate
   | SemanticPredicateCertificate
   | SemanticPrimitiveSafetyCertificate
@@ -307,6 +321,24 @@ export function semantic_slice_bounds_certificate(
       end: operation_span.end,
     }),
     requirement: Object.freeze({ ...requirement }),
+  });
+}
+
+export function semantic_integer_narrowing_certificate(
+  operation_span: SourceSpan,
+  requirement: SemanticIntegerNarrowingRequirement,
+): SemanticIntegerNarrowingCertificate {
+  return Object.freeze({
+    tag: "integer_narrowing",
+    operation_span: Object.freeze({
+      start: operation_span.start,
+      end: operation_span.end,
+    }),
+    requirement: Object.freeze({
+      value: requirement.value,
+      source: Object.freeze({ ...requirement.source }),
+      target: Object.freeze({ ...requirement.target }),
+    }),
   });
 }
 
@@ -1354,6 +1386,98 @@ export function verify_semantic_slice_bounds_certificate(
         undefined,
         target,
       ) === "proved";
+}
+
+export function verify_semantic_integer_narrowing_certificate(
+  certificate: SemanticIntegerNarrowingCertificate,
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  requirement: SemanticIntegerNarrowingRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic integer narrowing certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "integer_narrowing",
+    "Semantic integer narrowing certificate has an invalid tag.",
+  );
+  if (
+    certificate.operation_span.start !== operation_span.start ||
+    certificate.operation_span.end !== operation_span.end ||
+    certificate.requirement.value !== requirement.value ||
+    certificate.requirement.source.signed !== requirement.source.signed ||
+    certificate.requirement.source.width !== requirement.source.width ||
+    certificate.requirement.target.signed !== requirement.target.signed ||
+    certificate.requirement.target.width !== requirement.target.width ||
+    !semantic_cfg_is_well_formed(control_flow)
+  ) {
+    return false;
+  }
+  const target = unique_semantic_narrowing_at_span(
+    control_flow,
+    operation_span,
+  );
+  if (
+    target === undefined ||
+    target.node.operation.tag !== "narrow_integer" ||
+    target.node.inputs[0] !== requirement.value ||
+    target.node.operation.source.signed !== requirement.source.signed ||
+    target.node.operation.source.width !== requirement.source.width ||
+    target.node.operation.target.signed !== requirement.target.signed ||
+    target.node.operation.target.width !== requirement.target.width
+  ) {
+    return false;
+  }
+  const lower: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "greater_equal",
+      value: requirement.value,
+      bound: integer_minimum(requirement.target),
+    },
+  };
+  const upper: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "less_equal",
+      value: requirement.value,
+      bound: integer_maximum(requirement.target),
+    },
+  };
+  return verify_semantic_paths(
+        control_flow,
+        operation_span,
+        lower,
+        undefined,
+        target,
+      ) === "proved" &&
+    verify_semantic_paths(
+        control_flow,
+        operation_span,
+        upper,
+        undefined,
+        target,
+      ) === "proved";
+}
+
+export function verify_semantic_integer_narrowing_unreachable(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_narrowing_at_span(
+    control_flow,
+    operation_span,
+  );
+  if (target === undefined) return false;
+  return verify_semantic_paths(
+    control_flow,
+    operation_span,
+    undefined,
+    undefined,
+    target,
+  ) === "unreachable";
 }
 
 export function verify_semantic_slice_unreachable(

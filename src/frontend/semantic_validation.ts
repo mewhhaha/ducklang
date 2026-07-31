@@ -4184,7 +4184,8 @@ function infer_type(
       expr.func.tag === "var" &&
       (expr.func.name === "@cast" || expr.func.name === "@seal" ||
         expr.func.name === "@representation" ||
-        expr.func.name === "@integer.wrap") &&
+        expr.func.name === "@integer.wrap" ||
+        expr.func.name === "@integer.narrow") &&
       !env.bindings.has(expr.func.name)
     ) {
       const args = compiler_builtin_args(expr);

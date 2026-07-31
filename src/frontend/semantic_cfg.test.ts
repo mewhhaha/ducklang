@@ -11,6 +11,7 @@ const origin = "expression:0:1:0" as never;
 const span = { start: 0, end: 1 };
 const bool_type = { tag: "scalar", name: "Bool" } as const;
 const i32_type = { tag: "scalar", name: "I32" } as const;
+const i64_type = { tag: "scalar", name: "I64" } as const;
 const text_type = { tag: "scalar", name: "Text" } as const;
 const pair_type = {
   tag: "product",
@@ -632,6 +633,75 @@ Deno.test("semantic CFG rejects forged static slice lengths", () => {
     })),
   };
   assert_equals(semantic_cfg_is_well_formed(forged), false);
+});
+
+Deno.test("semantic CFG binds integer narrowing metadata to value types", () => {
+  const builder = new SemanticCfgBuilder("cfg-integer-narrowing");
+  const entry = builder.add_block(origin);
+  const input = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: 42n },
+    [],
+    [i64_type],
+  )[0];
+  if (input === undefined) throw new Error("Expected narrowing input.");
+  const result = builder.add_node(
+    entry,
+    origin,
+    span,
+    {
+      tag: "narrow_integer",
+      source: { signed: true, width: 64 },
+      target: { signed: true, width: 32 },
+    },
+    [input],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected narrowing result.");
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  assert_equals(semantic_cfg_is_well_formed(control_flow), true);
+
+  const forged = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (node.operation.tag !== "narrow_integer") return node;
+        return {
+          ...node,
+          operation: {
+            ...node.operation,
+            target: { signed: false, width: 8 },
+          },
+        };
+      }),
+    })),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged), false);
+
+  const oversized = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => ({
+      ...block,
+      nodes: block.nodes.map((node) => {
+        if (node.operation.tag !== "narrow_integer") return node;
+        return {
+          ...node,
+          operation: {
+            ...node.operation,
+            target: {
+              signed: true,
+              width: Number.MAX_SAFE_INTEGER,
+            },
+          },
+        };
+      }),
+    })),
+  };
+  assert_equals(semantic_cfg_is_well_formed(oversized), false);
 });
 
 Deno.test("semantic CFG rejects representation key collisions at phis", () => {

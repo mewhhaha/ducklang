@@ -31,9 +31,12 @@ import type {
 import { is_builtin_type_name } from "./types.ts";
 import {
   integer_literal_fits,
+  integer_maximum,
+  integer_minimum,
   integer_type_from_name,
   integer_type_name,
   integer_val_type,
+  type IntegerType,
 } from "../integer.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import {
@@ -1769,7 +1772,8 @@ class SourceFactRecorder {
         expr.func.tag === "var" &&
         (expr.func.name === "@cast" || expr.func.name === "@seal" ||
           expr.func.name === "@representation" ||
-          expr.func.name === "@integer.wrap") &&
+          expr.func.name === "@integer.wrap" ||
+          expr.func.name === "@integer.narrow") &&
         !scope.has(expr.func.name)
       ) {
         cast_name = expr.func.name;
@@ -1808,11 +1812,21 @@ class SourceFactRecorder {
           );
           this.record_expr(target, scope, named_type("Type"), break_types);
           let target_type: SourceTypeFact | undefined;
+          let target_integer: IntegerType | undefined;
 
           if (target.tag === "var" || target.tag === "type_name") {
             target_type = this.type_from_name(target.name);
           } else if (target.tag === "set_type") {
             target_type = this.type_from_type_expr(target.type_expr);
+          }
+          if (
+            target_type !== undefined &&
+            (cast_name === "@integer.wrap" ||
+              cast_name === "@integer.narrow")
+          ) {
+            target_integer = integer_type_from_name(
+              target_type.resolved_name,
+            );
           }
 
           if (
@@ -1828,17 +1842,77 @@ class SourceFactRecorder {
 
             type = named_type("unknown");
           } else if (
-            cast_name === "@integer.wrap" &&
-            !integer_type_from_name(target_type.resolved_name)
+            (cast_name === "@integer.wrap" ||
+              cast_name === "@integer.narrow") &&
+            target_integer === undefined
           ) {
             this.facts.inference_diagnostics.push(source_diagnostic(
               diagnostic_codes.unresolved_call_type,
-              "@integer.wrap target must be an I<N> or U<N> type",
+              cast_name + " target must be an I<N> or U<N> type",
+              target,
+            ));
+            type = named_type("unknown");
+          } else if (
+            cast_name === "@integer.narrow" &&
+            target_integer !== undefined &&
+            integer_val_type(target_integer) === undefined
+          ) {
+            this.facts.inference_diagnostics.push(source_diagnostic(
+              diagnostic_codes.unresolved_call_type,
+              "@integer.narrow target must be no wider than 64 bits, got " +
+                integer_type_name(target_integer),
               target,
             ));
             type = named_type("unknown");
           } else if (value_type === undefined) {
             type = target_type;
+          } else if (cast_name === "@integer.narrow") {
+            const source_representation = source_representation_type(
+              value_type,
+            );
+            const source_integer = integer_type_from_name(
+              source_representation.resolved_name,
+            );
+            expect(
+              target_integer !== undefined,
+              "@integer.narrow lost its checked target integer type.",
+            );
+            if (source_integer === undefined) {
+              if (source_representation.resolved_name !== "unknown") {
+                this.facts.inference_diagnostics.push(source_diagnostic(
+                  diagnostic_codes.unresolved_call_type,
+                  "@integer.narrow value must have an I<N> or U<N> type, got " +
+                    source_representation.resolved_name,
+                  value,
+                ));
+              }
+              type = named_type("unknown");
+            } else if (integer_val_type(source_integer) === undefined) {
+              this.facts.inference_diagnostics.push(source_diagnostic(
+                diagnostic_codes.unresolved_call_type,
+                "@integer.narrow value must be no wider than 64 bits, got " +
+                  integer_type_name(source_integer),
+                value,
+              ));
+              type = named_type("unknown");
+            } else if (
+              integer_minimum(target_integer) <=
+                integer_minimum(source_integer) &&
+              integer_maximum(target_integer) >=
+                integer_maximum(source_integer)
+            ) {
+              this.facts.inference_diagnostics.push(source_diagnostic(
+                diagnostic_codes.unresolved_call_type,
+                "@integer.narrow target " +
+                  integer_type_name(target_integer) +
+                  " does not narrow source " +
+                  integer_type_name(source_integer),
+                target,
+              ));
+              type = named_type("unknown");
+            } else {
+              type = target_type;
+            }
           } else if (cast_name === "@integer.wrap") {
             type = target_type;
           } else {
@@ -2270,6 +2344,7 @@ class SourceFactRecorder {
       expr.func.name === "@cast" || expr.func.name === "@seal" ||
       expr.func.name === "@representation" ||
       expr.func.name === "@integer.wrap" ||
+      expr.func.name === "@integer.narrow" ||
       expr.func.name === "@len" || expr.func.name === "@get" ||
       expr.func.name === "@slice" || expr.func.name === "@append" ||
       expr.func.name === "@panic" ||

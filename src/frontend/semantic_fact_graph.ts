@@ -41,6 +41,7 @@ import {
   type SemanticNode,
   unique_semantic_call_at_span,
   unique_semantic_index_at_span,
+  unique_semantic_narrowing_at_span,
   unique_semantic_primitive_at_span,
   unique_semantic_slice_at_span,
 } from "./semantic_cfg.ts";
@@ -51,6 +52,7 @@ import {
 import {
   semantic_bounded_offset_certificate,
   semantic_index_bounds_certificate,
+  semantic_integer_narrowing_certificate,
   semantic_machine_certificate,
   semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
@@ -62,6 +64,8 @@ import {
   type SemanticBoundedOffsetRequirement,
   type SemanticIndexBoundsCertificate,
   type SemanticIndexBoundsRequirement,
+  type SemanticIntegerNarrowingCertificate,
+  type SemanticIntegerNarrowingRequirement,
   type SemanticMachineCertificate,
   type SemanticMachineRequirement,
   type SemanticPrimitiveSafetyCertificate,
@@ -223,6 +227,80 @@ export function semantic_index_is_unreachable(
 ): boolean {
   if (!semantic_cfg_is_well_formed(control_flow)) return false;
   const target = unique_semantic_index_at_span(control_flow, index_span);
+  if (target === undefined) return false;
+  return semantic_cfg_machine_path_result_at_target(
+    control_flow,
+    target,
+    undefined,
+  ) === "unreachable";
+}
+
+export function infer_semantic_integer_narrowing_certificate(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+  requirement: SemanticIntegerNarrowingRequirement,
+): SemanticIntegerNarrowingCertificate | undefined {
+  if (!semantic_cfg_is_well_formed(control_flow)) return undefined;
+  const target = unique_semantic_narrowing_at_span(
+    control_flow,
+    operation_span,
+  );
+  if (
+    target === undefined ||
+    target.node.operation.tag !== "narrow_integer" ||
+    target.node.inputs[0] !== requirement.value ||
+    target.node.operation.source.signed !== requirement.source.signed ||
+    target.node.operation.source.width !== requirement.source.width ||
+    target.node.operation.target.signed !== requirement.target.signed ||
+    target.node.operation.target.width !== requirement.target.width
+  ) {
+    return undefined;
+  }
+  const lower: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "greater_equal",
+      value: requirement.value,
+      bound: integer_minimum(requirement.target),
+    },
+  };
+  const upper: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: {
+      tag: "less_equal",
+      value: requirement.value,
+      bound: integer_maximum(requirement.target),
+    },
+  };
+  if (
+    semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        lower,
+      ) !== "proved" ||
+    semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        upper,
+      ) !== "proved"
+  ) {
+    return undefined;
+  }
+  return semantic_integer_narrowing_certificate(
+    operation_span,
+    requirement,
+  );
+}
+
+export function semantic_integer_narrowing_is_unreachable(
+  control_flow: SemanticCfg,
+  operation_span: SourceSpan,
+): boolean {
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_narrowing_at_span(
+    control_flow,
+    operation_span,
+  );
   if (target === undefined) return false;
   return semantic_cfg_machine_path_result_at_target(
     control_flow,
