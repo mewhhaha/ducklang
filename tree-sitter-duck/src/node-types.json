@@ -9287,6 +9287,10 @@
     "named": false
   },
   {
+    "type": "rewrite",
+    "named": false
+  },
+  {
     "type": "right",
     "named": false
   },

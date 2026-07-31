@@ -559,7 +559,7 @@ function tactic_command_from_node(
   source: string,
 ): PrefixTacticCommand | undefined {
   const span = { start: node.start, end: node.end };
-  let proof_command: "exact" | "apply" | "cases" | undefined;
+  let proof_command: "exact" | "apply" | "cases" | "rewrite" | undefined;
   if (node.children.some((child) => child.kind === '"exact"')) {
     proof_command = "exact";
   }
@@ -568,6 +568,9 @@ function tactic_command_from_node(
   }
   if (node.children.some((child) => child.kind === '"cases"')) {
     proof_command = "cases";
+  }
+  if (node.children.some((child) => child.kind === '"rewrite"')) {
+    proof_command = "rewrite";
   }
   if (proof_command !== undefined) {
     const proof_node = node.children.find((child) =>

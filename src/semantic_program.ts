@@ -175,7 +175,9 @@ import {
   KernelEnvironment,
   type KernelTerm,
   type KernelType,
+  shift_kernel_term_variables,
   snapshot_kernel_context,
+  term_equal,
   type_sort,
 } from "./frontend/kernel_terms.ts";
 import type { FunctionFactSummary } from "./frontend/function_summary.ts";
@@ -6631,6 +6633,57 @@ function elaborate_prefix_tactics(
         command.span,
       ));
     }
+    if (command.tag === "rewrite") {
+      const equality_check = synthesize_prefix_proof(
+        command.proof,
+        current.context,
+      );
+      const equality = checked_value(equality_check);
+      if (equality === undefined) {
+        return equality_check.map((proof) => proof.term);
+      }
+      if (equality.proposition.tag !== "equal") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "rewrite requires equality evidence.",
+          command.span,
+        ));
+      }
+      const rewritten = rewrite_prefix_tactic_goal(
+        current.goal,
+        equality.proposition.left,
+        equality.proposition.right,
+        equality.proposition.type,
+        current.context,
+      );
+      if (rewritten.tag === "budget_exhausted") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "rewrite exceeded the compiler proof-search step budget of " +
+            proof_limits.compiler_search_steps.toString() + ".",
+          command.span,
+        ));
+      }
+      if (rewritten.tag === "unchanged") {
+        return fail(compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "rewrite found no matching occurrence in the current goal.",
+          command.span,
+        ));
+      }
+      pending.unshift({
+        goal: rewritten.goal,
+        context: current.context,
+        accept: (proof) =>
+          current.accept({
+            tag: "transport",
+            equality: { tag: "symm", proof: equality.term },
+            motive: rewritten.motive,
+            proof,
+          }),
+      });
+      continue;
+    }
     if (command.tag === "assumption") {
       let selected_index: number | undefined;
       const environment = KernelEnvironment.from(current.context.declarations);
@@ -6815,6 +6868,184 @@ function elaborate_prefix_tactics(
     "Completed tactic block lost its proof term.",
   );
   return ok(completed);
+}
+
+type PrefixTacticRewrite =
+  | { tag: "rewritten"; motive: Proposition; goal: Proposition }
+  | { tag: "unchanged" }
+  | { tag: "budget_exhausted" };
+
+function rewrite_prefix_tactic_goal(
+  goal: Proposition,
+  source: KernelTerm,
+  target: KernelTerm,
+  type: KernelType,
+  context: PrefixKernelProofContext,
+): PrefixTacticRewrite {
+  const environment = KernelEnvironment.from(context.declarations);
+  const outer_context = snapshot_kernel_context(context.term_context);
+  const motive_context: KernelContext = [type, ...outer_context];
+  const lifted_source = shift_kernel_term_variables(source, 1);
+  let replacements = 0;
+  let steps = 0;
+  let budget_exhausted = false;
+
+  const rewrite_term = (
+    term: KernelTerm,
+    matching: KernelTerm,
+    term_context: KernelContext,
+    binder_depth: number,
+  ): KernelTerm => {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) {
+      budget_exhausted = true;
+      return term;
+    }
+    if (term_equal(term, matching, term_context, environment)) {
+      replacements += 1;
+      return { tag: "var", index: binder_depth };
+    }
+    if (term.tag === "var" || term.tag === "constant") return term;
+    if (term.tag === "lam") {
+      return {
+        tag: "lam",
+        domain: term.domain,
+        body: rewrite_term(
+          term.body,
+          shift_kernel_term_variables(matching, 1),
+          [term.domain, ...term_context],
+          binder_depth + 1,
+        ),
+      };
+    }
+    return {
+      tag: "app",
+      function: rewrite_term(
+        term.function,
+        matching,
+        term_context,
+        binder_depth,
+      ),
+      argument: rewrite_term(
+        term.argument,
+        matching,
+        term_context,
+        binder_depth,
+      ),
+    };
+  };
+
+  const rewrite_proposition = (
+    proposition: Proposition,
+    matching: KernelTerm,
+    term_context: KernelContext,
+    binder_depth: number,
+  ): Proposition => {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) {
+      budget_exhausted = true;
+      return proposition;
+    }
+    if (proposition.tag === "true" || proposition.tag === "false") {
+      return proposition;
+    }
+    if (proposition.tag === "atom") {
+      return {
+        tag: "atom",
+        name: proposition.name,
+        arguments: proposition.arguments.map((argument) =>
+          rewrite_term(argument, matching, term_context, binder_depth)
+        ),
+      };
+    }
+    if (proposition.tag === "equal") {
+      return {
+        tag: "equal",
+        type: proposition.type,
+        left: rewrite_term(
+          proposition.left,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+        right: rewrite_term(
+          proposition.right,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+      };
+    }
+    if (proposition.tag === "and" || proposition.tag === "or") {
+      return {
+        tag: proposition.tag,
+        left: rewrite_proposition(
+          proposition.left,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+        right: rewrite_proposition(
+          proposition.right,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+      };
+    }
+    if (proposition.tag === "implies") {
+      return {
+        tag: "implies",
+        premise: rewrite_proposition(
+          proposition.premise,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+        conclusion: rewrite_proposition(
+          proposition.conclusion,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+      };
+    }
+    if (proposition.tag === "not") {
+      return {
+        tag: "not",
+        proposition: rewrite_proposition(
+          proposition.proposition,
+          matching,
+          term_context,
+          binder_depth,
+        ),
+      };
+    }
+    return {
+      tag: proposition.tag,
+      domain: proposition.domain,
+      body: rewrite_proposition(
+        proposition.body,
+        shift_kernel_term_variables(matching, 1),
+        [proposition.domain, ...term_context],
+        binder_depth + 1,
+      ),
+    };
+  };
+
+  const motive = rewrite_proposition(
+    lift_proposition(goal),
+    lifted_source,
+    motive_context,
+    0,
+  );
+  if (budget_exhausted) return { tag: "budget_exhausted" };
+  if (replacements === 0) return { tag: "unchanged" };
+  return {
+    tag: "rewritten",
+    motive,
+    goal: instantiate_proposition(motive, target),
+  };
 }
 
 type SynthesizedPrefixProof = {

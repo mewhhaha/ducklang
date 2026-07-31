@@ -87,7 +87,11 @@ Deno.test("format_text round trips tactic blocks", () => {
     "Proof True implies True\n" +
     "let keep=theorem=>by{intro evidence apply theorem assumption};\n" +
     "type choose=(choice:Proof True or True)->Proof True\n" +
-    "let choose=choice=>by{cases choice assumption assumption};\n";
+    "let choose=choice=>by{cases choice assumption assumption};\n" +
+    "type change=(left:I32,right:I32,equality:Proof left=right," +
+    "evidence:Proof right=right)->Proof left=left\n" +
+    "let change=(left,right,equality,evidence)=>" +
+    "by{rewrite equality exact evidence};\n";
   const formatted = format_text(source);
   assert_equals(
     formatted,
@@ -97,7 +101,16 @@ Deno.test("format_text round trips tactic blocks", () => {
       "by { intro evidence apply theorem assumption };\n" +
       "type choose = (choice: Proof True or True) -> Proof True\n" +
       "let choose = choice => " +
-      "by { cases choice assumption assumption };\n",
+      "by { cases choice assumption assumption };\n" +
+      "type change = (\n" +
+      "  left: I32,\n" +
+      "  right: I32,\n" +
+      "  equality: Proof left = right,\n" +
+      "  evidence: Proof right = right,\n" +
+      ") -> Proof left = left\n" +
+      "let change =\n" +
+      "  (left, right, equality, evidence) => " +
+      "by { rewrite equality exact evidence };\n",
   );
   assert_equals(format_text(formatted), formatted);
 });

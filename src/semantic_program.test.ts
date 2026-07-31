@@ -1384,10 +1384,21 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "retained: Proof outer = outer) -> Proof outer = outer\n" +
       "let exists_retains_outer = (outer, package, retained) => " +
       "by { cases package assumption };\n" +
+      "type rewrite_equal = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof right = right) -> Proof left = left\n" +
+      "let rewrite_equal = (left, right, equality, evidence) => " +
+      "by { rewrite equality exact evidence };\n" +
+      "type rewrite_under_forall = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof right = right) -> " +
+      "Proof forall (inner: I32). left = left\n" +
+      "let rewrite_under_forall = (left, right, equality, evidence) => " +
+      "by { rewrite equality intro inner exact evidence };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 12);
+  assert_equals(analysis.proofs.size, 14);
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
@@ -1400,6 +1411,7 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
       ["by { left }", "left requires a disjunction"],
       ["by { apply true_intro }", "apply proof conclusion does not match"],
       ["by { cases true_intro }", "cases requires disjunction"],
+      ["by { rewrite true_intro }", "rewrite requires equality"],
       ["by { exact true_intro assumption }", "has no remaining goal"],
       ["by {}", "leaves 1 unresolved goal"],
     ] as const
@@ -1418,6 +1430,26 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
     assert_equals(analysis.proofs.size, 0);
     assert_equals(checked_value(lower_duck_source(analysis)), undefined);
   }
+});
+
+Deno.test("rewrite tactics reject equality absent from the goal", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type unchanged = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> Proof True\n" +
+      "let unchanged = (left, right, equality) => " +
+      "by { rewrite equality constructor };\n" +
+      "42\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("rewrite found no matching occurrence")
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
 Deno.test("runtime callables erase explicit proof parameters from Core", () => {

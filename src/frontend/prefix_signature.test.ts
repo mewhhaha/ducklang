@@ -319,6 +319,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
       { tag: "exact", proof: exact, span: { start: 30, end: 44 } },
       { tag: "apply", proof: applied, span: { start: 45, end: 58 } },
       { tag: "cases", proof: applied, span: { start: 59, end: 72 } },
+      { tag: "rewrite", proof: applied, span: { start: 73, end: 88 } },
     ],
     span: { start: 10, end: 46 },
   };
@@ -360,6 +361,16 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
   assert_equals(stable_cases?.tag, "cases");
   if (stable_cases?.tag !== "cases") throw new Error("Expected cases tactic.");
   assert_equals(stable_cases.proof, {
+    tag: "name",
+    name: "theorem",
+    span: { start: 45, end: 52 },
+  });
+  const stable_rewrite = body.commands[4];
+  assert_equals(stable_rewrite?.tag, "rewrite");
+  if (stable_rewrite?.tag !== "rewrite") {
+    throw new Error("Expected rewrite tactic.");
+  }
+  assert_equals(stable_rewrite.proof, {
     tag: "name",
     name: "theorem",
     span: { start: 45, end: 52 },
