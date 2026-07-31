@@ -1371,10 +1371,23 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "by { apply theorem exact truth exact falsehood };\n" +
       "type apply_exact = (evidence: Proof True) -> Proof True\n" +
       "let apply_exact = evidence => by { apply evidence };\n" +
+      "type merge_cases = (choice: Proof True or True) -> Proof True\n" +
+      "let merge_cases = choice => " +
+      "by { cases choice assumption assumption };\n" +
+      "type false_cases = (impossible: Proof False) -> Proof True\n" +
+      "let false_cases = impossible => by { cases impossible };\n" +
+      "type exists_cases = " +
+      "(package: Proof exists (value: I32). True) -> Proof True\n" +
+      "let exists_cases = package => by { cases package assumption };\n" +
+      "type exists_retains_outer = " +
+      "(outer: I32, package: Proof exists (value: I32). True, " +
+      "retained: Proof outer = outer) -> Proof outer = outer\n" +
+      "let exists_retains_outer = (outer, package, retained) => " +
+      "by { cases package assumption };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 8);
+  assert_equals(analysis.proofs.size, 12);
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
@@ -1386,6 +1399,7 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
       ["by { constructor }", "constructor requires a True or conjunction"],
       ["by { left }", "left requires a disjunction"],
       ["by { apply true_intro }", "apply proof conclusion does not match"],
+      ["by { cases true_intro }", "cases requires disjunction"],
       ["by { exact true_intro assumption }", "has no remaining goal"],
       ["by {}", "leaves 1 unresolved goal"],
     ] as const

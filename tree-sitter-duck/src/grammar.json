@@ -3058,6 +3058,27 @@
           "members": [
             {
               "type": "STRING",
+              "value": "cases"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            },
+            {
+              "type": "FIELD",
+              "name": "proof",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
               "value": "assumption"
             },
             {

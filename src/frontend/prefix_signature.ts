@@ -162,7 +162,11 @@ export type PrefixProofTerm =
   };
 
 export type PrefixTacticCommand =
-  | { tag: "exact" | "apply"; proof: PrefixProofTerm; span: PrefixSpan }
+  | {
+    tag: "exact" | "apply" | "cases";
+    proof: PrefixProofTerm;
+    span: PrefixSpan;
+  }
   | { tag: "intro"; name: string; span: PrefixSpan }
   | {
     tag: "assumption" | "constructor" | "left" | "right";
@@ -1146,7 +1150,10 @@ function snapshot_proof_term(
           command,
           "tag",
         );
-        if (command_tag === "exact" || command_tag === "apply") {
+        if (
+          command_tag === "exact" || command_tag === "apply" ||
+          command_tag === "cases"
+        ) {
           stable_commands.push(Object.freeze({
             tag: command_tag,
             proof: snapshot_proof_term(

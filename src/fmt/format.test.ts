@@ -85,14 +85,19 @@ Deno.test("format_text round trips direct proof declarations", () => {
 Deno.test("format_text round trips tactic blocks", () => {
   const source = "type keep=(theorem:Proof True implies True)->" +
     "Proof True implies True\n" +
-    "let keep=theorem=>by{intro evidence apply theorem assumption};\n";
+    "let keep=theorem=>by{intro evidence apply theorem assumption};\n" +
+    "type choose=(choice:Proof True or True)->Proof True\n" +
+    "let choose=choice=>by{cases choice assumption assumption};\n";
   const formatted = format_text(source);
   assert_equals(
     formatted,
     "type keep = (theorem: Proof True implies True) -> " +
       "Proof True implies True\n" +
       "let keep = theorem => " +
-      "by { intro evidence apply theorem assumption };\n",
+      "by { intro evidence apply theorem assumption };\n" +
+      "type choose = (choice: Proof True or True) -> Proof True\n" +
+      "let choose = choice => " +
+      "by { cases choice assumption assumption };\n",
   );
   assert_equals(format_text(formatted), formatted);
 });

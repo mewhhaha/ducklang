@@ -8990,6 +8990,10 @@
     "named": false
   },
   {
+    "type": "cases",
+    "named": false
+  },
+  {
     "type": "character",
     "named": true
   },

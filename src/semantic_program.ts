@@ -6544,6 +6544,93 @@ function elaborate_prefix_tactics(
       pending.unshift(...goals);
       continue;
     }
+    if (command.tag === "cases") {
+      const scrutinee_check = synthesize_prefix_proof(
+        command.proof,
+        current.context,
+      );
+      const scrutinee = checked_value(scrutinee_check);
+      if (scrutinee === undefined) {
+        return scrutinee_check.map((proof) => proof.term);
+      }
+      if (scrutinee.proposition.tag === "false") {
+        current.accept({
+          tag: "false_elim",
+          proof: scrutinee.term,
+          target: current.goal,
+        });
+        continue;
+      }
+      if (scrutinee.proposition.tag === "or") {
+        let left_body: ProofTerm | undefined;
+        let right_body: ProofTerm | undefined;
+        const complete = () => {
+          if (left_body === undefined || right_body === undefined) return;
+          current.accept({
+            tag: "or_cases",
+            proof: scrutinee.term,
+            left_body,
+            right_body,
+          });
+        };
+        pending.unshift(
+          {
+            goal: current.goal,
+            context: extend_prefix_proof_context(
+              current.context,
+              `case:left:${command.span.start.toString()}`,
+              scrutinee.proposition.left,
+            ),
+            accept: (proof) => {
+              left_body = proof;
+              complete();
+            },
+          },
+          {
+            goal: current.goal,
+            context: extend_prefix_proof_context(
+              current.context,
+              `case:right:${command.span.start.toString()}`,
+              scrutinee.proposition.right,
+            ),
+            accept: (proof) => {
+              right_body = proof;
+              complete();
+            },
+          },
+        );
+        continue;
+      }
+      if (scrutinee.proposition.tag === "exists") {
+        const witness_context = extend_prefix_term_context(
+          current.context,
+          `case:witness:${command.span.start.toString()}`,
+          scrutinee.proposition.domain,
+        );
+        const body_context = extend_prefix_proof_context(
+          witness_context,
+          `case:evidence:${command.span.start.toString()}`,
+          scrutinee.proposition.body,
+        );
+        pending.unshift({
+          goal: lift_proposition(current.goal),
+          context: body_context,
+          accept: (body) =>
+            current.accept({
+              tag: "exists_elim",
+              proof: scrutinee.term,
+              target: current.goal,
+              body,
+            }),
+        });
+        continue;
+      }
+      return fail(compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "cases requires disjunction, existential, or False evidence.",
+        command.span,
+      ));
+    }
     if (command.tag === "assumption") {
       let selected_index: number | undefined;
       const environment = KernelEnvironment.from(current.context.declarations);
