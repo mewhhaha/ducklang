@@ -7,6 +7,7 @@ import {
   type PrefixProposition,
   type PrefixSignature,
   type PrefixTacticCommand,
+  type PrefixTacticLemma,
   type PrefixTerm,
 } from "./prefix_signature.ts";
 
@@ -312,6 +313,11 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
     name: "theorem",
     span: { start: 45, end: 52 },
   };
+  const simplified: PrefixTacticLemma = {
+    tag: "name",
+    name: "equality",
+    span: { start: 101, end: 109 },
+  };
   const proof: PrefixProofTerm = {
     tag: "tactics",
     commands: [
@@ -321,7 +327,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
       { tag: "cases", proof: applied, span: { start: 59, end: 72 } },
       { tag: "rewrite", proof: applied, span: { start: 73, end: 88 } },
       { tag: "decide", span: { start: 89, end: 95 } },
-      { tag: "simp", span: { start: 96, end: 100 } },
+      { tag: "simp", lemmas: [simplified], span: { start: 96, end: 109 } },
     ],
     span: { start: 10, end: 46 },
   };
@@ -338,6 +344,7 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
   };
   exact.name = "changed";
   applied.name = "changed";
+  simplified.name = "changed";
   const body = [...index.values()][0]?.definition.callable_proof_body;
 
   assert_equals(body?.tag, "tactics");
@@ -379,7 +386,91 @@ Deno.test("prefix proof snapshots seal tactic commands", () => {
   });
   assert_equals(body.commands[5]?.tag, "decide");
   assert_equals(body.commands[6]?.tag, "simp");
+  if (body.commands[6]?.tag === "simp") {
+    assert_equals(body.commands[6].lemmas, [{
+      tag: "name",
+      name: "equality",
+      span: { start: 101, end: 109 },
+    }]);
+  }
   assert_equals(Object.isFrozen(body.commands), true);
+});
+
+Deno.test("prefix simp snapshots accept only bounded plain name lists", () => {
+  let length_read = false;
+  const accessor_backed = Object.defineProperty({}, "length", {
+    get() {
+      length_read = true;
+      return 1;
+    },
+  }) as readonly PrefixTacticLemma[];
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({
+          callable_proof_body: {
+            tag: "tactics",
+            commands: [{
+              tag: "simp",
+              lemmas: accessor_backed,
+              span: { start: 10, end: 20 },
+            }],
+            span: { start: 10, end: 20 },
+          },
+        })],
+      ),
+    "Prefix simp lemmas must be an array",
+  );
+  assert_equals(length_read, false);
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({
+          callable_proof_body: {
+            tag: "tactics",
+            commands: [{
+              tag: "simp",
+              lemmas: [{
+                tag: "true_intro",
+                span: { start: 15, end: 19 },
+              } as unknown as PrefixTacticLemma],
+              span: { start: 10, end: 20 },
+            }],
+            span: { start: 10, end: 20 },
+          },
+        })],
+      ),
+    "Prefix simp lemmas must be named proofs",
+  );
+
+  const repeated_lemma: PrefixTacticLemma = {
+    tag: "name",
+    name: "equality",
+    span: { start: 15, end: 23 },
+  };
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({
+          callable_proof_body: {
+            tag: "tactics",
+            commands: [{
+              tag: "simp",
+              lemmas: new Array<PrefixTacticLemma>(20_000).fill(
+                repeated_lemma,
+              ),
+              span: { start: 10, end: 20_000 },
+            }],
+            span: { start: 10, end: 20_000 },
+          },
+        })],
+      ),
+    "Prefix proof snapshot exceeded 20000 nodes",
+  );
 });
 
 Deno.test("prefix tactic commands share the proof snapshot node budget", () => {

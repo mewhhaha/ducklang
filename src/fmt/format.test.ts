@@ -95,7 +95,10 @@ Deno.test("format_text round trips tactic blocks", () => {
     "type small=()->Proof 1i32<2i32\n" +
     "let small=()=>by{decide};\n" +
     "type obvious=()->Proof True implies True\n" +
-    "let obvious=()=>by{simp};\n";
+    "let obvious=()=>by{simp};\n" +
+    "type simplify=(left:I32,right:I32,equality:Proof left=right)->" +
+    "Proof left=right\n" +
+    "let simplify=(left,right,equality)=>by{simp [equality]};\n";
   const formatted = format_text(source);
   assert_equals(
     formatted,
@@ -118,7 +121,11 @@ Deno.test("format_text round trips tactic blocks", () => {
       "type small = () -> Proof 1i32 < 2i32\n" +
       "let small = () => by { decide };\n" +
       "type obvious = () -> Proof True implies True\n" +
-      "let obvious = () => by { simp };\n",
+      "let obvious = () => by { simp };\n" +
+      "type simplify =\n" +
+      "  (left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let simplify = (left, right, equality) => by { simp [equality] };\n",
   );
   assert_equals(format_text(formatted), formatted);
 });

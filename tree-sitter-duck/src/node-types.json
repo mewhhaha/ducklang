@@ -5850,7 +5850,18 @@
   {
     "type": "prefix_final_tactic_command",
     "named": true,
-    "fields": {}
+    "fields": {
+      "lemmas": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_tactic_lemma_list",
+            "named": true
+          }
+        ]
+      }
+    }
   },
   {
     "type": "prefix_implication_proposition",
@@ -6887,6 +6898,16 @@
     "type": "prefix_tactic_command",
     "named": true,
     "fields": {
+      "lemmas": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_tactic_lemma_list",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": false,
@@ -6903,6 +6924,22 @@
         "types": [
           {
             "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_tactic_lemma_list",
+    "named": true,
+    "fields": {
+      "lemma": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]

@@ -10,6 +10,7 @@ import {
   type PrefixSignatureResult,
   type PrefixSpan,
   type PrefixTacticCommand,
+  type PrefixTacticLemma,
   type PrefixTerm,
   type PrefixTypeReference,
 } from "./prefix_signature.ts";
@@ -591,6 +592,24 @@ function tactic_command_from_node(
       span,
     };
   }
+  const simp = node.children.find((child) => child.kind === '"simp"');
+  if (simp !== undefined) {
+    const lemma_list = node.children.find((child) =>
+      child.kind === "prefix_tactic_lemma_list"
+    );
+    const lemmas: PrefixTacticLemma[] = [];
+    if (lemma_list !== undefined) {
+      for (const lemma of lemma_list.children) {
+        if (lemma.kind !== "identifier") continue;
+        lemmas.push({
+          tag: "name",
+          name: source.slice(lemma.start, lemma.end),
+          span: { start: lemma.start, end: lemma.end },
+        });
+      }
+    }
+    return { tag: "simp", lemmas, span };
+  }
   for (
     const tag of [
       "assumption",
@@ -598,7 +617,6 @@ function tactic_command_from_node(
       "left",
       "right",
       "decide",
-      "simp",
     ] as const
   ) {
     if (

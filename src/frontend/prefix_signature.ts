@@ -169,15 +169,21 @@ export type PrefixTacticCommand =
   }
   | { tag: "intro"; name: string; span: PrefixSpan }
   | {
+    tag: "simp";
+    lemmas: readonly PrefixTacticLemma[];
+    span: PrefixSpan;
+  }
+  | {
     tag:
       | "assumption"
       | "constructor"
       | "left"
       | "right"
-      | "decide"
-      | "simp";
+      | "decide";
     span: PrefixSpan;
   };
+
+export type PrefixTacticLemma = Extract<PrefixProofTerm, { tag: "name" }>;
 
 export type PrefixProposition =
   | { tag: "true"; span: PrefixSpan }
@@ -1183,10 +1189,63 @@ function snapshot_proof_term(
           }));
           continue;
         }
+        if (command_tag === "simp") {
+          const lemmas = own_value<readonly PrefixTacticLemma[]>(
+            command,
+            "lemmas",
+          );
+          assert_plain_array(lemmas, "Prefix simp lemmas");
+          const lemma_count = own_array_length(
+            lemmas,
+            "Prefix simp lemmas",
+          );
+          expect(
+            lemma_count <= maximum_prefix_proof_snapshot_nodes - budget.nodes,
+            "Prefix proof snapshot exceeded " +
+              maximum_prefix_proof_snapshot_nodes.toString() + " nodes.",
+          );
+          const stable_lemmas = new Array<PrefixTacticLemma>(lemma_count);
+          for (
+            let lemma_index = 0;
+            lemma_index < lemma_count;
+            lemma_index += 1
+          ) {
+            budget.nodes += 1;
+            const lemma = own_array_value(
+              lemmas,
+              lemma_index,
+              "Prefix simp lemmas",
+            );
+            expect(
+              lemma !== undefined,
+              "Prefix simp lemmas cannot contain holes.",
+            );
+            assert_record(lemma, "Prefix simp lemma");
+            const lemma_tag = own_value<PrefixProofTerm["tag"]>(lemma, "tag");
+            expect(
+              lemma_tag === "name",
+              "Prefix simp lemmas must be named proofs.",
+            );
+            stable_lemmas[lemma_index] = Object.freeze({
+              tag: lemma_tag,
+              name: require_text(
+                own_value<string>(lemma, "name"),
+                "Prefix simp lemma name",
+              ),
+              span: snapshot_span(own_value<PrefixSpan>(lemma, "span")),
+            });
+          }
+          stable_commands.push(Object.freeze({
+            tag: command_tag,
+            lemmas: Object.freeze(stable_lemmas),
+            span: command_span,
+          }));
+          continue;
+        }
         if (
           command_tag === "assumption" || command_tag === "constructor" ||
           command_tag === "left" || command_tag === "right" ||
-          command_tag === "decide" || command_tag === "simp"
+          command_tag === "decide"
         ) {
           stable_commands.push(Object.freeze({
             tag: command_tag,

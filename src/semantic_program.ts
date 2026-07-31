@@ -6865,6 +6865,7 @@ function elaborate_prefix_tactics(
         equality.proposition.right,
         equality.proposition.type,
         current.context,
+        search_budget,
       );
       if (rewritten.tag === "budget_exhausted") {
         return fail(compiler_diagnostic(
@@ -7092,8 +7093,67 @@ function elaborate_prefix_tactics(
       continue;
     }
     if (command.tag === "simp") {
+      const rewrite_rules: SynthesizedPrefixProof[] = [];
+      for (const lemma of command.lemmas) {
+        const lemma_check = synthesize_prefix_proof(
+          lemma,
+          current.context,
+        );
+        const synthesized = checked_value(lemma_check);
+        if (synthesized === undefined) {
+          return lemma_check.map((proof) => proof.term);
+        }
+        if (synthesized.proposition.tag !== "equal") {
+          return fail(compiler_diagnostic(
+            diagnostic_codes.prefix_proof_invalid,
+            "simp lemmas must establish propositional equality.",
+            lemma.span,
+          ));
+        }
+        rewrite_rules.push(synthesized);
+      }
+      let simplified_goal = current.goal;
+      const transports: {
+        equality: SynthesizedPrefixProof;
+        motive: Proposition;
+      }[] = [];
+      const visited_goals = new Set<string>([
+        JSON.stringify(simplified_goal),
+      ]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const rule of rewrite_rules) {
+          expect(
+            rule.proposition.tag === "equal",
+            "Checked simp rewrite rule lost its equality.",
+          );
+          const rewritten = rewrite_prefix_tactic_goal(
+            simplified_goal,
+            rule.proposition.left,
+            rule.proposition.right,
+            rule.proposition.type,
+            current.context,
+            search_budget,
+          );
+          if (rewritten.tag === "budget_exhausted") {
+            return fail(compiler_diagnostic(
+              diagnostic_codes.prefix_proof_invalid,
+              "simp exceeded the compiler proof-search budget.",
+              command.span,
+            ));
+          }
+          if (rewritten.tag === "unchanged") continue;
+          const key = JSON.stringify(rewritten.goal);
+          if (visited_goals.has(key)) continue;
+          visited_goals.add(key);
+          transports.push({ equality: rule, motive: rewritten.motive });
+          simplified_goal = rewritten.goal;
+          changed = true;
+        }
+      }
       const simplified = simplify_prefix_tactic_goal(
-        current.goal,
+        simplified_goal,
         current.context,
         search_budget,
       );
@@ -7111,7 +7171,18 @@ function elaborate_prefix_tactics(
           command.span,
         ));
       }
-      current.accept(simplified.proof);
+      let proof = simplified.proof;
+      for (let index = transports.length - 1; index >= 0; index -= 1) {
+        const transport = transports[index];
+        expect(transport !== undefined, `Simp transport ${index} is missing.`);
+        proof = {
+          tag: "transport",
+          equality: { tag: "symm", proof: transport.equality.term },
+          motive: transport.motive,
+          proof,
+        };
+      }
+      current.accept(proof);
       continue;
     }
     throw new Error("Invalid prefix tactic command.");
@@ -7150,13 +7221,13 @@ function rewrite_prefix_tactic_goal(
   target: KernelTerm,
   type: KernelType,
   context: PrefixKernelProofContext,
+  search_budget: PrefixTacticSearchBudget,
 ): PrefixTacticRewrite {
   const environment = KernelEnvironment.from(context.declarations);
   const outer_context = snapshot_kernel_context(context.term_context);
   const motive_context: KernelContext = [type, ...outer_context];
   const lifted_source = shift_kernel_term_variables(source, 1);
   let replacements = 0;
-  let steps = 0;
   let budget_exhausted = false;
 
   const rewrite_term = (
@@ -7165,8 +7236,7 @@ function rewrite_prefix_tactic_goal(
     term_context: KernelContext,
     binder_depth: number,
   ): KernelTerm => {
-    steps += 1;
-    if (steps > proof_limits.compiler_search_steps) {
+    if (!charge_prefix_tactic_node(search_budget)) {
       budget_exhausted = true;
       return term;
     }
@@ -7210,8 +7280,7 @@ function rewrite_prefix_tactic_goal(
     term_context: KernelContext,
     binder_depth: number,
   ): Proposition => {
-    steps += 1;
-    if (steps > proof_limits.compiler_search_steps) {
+    if (!charge_prefix_tactic_node(search_budget)) {
       budget_exhausted = true;
       return proposition;
     }

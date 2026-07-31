@@ -1425,10 +1425,29 @@ Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
       "type simp_quantified = () -> " +
       "Proof forall (value: I32). value = value\n" +
       "let simp_quantified = () => by { simp };\n" +
+      "type simp_rewrite = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let simp_rewrite = (left, right, equality) => " +
+      "by { simp [equality] };\n" +
+      "type simp_fixed_point = " +
+      "(first: I32, second: I32, third: I32, " +
+      "first_step: Proof first = second, " +
+      "second_step: Proof second = third) -> Proof first = third\n" +
+      "let simp_fixed_point = " +
+      "(first, second, third, first_step, second_step) => " +
+      "by { simp [second_step, first_step] };\n" +
+      "type simp_cycle = " +
+      "(first: I32, second: I32, forward: Proof first = second, " +
+      "backward: Proof second = first) -> Proof first = first\n" +
+      "let simp_cycle = (first, second, forward, backward) => " +
+      "by { simp [forward, backward] };\n" +
+      "type simp_empty = () -> Proof True\n" +
+      "let simp_empty = () => by { simp [] };\n" +
       "42\n",
   ));
   assert_equals(analysis.diagnostics, []);
-  assert_equals(analysis.proofs.size, 28);
+  assert_equals(analysis.proofs.size, 32);
   assert_equals(
     checked_value(lower_duck_source(analysis))?.core.statements,
     [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
@@ -1465,6 +1484,25 @@ Deno.test("tactic blocks report the command that cannot solve its goal", () => {
     assert_equals(analysis.proofs.size, 0);
     assert_equals(checked_value(lower_duck_source(analysis)), undefined);
   }
+});
+
+Deno.test("simp rejects rewrite evidence that is not equality", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type broken = (evidence: Proof True) -> Proof False\n" +
+      "let broken = evidence => by { simp [evidence] };\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "simp lemmas must establish propositional equality",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
 Deno.test("simp reports its structural proof-search depth limit", () => {

@@ -3191,6 +3191,31 @@
             {
               "type": "SYMBOL",
               "name": "_tactic_space"
+            },
+            {
+              "type": "FIELD",
+              "name": "lemmas",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_tactic_lemma_list"
+              }
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "simp"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
             }
           ]
         }
@@ -3220,8 +3245,95 @@
           "value": "decide"
         },
         {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "simp"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "_tactic_space"
+            },
+            {
+              "type": "FIELD",
+              "name": "lemmas",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_tactic_lemma_list"
+              }
+            }
+          ]
+        },
+        {
           "type": "STRING",
           "value": "simp"
+        }
+      ]
+    },
+    "prefix_tactic_lemma_list": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "["
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "FIELD",
+                  "name": "lemma",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "identifier"
+                  }
+                },
+                {
+                  "type": "REPEAT",
+                  "content": {
+                    "type": "SEQ",
+                    "members": [
+                      {
+                        "type": "STRING",
+                        "value": ","
+                      },
+                      {
+                        "type": "FIELD",
+                        "name": "lemma",
+                        "content": {
+                          "type": "SYMBOL",
+                          "name": "identifier"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": ","
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": "]"
         }
       ]
     },
