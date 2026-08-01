@@ -300,11 +300,11 @@ export function erase_semantic_type(
         tag: "product",
         fields: Object.freeze([
           Object.freeze({
-            label: "witness",
+            label: undefined,
             type: snapshot_runtime_representation_type(type.witness),
           }),
           Object.freeze({
-            label: "payload",
+            label: undefined,
             type: snapshot_runtime_representation_type(type.payload),
           }),
         ]),

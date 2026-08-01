@@ -14,11 +14,37 @@ export type PrefixSpan = { start: number; end: number };
 export type PrefixTypeReference = {
   text: string;
   canonical: string;
+  computational_exists?: PrefixComputationalExistentialType;
   expression?: TypeExpr;
   proof?: PrefixProposition;
   refinement?: PrefixRefinement;
   representation?: string;
   resolved?: true;
+  span: PrefixSpan;
+};
+
+export type PrefixComputationalExistentialType = {
+  binder: string;
+  witness: PrefixTypeReference;
+  payload: PrefixTypeReference;
+  span: PrefixSpan;
+};
+
+export type PrefixComputationalPack = {
+  witness: PrefixTerm;
+  payload: PrefixTerm;
+  type: PrefixTypeReference;
+  scope: string;
+  span: PrefixSpan;
+};
+
+export type PrefixComputationalOpen = {
+  package: PrefixTerm;
+  witness_name: string;
+  witness_span: PrefixSpan;
+  payload_name: string;
+  payload_span: PrefixSpan;
+  scope: string;
   span: PrefixSpan;
 };
 
@@ -715,6 +741,36 @@ function snapshot_type_reference(
       canonical: require_text(canonical, "Canonical prefix type reference"),
       span: snapshot_span(span),
     };
+    if (Object.prototype.hasOwnProperty.call(type, "computational_exists")) {
+      const computational_exists = own_value<
+        PrefixComputationalExistentialType | undefined
+      >(type, "computational_exists");
+      if (computational_exists !== undefined) {
+        assert_record(
+          computational_exists,
+          "Prefix computational existential type",
+        );
+        snapshot.computational_exists = Object.freeze({
+          binder: require_text(
+            own_value<string>(computational_exists, "binder"),
+            "Prefix computational existential binder",
+          ),
+          witness: snapshot_type_reference(
+            own_value<PrefixTypeReference>(computational_exists, "witness"),
+            active,
+            depth + 1,
+          ),
+          payload: snapshot_type_reference(
+            own_value<PrefixTypeReference>(computational_exists, "payload"),
+            active,
+            depth + 1,
+          ),
+          span: snapshot_span(
+            own_value<PrefixSpan>(computational_exists, "span"),
+          ),
+        });
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(type, "refinement")) {
       const refinement = own_value<PrefixRefinement | undefined>(
         type,

@@ -1386,6 +1386,10 @@
           "named": true
         },
         {
+          "type": "computational_open_statement",
+          "named": true
+        },
+        {
           "type": "continue_statement",
           "named": true
         },
@@ -1753,6 +1757,222 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "computational_open_statement",
+    "named": true,
+    "fields": {
+      "package": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "condition_expression",
+            "named": true
+          }
+        ]
+      },
+      "payload": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "witness": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "prefix_open_keyword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "computational_pack_expression",
+    "named": true,
+    "fields": {
+      "payload": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_expression",
+            "named": true
+          },
+          {
+            "type": "array_repeat_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "case_expression",
+            "named": true
+          },
+          {
+            "type": "case_function_expression",
+            "named": true
+          },
+          {
+            "type": "condition_expression",
+            "named": true
+          },
+          {
+            "type": "effect_handler_expression",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "import_expression",
+            "named": true
+          },
+          {
+            "type": "include_expression",
+            "named": true
+          },
+          {
+            "type": "loop_expression",
+            "named": true
+          },
+          {
+            "type": "named_product",
+            "named": true
+          },
+          {
+            "type": "recursive_call_expression",
+            "named": true
+          },
+          {
+            "type": "scratch_expression",
+            "named": true
+          },
+          {
+            "type": "shape_value",
+            "named": true
+          },
+          {
+            "type": "template_literal",
+            "named": true
+          },
+          {
+            "type": "try_with_expression",
+            "named": true
+          },
+          {
+            "type": "wildcard",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_computational_existential_type",
+            "named": true
+          }
+        ]
+      },
+      "witness": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "application_expression",
+            "named": true
+          },
+          {
+            "type": "arrow_function",
+            "named": true
+          },
+          {
+            "type": "as_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "case_expression",
+            "named": true
+          },
+          {
+            "type": "case_function_expression",
+            "named": true
+          },
+          {
+            "type": "effect_handler_expression",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "is_expression",
+            "named": true
+          },
+          {
+            "type": "loop_expression",
+            "named": true
+          },
+          {
+            "type": "postfix_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_call_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_function",
+            "named": true
+          },
+          {
+            "type": "try_with_expression",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "prefix_pack_keyword",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -2228,6 +2448,10 @@
         },
         {
           "type": "break_statement",
+          "named": true
+        },
+        {
+          "type": "computational_open_statement",
           "named": true
         },
         {
@@ -5403,6 +5627,10 @@
           "named": true
         },
         {
+          "type": "computational_pack_expression",
+          "named": true
+        },
+        {
           "type": "field_expression",
           "named": true
         },
@@ -5605,6 +5833,56 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "prefix_computational_existential_type",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "lowercase_identifier",
+            "named": true
+          }
+        ]
+      },
+      "payload": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_refinement_type",
+            "named": true
+          },
+          {
+            "type": "type_reference",
+            "named": true
+          }
+        ]
+      },
+      "witness": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_reference",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "prefix_some_keyword",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -6860,6 +7138,10 @@
       "required": true,
       "types": [
         {
+          "type": "prefix_computational_existential_type",
+          "named": true
+        },
+        {
           "type": "prefix_proof_type",
           "named": true
         },
@@ -7526,6 +7808,10 @@
         },
         {
           "type": "break_statement",
+          "named": true
+        },
+        {
+          "type": "computational_open_statement",
           "named": true
         },
         {
@@ -9003,6 +9289,10 @@
     "named": false
   },
   {
+    "type": "as",
+    "named": false
+  },
+  {
     "type": "as_keyword",
     "named": true
   },
@@ -9300,7 +9590,15 @@
     "named": true
   },
   {
+    "type": "prefix_open_keyword",
+    "named": true
+  },
+  {
     "type": "prefix_or_keyword",
+    "named": true
+  },
+  {
+    "type": "prefix_pack_keyword",
     "named": true
   },
   {
@@ -9309,6 +9607,10 @@
   },
   {
     "type": "prefix_requires_keyword",
+    "named": true
+  },
+  {
+    "type": "prefix_some_keyword",
     "named": true
   },
   {

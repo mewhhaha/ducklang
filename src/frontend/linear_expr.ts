@@ -61,7 +61,10 @@ export function consume_linear_expr(
       return;
     }
 
-    if (item.tag === "var" && available.has(item.name)) {
+    if (item.tag === "var" && available.bindings.has(item.name)) {
+      if (!available.has(item.name)) {
+        consume(item.name, item);
+      }
       if (mode === "final" && is_root) {
         consume(item.name, item);
         return;
@@ -110,6 +113,29 @@ export function consume_linear_expr(
       return;
     }
 
+    if (item.tag === "product" || item.tag === "shape") {
+      for (const entry of item.entries) {
+        walk(entry.value, false);
+      }
+      return;
+    }
+
+    if (item.tag === "array") {
+      for (const value of item.items) {
+        walk(value, false);
+      }
+      if (item.rest !== undefined) {
+        walk(item.rest, false);
+      }
+      return;
+    }
+
+    if (item.tag === "array_repeat") {
+      walk(item.value, false);
+      walk(item.length, false);
+      return;
+    }
+
     if (item.tag === "field") {
       walk(item.object, false);
       return;
@@ -118,6 +144,13 @@ export function consume_linear_expr(
     if (item.tag === "index") {
       walk(item.object, false);
       walk(item.index, false);
+      return;
+    }
+
+    if (item.tag === "union_case") {
+      if (item.value !== undefined) {
+        walk(item.value, false);
+      }
       return;
     }
 

@@ -1,6 +1,8 @@
 import type { BabaCstNode, BabaParseResult } from "./baba_parser.ts";
 import {
   type PrefixCallableType,
+  type PrefixComputationalOpen,
+  type PrefixComputationalPack,
   type PrefixDefinition,
   type PrefixProofTerm,
   type PrefixProposition,
@@ -23,6 +25,8 @@ import {
 export type PrefixSourceMetadata = {
   signatures: PrefixSignature[];
   definitions: PrefixDefinition[];
+  computational_packs: PrefixComputationalPack[];
+  computational_opens: PrefixComputationalOpen[];
   masked_source: string;
 };
 
@@ -31,13 +35,30 @@ export function extract_prefix_source_metadata(
 ): PrefixSourceMetadata {
   const signatures: PrefixSignature[] = [];
   const definitions: PrefixDefinition[] = [];
+  const computational_packs: PrefixComputationalPack[] = [];
+  const computational_opens: PrefixComputationalOpen[] = [];
   const masked = parsed.cst.text.split("");
   const root = parsed.cst.root;
   if (root === undefined) {
-    return { signatures, definitions, masked_source: parsed.cst.text };
+    return {
+      signatures,
+      definitions,
+      computational_packs,
+      computational_opens,
+      masked_source: parsed.cst.text,
+    };
   }
 
-  visit(root, parsed.cst.text, signatures, definitions, masked, "root");
+  visit(
+    root,
+    parsed.cst.text,
+    signatures,
+    definitions,
+    computational_packs,
+    computational_opens,
+    masked,
+    "root",
+  );
   for (let index = 0; index < signatures.length; index += 1) {
     const signature = signatures[index];
     if (signature === undefined) continue;
@@ -53,6 +74,8 @@ export function extract_prefix_source_metadata(
   return {
     signatures,
     definitions,
+    computational_packs,
+    computational_opens,
     masked_source: masked.join(""),
   };
 }
@@ -62,6 +85,8 @@ function visit(
   source: string,
   signatures: PrefixSignature[],
   definitions: PrefixDefinition[],
+  computational_packs: PrefixComputationalPack[],
+  computational_opens: PrefixComputationalOpen[],
   masked: string[],
   scope: string,
 ): void {
@@ -81,10 +106,27 @@ function visit(
     definitions.push(...definitions_from_node(node, source, scope));
     mask_span(masked, node.start, node.end);
   }
+  if (node.kind === "computational_pack_expression") {
+    const pack = computational_pack_from_node(node, source, scope);
+    if (pack !== undefined) computational_packs.push(pack);
+  }
+  if (node.kind === "computational_open_statement") {
+    const opened = computational_open_from_node(node, source, scope);
+    if (opened !== undefined) computational_opens.push(opened);
+  }
   for (const child of node.children) {
     let child_scope = scope;
     if (introduces_scope(node.kind)) child_scope = scope + "/" + node.id;
-    visit(child, source, signatures, definitions, masked, child_scope);
+    visit(
+      child,
+      source,
+      signatures,
+      definitions,
+      computational_packs,
+      computational_opens,
+      masked,
+      child_scope,
+    );
   }
 }
 
@@ -474,6 +516,38 @@ function signature_type_reference_from_node(
       span: { start: value_node.start, end: value_node.end },
     };
   }
+  if (value_node.kind === "prefix_computational_existential_type") {
+    const binder_node = value_node.children.find((child) =>
+      child.kind === "lowercase_identifier"
+    );
+    const witness_node = value_node.children.find((child) =>
+      child.kind === "type_reference"
+    );
+    const payload_node = value_node.children.findLast((child) =>
+      child.kind === "prefix_refinement_type" ||
+      child.kind === "type_reference"
+    );
+    if (
+      binder_node === undefined || witness_node === undefined ||
+      payload_node === undefined
+    ) {
+      return undefined;
+    }
+    const payload = signature_type_reference_from_node(payload_node, source);
+    if (payload === undefined) return undefined;
+    const witness = type_reference_from_node(witness_node, source);
+    return {
+      text: source.slice(value_node.start, value_node.end),
+      canonical: "some",
+      computational_exists: {
+        binder: source.slice(binder_node.start, binder_node.end),
+        witness,
+        payload,
+        span: { start: value_node.start, end: value_node.end },
+      },
+      span: { start: value_node.start, end: value_node.end },
+    };
+  }
   if (value_node.kind !== "prefix_refinement_type") return undefined;
   const binder_node = value_node.children.find((child) =>
     child.kind === "lowercase_identifier"
@@ -509,6 +583,70 @@ function type_reference_from_node(
   return {
     text: source.slice(node.start, node.end),
     canonical: canonical_type_reference(node, source),
+    span: { start: node.start, end: node.end },
+  };
+}
+
+function computational_pack_from_node(
+  node: BabaCstNode,
+  source: string,
+  scope: string,
+): PrefixComputationalPack | undefined {
+  const values = computational_pack_value_nodes(node);
+  const witness_node = values[0];
+  const payload_node = values[1];
+  const type_node = node.children.find((child) =>
+    child.kind === "prefix_computational_existential_type"
+  );
+  if (
+    witness_node === undefined || payload_node === undefined ||
+    type_node === undefined
+  ) {
+    return undefined;
+  }
+  const type = signature_type_reference_from_node(type_node, source);
+  if (type === undefined) return undefined;
+  return {
+    witness: term_from_node(witness_node, source),
+    payload: term_from_node(payload_node, source),
+    type,
+    scope,
+    span: { start: node.start, end: node.end },
+  };
+}
+
+function computational_pack_value_nodes(node: BabaCstNode): BabaCstNode[] {
+  return node.children.filter((child) =>
+    !child.kind.startsWith('"') && child.kind !== "comment" &&
+    child.kind !== "prefix_pack_keyword" &&
+    child.kind !== "prefix_computational_existential_type"
+  );
+}
+
+function computational_open_from_node(
+  node: BabaCstNode,
+  source: string,
+  scope: string,
+): PrefixComputationalOpen | undefined {
+  const package_node = node.children.find((child) =>
+    child.kind === "condition_expression"
+  );
+  const names = node.children.filter((child) => child.kind === "identifier");
+  const witness_node = names[0];
+  const payload_node = names[1];
+  if (
+    package_node === undefined || witness_node === undefined ||
+    payload_node === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    package: term_from_node(package_node, source),
+    witness_name: source.slice(witness_node.start, witness_node.end),
+    witness_span: { start: witness_node.start, end: witness_node.end },
+    payload_name: source.slice(payload_node.start, payload_node.end),
+    payload_span: { start: payload_node.start, end: payload_node.end },
+    scope,
     span: { start: node.start, end: node.end },
   };
 }
@@ -1088,7 +1226,10 @@ function term_shape_from_node(
   if (
     node.kind === "prefix_proposition_term" ||
     node.kind === "prefix_proposition_postfix_term" ||
-    node.kind === "postfix_expression"
+    node.kind === "postfix_expression" ||
+    node.kind === "condition_expression" ||
+    node.kind === "condition_postfix_expression" ||
+    node.kind === "condition_parenthesized_expression"
   ) {
     const child = semantic_child(node);
     if (child === undefined) return { tag: "unsupported" };
@@ -1114,6 +1255,14 @@ function term_shape_from_node(
       values: node.children.filter((child) =>
         !child.kind.startsWith('"') && child.kind !== "comment"
       ).map((child) => term_from_node(child, source)),
+    };
+  }
+  if (node.kind === "computational_pack_expression") {
+    const values = computational_pack_value_nodes(node);
+    if (values.length !== 2) return { tag: "unsupported" };
+    return {
+      tag: "product",
+      values: values.map((child) => term_from_node(child, source)),
     };
   }
   if (node.kind === "prefix_proposition_binary_term") {

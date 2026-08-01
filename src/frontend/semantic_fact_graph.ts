@@ -43,6 +43,7 @@ import {
   unique_semantic_call_at_span,
   unique_semantic_index_at_span,
   unique_semantic_narrowing_at_span,
+  unique_semantic_node_at_span,
   unique_semantic_primitive_at_span,
   unique_semantic_slice_at_span,
 } from "./semantic_cfg.ts";
@@ -136,6 +137,39 @@ export function infer_semantic_machine_certificate(
     return undefined;
   }
   return semantic_machine_certificate(call_span, requirement);
+}
+
+export function infer_semantic_machine_checkpoint_certificate(
+  control_flow: SemanticCfg,
+  checkpoint_span: SourceSpan,
+  requirement: SemanticMachineRequirement,
+): SemanticMachineCertificate | undefined {
+  if (
+    requirement.tag === "congruence" &&
+    (requirement.modulus <= 0n ||
+      requirement.residue < 0n ||
+      requirement.residue >= requirement.modulus)
+  ) {
+    return undefined;
+  }
+  if (
+    requirement.tag === "difference" &&
+    typeof requirement.maximum !== "bigint"
+  ) {
+    return undefined;
+  }
+  const target = unique_semantic_node_at_span(control_flow, checkpoint_span);
+  if (
+    target === undefined ||
+    semantic_cfg_machine_path_result_at_target(
+        control_flow,
+        target,
+        requirement,
+      ) !== "proved"
+  ) {
+    return undefined;
+  }
+  return semantic_machine_certificate(checkpoint_span, requirement);
 }
 
 export function infer_semantic_index_bounds_certificate(
@@ -3224,9 +3258,11 @@ function machine_requirement_holds(
   requirement: SemanticMachineRequirement,
 ): boolean {
   if (requirement.tag === "fact") {
+    if (!domain.ranges.has(requirement.proposition.value)) return false;
     return implies_machine_fact(domain, requirement.proposition);
   }
   if (requirement.tag === "bitmask") {
+    if (!domain.ranges.has(requirement.value)) return false;
     return implies_machine_bitmask(
       domain,
       requirement.value,
@@ -3235,6 +3271,7 @@ function machine_requirement_holds(
     );
   }
   if (requirement.tag === "congruence") {
+    if (!domain.ranges.has(requirement.value)) return false;
     return implies_machine_congruence(
       domain,
       requirement.value,
@@ -3243,6 +3280,10 @@ function machine_requirement_holds(
     );
   }
   if (requirement.tag === "difference") {
+    if (
+      !domain.ranges.has(requirement.left) ||
+      !domain.ranges.has(requirement.right)
+    ) return false;
     return implies_machine_difference(
       domain,
       requirement.left,
@@ -3251,6 +3292,10 @@ function machine_requirement_holds(
     );
   }
   if (requirement.tag === "equality") {
+    if (
+      !domain.ranges.has(requirement.left) ||
+      !domain.ranges.has(requirement.right)
+    ) return false;
     return implies_machine_equality(
       domain,
       requirement.left,
@@ -3258,12 +3303,17 @@ function machine_requirement_holds(
     );
   }
   if (requirement.tag === "disequality") {
+    if (
+      !domain.ranges.has(requirement.left) ||
+      !domain.ranges.has(requirement.right)
+    ) return false;
     return implies_machine_disequality(
       domain,
       requirement.left,
       requirement.right,
     );
   }
+  if (!domain.ranges.has(requirement.value)) return false;
   return machine_excludes_equal(
     domain,
     requirement.value,

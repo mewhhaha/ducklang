@@ -306,9 +306,9 @@ Deno.test("prefix source extraction retains quantified proof terms", () => {
   const metadata = extract_prefix_source_metadata(parse_duck_source(
     "let specialize = (universal, value) => " +
       "by forall_apply(universal, value);\n" +
-      "let pack = (value, evidence) => " +
+      "let introduce_exists = (value, evidence) => " +
       "by exists_intro(value, evidence);\n" +
-      "let open = existence => " +
+      "let eliminate_exists = existence => " +
       "by exists_elim(existence, witness, evidence => evidence);\n",
   ));
   const specialize = metadata.definitions[0]?.callable_proof_body;

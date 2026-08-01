@@ -23,6 +23,7 @@ import { source_tokens } from "../frontend/tokenize.ts";
 const maximum_line_width = 80;
 
 const keywords = new Set([
+  "as",
   "borrow",
   "break",
   "by",
@@ -47,10 +48,13 @@ const keywords = new Set([
   "loop",
   "module",
   "of",
+  "open",
+  "pack",
   "rec",
   "return",
   "scalar",
   "scratch",
+  "some",
   "struct",
   "then",
   "try",
@@ -1326,7 +1330,20 @@ function needs_space(
       return false;
     }
 
-    if (previous.text === "." || previous.text === "..") {
+    if (previous.text === ".") {
+      const before_dot = line[index - 2];
+      if (
+        before_dot?.kind === "symbol" && before_dot.text === ")" &&
+        line.slice(0, index - 1).some((candidate) =>
+          candidate.kind === "name" && candidate.text === "some"
+        )
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    if (previous.text === "..") {
       return false;
     }
 

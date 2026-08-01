@@ -27,6 +27,7 @@ import {
   type LinearStmtLoopOps,
   validate_linear_loop_body as validate_linear_loop_body_with_ops,
 } from "./linear_stmt_loop.ts";
+import { pattern_bindings } from "./pattern.ts";
 
 const linear_expr_hooks = {
   validate_linear_block,
@@ -145,6 +146,21 @@ function validate_linear_block(
     expect(stmt, "Missing statement " + index);
     const is_final = index + 1 >= stmts.length;
 
+    if (stmt.tag === "bind") {
+      const projection_source = moved_projection_source(stmt.value);
+
+      if (projection_source !== undefined && available.has(projection_source)) {
+        index = validate_linear_projection_group(
+          stmts,
+          index,
+          projection_source,
+          available,
+          closures,
+        );
+        continue;
+      }
+    }
+
     if (stmt.tag === "assign") {
       validate_linear_assignment(stmt, available, closures, active_calls);
       bind_linear_closure(closures, stmt.name, stmt.value, available, stmt);
@@ -192,7 +208,13 @@ function validate_linear_block(
       );
       return;
     } else if (stmt.tag === "bind") {
-      if (stmt.is_linear) {
+      let linear_patterns: ReturnType<typeof pattern_bindings> = [];
+      if (stmt.pattern !== undefined) {
+        linear_patterns = pattern_bindings(stmt.pattern).filter((binding) =>
+          binding.mode === "linear"
+        );
+      }
+      if (stmt.is_linear || linear_patterns.length > 0) {
         consume_expr(
           stmt.value,
           available,
@@ -200,8 +222,14 @@ function validate_linear_block(
           closures,
           active_calls,
         );
-        available.bind(stmt.name, stmt);
-        closures.delete(stmt.name);
+        if (stmt.is_linear) {
+          available.bind(stmt.name, stmt);
+          closures.delete(stmt.name);
+        }
+        for (const binding of linear_patterns) {
+          available.bind(binding.name, binding);
+          closures.delete(binding.name);
+        }
       } else {
         consume_expr(
           stmt.value,
@@ -320,6 +348,53 @@ function validate_linear_block(
       );
     }
   }
+}
+
+function validate_linear_projection_group(
+  stmts: Stmt[],
+  first_index: number,
+  source_name: string,
+  available: LinearState,
+  closures: LinearClosureEnv,
+): number {
+  const first = stmts[first_index];
+  expect(first?.tag === "bind", "Missing first moved projection binding");
+  available.consume(source_name, first.value);
+  let last_index = first_index;
+
+  for (let index = first_index; index < stmts.length; index += 1) {
+    const stmt = stmts[index];
+
+    if (
+      stmt?.tag !== "bind" ||
+      moved_projection_source(stmt.value) !== source_name
+    ) {
+      break;
+    }
+
+    if (stmt.is_linear) {
+      available.bind(stmt.name, stmt);
+      closures.delete(stmt.name);
+    }
+    last_index = index;
+  }
+
+  return last_index;
+}
+
+export function moved_projection_source(
+  expr: FrontExpr,
+): string | undefined {
+  if (expr.tag !== "field" && expr.tag !== "index") {
+    return undefined;
+  }
+  if (expr.move !== true) {
+    return undefined;
+  }
+  if (expr.object.tag === "var") {
+    return expr.object.name;
+  }
+  return moved_projection_source(expr.object);
 }
 
 function validate_linear_no_else_branch(

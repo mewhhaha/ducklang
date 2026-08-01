@@ -53,6 +53,8 @@ import {
 } from "./frontend/binding_index.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
 import { lower_baba_type_reference } from "./frontend/baba_type_lower.ts";
+import { stmt_result_expr } from "./frontend/block_result.ts";
+import { expression_does_not_fall_through } from "./frontend/termination.ts";
 import { apply_function_result_context } from "./frontend/function_context.ts";
 import {
   format_type_expr,
@@ -78,7 +80,10 @@ import type {
   SemanticCfg,
   SemanticNode,
 } from "./frontend/semantic_cfg.ts";
-import { semantic_calls_at_span } from "./frontend/semantic_cfg.ts";
+import {
+  semantic_calls_at_span,
+  unique_semantic_node_at_span,
+} from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
   clone_source_tree,
@@ -111,6 +116,7 @@ import {
   infer_semantic_index_bounds_certificate,
   infer_semantic_integer_narrowing_certificate,
   infer_semantic_machine_certificate,
+  infer_semantic_machine_checkpoint_certificate,
   infer_semantic_primitive_safety_certificate,
   infer_semantic_remainder_certificate,
   infer_semantic_remainder_divisibility_certificate,
@@ -136,6 +142,7 @@ import {
   type SemanticControlFlowCertificate,
   type SemanticIndexBoundsRequirement,
   type SemanticIntegerNarrowingRequirement,
+  type SemanticMachineCertificate,
   type SemanticPredicateAtom,
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
@@ -151,6 +158,7 @@ import {
   verify_semantic_integer_narrowing_disproved,
   verify_semantic_integer_narrowing_unreachable,
   verify_semantic_machine_certificate,
+  verify_semantic_machine_checkpoint_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_primitive_disproved,
   verify_semantic_primitive_safety_certificate,
@@ -187,6 +195,8 @@ import type { FunctionFactSummary } from "./frontend/function_summary.ts";
 import type { TypeExpr } from "./type_syntax.ts";
 import {
   associate_prefix_signatures,
+  type PrefixComputationalOpen,
+  type PrefixComputationalPack,
   type PrefixDefinition,
   type PrefixProofTerm,
   type PrefixProposition,
@@ -224,6 +234,16 @@ export type SemanticCallableCfgIndex = ReadonlyMap<
   ValueId,
   SemanticCallableControlFlow
 >;
+export type ComputationalPackageFact = {
+  family: string;
+  witness: RepresentationType;
+  payload: RepresentationType;
+  relation: string | undefined;
+};
+export type ComputationalPackageIndex = ReadonlyMap<
+  ValueId,
+  ComputationalPackageFact
+>;
 
 export type DuckSourceAnalysis = {
   source: SourceNode;
@@ -239,6 +259,7 @@ export type DuckAnalysis = {
   diagnostics: readonly SourceDiagnostic[];
   control_flow: SemanticCfg | undefined;
   callable_control_flow: SemanticCallableCfgIndex;
+  computational_packages: ComputationalPackageIndex;
   symbols: SemanticSymbolIndex;
   types: SemanticTypeIndex;
   facts: RefinementIndex;
@@ -480,6 +501,8 @@ export function analyze_duck_source(
   const contract_validation = validate_prefix_contracts(
     prefix_signatures,
     prefix_definitions,
+    source_metadata.computational_packs,
+    source_metadata.computational_opens,
     source_analysis.source,
     stable_input.cst.root,
     stable_input.cst.text,
@@ -566,6 +589,7 @@ export function analyze_duck_source(
     diagnostics,
     control_flow,
     callable_control_flow,
+    computational_packages: contract_validation.computational_packages,
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap(types),
     facts: new FrozenMap<ValueId, FactState>([]),
@@ -687,28 +711,20 @@ function apply_prefix_signature_types(
     const runtime_parameters = signature.type.parameters.filter((parameter) =>
       parameter.type.proof === undefined
     );
-    const parameter_checks = runtime_parameters.map((parameter) => {
-      const type_node = find_cst_node(
+    const parameter_checks = runtime_parameters.map((parameter) =>
+      lower_prefix_runtime_type(
+        parameter.type,
         cst_root,
-        parameter.type.span,
-        "type_reference",
-      );
-      expect(
-        type_node !== undefined,
-        `Prefix parameter ${parameter.name} lost its Baba type node.`,
-      );
-      return lower_baba_type_reference(type_node, source_text);
-    });
-    const result_node = find_cst_node(
+        source_text,
+        `Prefix parameter ${parameter.name}`,
+      )
+    );
+    const result_check = lower_prefix_runtime_type(
+      signature.type.result.type,
       cst_root,
-      signature.type.result.type.span,
-      "type_reference",
+      source_text,
+      `Prefix signature ${signature.name} result`,
     );
-    expect(
-      result_node !== undefined,
-      `Prefix signature ${signature.name} lost its Baba result type node.`,
-    );
-    const result_check = lower_baba_type_reference(result_node, source_text);
     let lowered_parameters: Checked<TypeExpr[]> = ok([]);
     for (const parameter_check of parameter_checks) {
       lowered_parameters = Applicative.lift(
@@ -763,10 +779,20 @@ function apply_prefix_signature_types(
             binding.pattern.annotation = binding.annotation;
             binding.pattern.type_annotation = annotation;
           }
-          binding.value = apply_function_result_context(
+          let annotated_value = apply_function_result_context(
             binding.value,
             annotation,
           );
+          if (
+            signature.type.result.type.computational_exists !== undefined &&
+            (annotated_value.tag === "lam" || annotated_value.tag === "rec")
+          ) {
+            annotated_value = {
+              ...annotated_value,
+              computational_package_result: true,
+            };
+          }
+          binding.value = annotated_value;
           return null;
         },
         lowered_parameters,
@@ -775,6 +801,45 @@ function apply_prefix_signature_types(
     );
   }
   return all(applications).map(() => source);
+}
+
+function lower_prefix_runtime_type(
+  type: PrefixTypeReference,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+  description: string,
+): Checked<TypeExpr> {
+  const computational_exists = type.computational_exists;
+  if (computational_exists !== undefined) {
+    return Applicative.lift(
+      (witness: TypeExpr, payload: TypeExpr) => {
+        const product: TypeExpr = {
+          tag: "product",
+          entries: [{ type_expr: witness }, { type_expr: payload }],
+        };
+        mark_source_span(product, type.span);
+        return product;
+      },
+      lower_prefix_runtime_type(
+        computational_exists.witness,
+        cst_root,
+        source_text,
+        description + " witness",
+      ),
+      lower_prefix_runtime_type(
+        computational_exists.payload,
+        cst_root,
+        source_text,
+        description + " payload",
+      ),
+    );
+  }
+  const type_node = find_cst_node(cst_root, type.span, "type_reference");
+  expect(
+    type_node !== undefined,
+    `${description} lost its Baba type node.`,
+  );
+  return lower_baba_type_reference(type_node, source_text);
 }
 
 function check_erased_proof_parameter_usage(
@@ -1078,12 +1143,14 @@ function collect_transparent_types(
   let declarations = source.declarations;
   if (declarations === undefined) declarations = [];
   for (const declaration of declarations) {
+    if (declaration.tag !== "type") continue;
     if (
-      declaration.tag !== "type" || declaration.body.tag !== "alias" ||
-      declaration.body.opaque === true
-    ) {
-      continue;
-    }
+      declaration.body.tag !== "alias" &&
+      (declaration.body.tag !== "product" || !declaration.body.positional)
+    ) continue;
+    if (
+      declaration.body.tag === "alias" && declaration.body.opaque === true
+    ) continue;
     const declaration_node = find_cst_node(
       cst_root,
       source_span(declaration),
@@ -1094,7 +1161,7 @@ function collect_transparent_types(
       `Transparent type ${declaration.name} lost its Baba declaration.`,
     );
     const body_node = declaration_node.children.find((child) =>
-      child.kind === "type_reference"
+      child.kind === "type_reference" || child.kind === "type_product"
     );
     expect(
       body_node !== undefined,
@@ -1112,7 +1179,9 @@ function collect_transparent_types(
       body,
     });
     declarations_by_name.set(declaration.name, declaration);
-    if (declaration.params.length === 0) {
+    if (
+      declaration.body.tag === "alias" && declaration.params.length === 0
+    ) {
       aliases.set(declaration.name, declaration.body.type_name);
     }
   }
@@ -2580,6 +2649,8 @@ function validate_partial_primitive_obligations(
 function validate_prefix_contracts(
   signatures: readonly PrefixSignature[],
   definitions: readonly PrefixDefinition[],
+  computational_packs: readonly PrefixComputationalPack[],
+  computational_opens: readonly PrefixComputationalOpen[],
   source: SourceNode,
   cst_root: BabaCstNode | undefined,
   source_text: string,
@@ -2594,6 +2665,7 @@ function validate_prefix_contracts(
 ): {
   diagnostics: CompilerDiagnostic[];
   proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+  computational_packages: ComputationalPackageIndex;
 } {
   const transparent_aliases = transparent_types.aliases;
   const transparent_type_definitions = transparent_types.definitions;
@@ -2718,9 +2790,68 @@ function validate_prefix_contracts(
     }
     return resolved;
   });
+  const resolved_computational_packs = computational_packs.map((pack) => {
+    const definition = resolved_definitions.find((candidate) =>
+      candidate.span.start <= pack.span.start &&
+      candidate.span.end >= pack.span.end
+    );
+    const signature = resolved_signatures.find((candidate) =>
+      definition !== undefined && candidate.name === definition.name &&
+      candidate.scope === definition.scope &&
+      candidate.span.end <= definition.span.start
+    );
+    const type_variables = new Set<string>();
+    if (signature !== undefined) {
+      for (const binder of signature.type.binders) {
+        type_variables.add(binder.name);
+      }
+    }
+    return {
+      ...pack,
+      type: resolve_prefix_type_reference(
+        pack.type,
+        transparent_aliases,
+        transparent_type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      ),
+    };
+  });
   const checks: Checked<
     { key: string; proof: CheckedKernelCertificate } | undefined
   >[] = [];
+  const computational_pack_validation = check_prefix_computational_packs(
+    resolved_computational_packs,
+    resolved_signatures,
+    resolved_definitions,
+    declared_type_names,
+    source,
+    source_text,
+    binding_index,
+    binding_values,
+    control_flow,
+    callable_control_flow,
+  );
+  checks.push(...computational_pack_validation.checks);
+  const certified_computational_packs =
+    computational_pack_validation.certified_packs;
+  checks.push(...check_prefix_computational_callable_results(
+    resolved_computational_packs,
+    resolved_signatures,
+    resolved_definitions,
+    source,
+    binding_index,
+  ));
+  checks.push(...check_prefix_computational_opens(
+    computational_opens,
+    certified_computational_packs,
+    resolved_signatures,
+    resolved_definitions,
+    source,
+    binding_index,
+  ));
   for (const definition of resolved_definitions) {
     if (definition.unsafe_span === undefined) continue;
     const signature = resolved_signatures.find((candidate) =>
@@ -2874,6 +3005,8 @@ function validate_prefix_contracts(
       binding_values,
       control_flow,
       callable_control_flow,
+      computational_opens,
+      certified_computational_packs,
     ),
   );
   const proofs = new Map<string, CheckedKernelCertificate>();
@@ -2883,9 +3016,20 @@ function validate_prefix_contracts(
       proofs.set(proof.key, proof.proof);
     }
   }
+  const computational_packages = collect_computational_package_index(
+    certified_computational_packs,
+    resolved_signatures,
+    resolved_definitions,
+    source,
+    binding_index,
+    binding_values,
+    types,
+    origins,
+  );
   return {
     diagnostics: diagnostics_of(all(checks)),
     proofs,
+    computational_packages,
   };
 }
 
@@ -2894,6 +3038,1852 @@ type PrefixRuntimeContract = {
   definition: PrefixDefinition;
   parameter_terms: ReadonlyMap<string, PrefixTerm>;
 };
+
+function check_prefix_computational_packs(
+  packs: readonly PrefixComputationalPack[],
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  declared_type_names: ReadonlySet<string>,
+  source: SourceNode,
+  source_text: string,
+  binding_index: BindingIndex,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): {
+  checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[];
+  certified_packs: PrefixComputationalPack[];
+} {
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
+  const certified_packs: PrefixComputationalPack[] = [];
+  for (let pack_index = 0; pack_index < packs.length; pack_index += 1) {
+    const first_pack_check = checks.length;
+    const pack = packs[pack_index];
+    expect(pack !== undefined, `Computational pack ${pack_index} disappeared.`);
+    const definition = enclosing_prefix_definition(pack.span, definitions);
+    const signature = signatures.find((candidate) =>
+      definition !== undefined && candidate.name === definition.name &&
+      candidate.scope === definition.scope &&
+      candidate.span.end <= definition.span.start
+    );
+    let proof_context = signature;
+    if (proof_context === undefined) {
+      proof_context = {
+        name: "computational package",
+        kind: "let",
+        scope: pack.scope,
+        type: {
+          binders: [],
+          parameters: [],
+          result: { type: pack.type, span: pack.type.span },
+          span: pack.type.span,
+        },
+        requires: [],
+        ensures: [],
+        decreases: [],
+        span: pack.span,
+      };
+    }
+    const computational_exists = pack.type.computational_exists;
+    if (computational_exists === undefined) {
+      checks.push(fail(
+        compiler_diagnostic(
+          diagnostic_codes.computational_existential_invalid,
+          `Computational pack type ${pack.type.text} is not a some type.`,
+          pack.type.span,
+        ),
+      ));
+      continue;
+    }
+    const formation_checks = check_prefix_dependent_type_formation(
+      proof_context,
+      pack.type,
+      new Map(),
+      signatures,
+      definitions,
+      declared_type_names,
+    ).map((check) => check.map(() => undefined));
+    checks.push(...formation_checks);
+    if (diagnostics_of(all(formation_checks)).length > 0) continue;
+    const parameter_terms = new Map<string, PrefixTerm>();
+    const term_types = new Map<string, LogicalTermType>();
+    if (definition !== undefined && signature !== undefined) {
+      const source_binding = find_source_binding(
+        source,
+        signature.name,
+        definition.span,
+      );
+      if (
+        source_binding === undefined ||
+        (source_binding.value.tag !== "lam" &&
+          source_binding.value.tag !== "rec") ||
+        source_binding.value.params.length !== signature.type.parameters.length
+      ) {
+        checks.push(fail(
+          compiler_diagnostic(
+            diagnostic_codes.computational_existential_invalid,
+            `Computational pack in ${signature.name} requires direct callable parameter metadata.`,
+            pack.span,
+          ),
+        ));
+        continue;
+      }
+      for (
+        let index = 0;
+        index < source_binding.value.params.length;
+        index += 1
+      ) {
+        const source_parameter = source_binding.value.params[index];
+        const parameter = signature.type.parameters[index];
+        expect(
+          source_parameter !== undefined && parameter !== undefined,
+          `Computational pack in ${signature.name} lost parameter ${index}.`,
+        );
+        if (parameter.type.proof !== undefined) continue;
+        let parameter_entity: EntityId | undefined;
+        for (const entity of binding_index.entities.values()) {
+          if (
+            entity.kind === "parameter" &&
+            entity.definition_subject === source_parameter
+          ) {
+            parameter_entity = entity.id;
+            break;
+          }
+        }
+        expect(
+          parameter_entity !== undefined,
+          `Computational pack in ${signature.name} parameter ${source_parameter.name} lost its semantic identity.`,
+        );
+        const semantic_name = logical_entity_name(parameter_entity);
+        const term: PrefixTerm = {
+          text: source_parameter.name,
+          references: [semantic_name],
+          shape: { tag: "name", name: semantic_name },
+          span: source_span(source_parameter),
+        };
+        parameter_terms.set(parameter.name, term);
+        term_types.set(
+          semantic_name,
+          logical_term_type_from_reference(parameter.type),
+        );
+      }
+    }
+    const pack_expression = front_expression_with_span(source, {
+      span: pack.span,
+      product_entries: [pack.witness.span, pack.payload.span],
+    });
+    if (
+      pack_expression === undefined || pack_expression.tag !== "product" ||
+      pack_expression.entries.length !== 2
+    ) {
+      checks.push(fail(compiler_diagnostic(
+        diagnostic_codes.computational_existential_invalid,
+        "Computational pack witness and payload cannot be mapped to one erased product layout.",
+        pack.span,
+      )));
+      continue;
+    }
+    const witness_expression = pack_expression.entries[0]?.value;
+    const payload_expression = pack_expression.entries[1]?.value;
+    if (witness_expression === undefined || payload_expression === undefined) {
+      checks.push(fail(compiler_diagnostic(
+        diagnostic_codes.computational_existential_invalid,
+        "Computational pack is missing its erased witness or payload expression.",
+        pack.span,
+      )));
+      continue;
+    }
+    if (
+      front_expression_contains_linear_use(witness_expression, binding_index) ||
+      front_expression_contains_linear_use(payload_expression, binding_index)
+    ) {
+      checks.push(fail(compiler_diagnostic(
+        diagnostic_codes.computational_existential_invalid,
+        "Computational packages cannot contain ownership-transferring components until package ownership is preserved transitively.",
+        pack.span,
+      )));
+      continue;
+    }
+    const witness = prefix_term_from_front_expr(
+      witness_expression,
+      source_text,
+      binding_index,
+    );
+    const payload = prefix_term_from_front_expr(
+      payload_expression,
+      source_text,
+      binding_index,
+    );
+    record_front_expr_logical_types(
+      witness_expression,
+      binding_index,
+      term_types,
+    );
+    record_front_expr_logical_types(
+      payload_expression,
+      binding_index,
+      term_types,
+    );
+    const witness_check = check_prefix_term_type(
+      proof_context.name,
+      witness,
+      term_types,
+      prefix_fact_signatures(
+        signatures,
+        definitions,
+        proof_context.scope,
+        pack.span.start,
+      ),
+      new Set(),
+    );
+    const payload_check = check_prefix_term_type(
+      proof_context.name,
+      payload,
+      term_types,
+      prefix_fact_signatures(
+        signatures,
+        definitions,
+        proof_context.scope,
+        pack.span.start,
+      ),
+      new Set(),
+    );
+    checks.push(witness_check.map(() => undefined));
+    checks.push(payload_check.map(() => undefined));
+    const witness_type = checked_value(witness_check);
+    const payload_type = checked_value(payload_check);
+    const expected_witness = logical_computational_component_type(
+      computational_exists.witness,
+    );
+    const expected_payload = logical_computational_component_type(
+      computational_exists.payload,
+    );
+    if (
+      witness_type !== undefined &&
+      !logical_term_types_match(witness_type, expected_witness)
+    ) {
+      checks.push(fail(
+        compiler_diagnostic(
+          diagnostic_codes.computational_existential_invalid,
+          `Computational pack witness has ${
+            logical_term_type_display(witness_type)
+          }, expected ${logical_term_type_display(expected_witness)}.`,
+          witness.span,
+        ),
+      ));
+    }
+    if (
+      payload_type !== undefined &&
+      !logical_term_types_match(payload_type, expected_payload)
+    ) {
+      checks.push(fail(
+        compiler_diagnostic(
+          diagnostic_codes.computational_existential_invalid,
+          `Computational pack payload has ${
+            logical_term_type_display(payload_type)
+          }, expected ${logical_term_type_display(expected_payload)}.`,
+          payload.span,
+        ),
+      ));
+    }
+    const refinement = computational_exists.payload.refinement;
+    if (witness_type === undefined || payload_type === undefined) continue;
+    if (refinement === undefined) {
+      if (
+        diagnostics_of(all(checks.slice(first_pack_check))).length === 0
+      ) certified_packs.push(pack);
+      continue;
+    }
+    const substitutions = new Map<string, PrefixTerm>();
+    substitutions.set(computational_exists.binder, witness);
+    substitutions.set(refinement.binder, payload);
+    const proposition = substitute_prefix_proposition(
+      refinement.proposition,
+      substitutions,
+    );
+    const hypotheses = instantiate_prefix_contract_propositions(
+      proof_context,
+      parameter_terms,
+    ).map((hypothesis) => ({
+      proposition: hypothesis,
+      facts: prefix_fact_signatures(
+        signatures,
+        definitions,
+        proof_context.scope,
+        pack.span.start,
+      ),
+    }));
+    const facts = prefix_fact_signatures(
+      signatures,
+      definitions,
+      proof_context.scope,
+      proof_context.span.start,
+      pack.span.start,
+    );
+    const branch_hypotheses = verified_branch_hypotheses(
+      proof_context.name,
+      proposition,
+      pack.span,
+      binding_values,
+      term_types,
+      facts,
+      hypotheses,
+      control_flow,
+      callable_control_flow,
+      "checkpoint",
+    );
+    checks.push(check_prefix_call_obligation(
+      proof_context,
+      {
+        proposition,
+        source_span: refinement.span,
+        description: "pack refinement " + requirement_text(proposition),
+      },
+      pack.span,
+      [
+        ...hypotheses,
+        ...branch_hypotheses.propositions.map((candidate) => ({
+          proposition: candidate,
+          facts,
+        })),
+      ],
+      term_types,
+      signatures,
+      definitions,
+      declared_type_names,
+      pack_index,
+      branch_hypotheses.certificate,
+    ));
+    if (
+      diagnostics_of(all(checks.slice(first_pack_check))).length === 0
+    ) certified_packs.push(pack);
+  }
+  return { checks, certified_packs };
+}
+
+function check_prefix_computational_callable_results(
+  packs: readonly PrefixComputationalPack[],
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  binding_index: BindingIndex,
+): Checked<undefined>[] {
+  const context: PrefixComputationalBrandContext = {
+    binding_index,
+    definitions,
+    packs,
+    signatures,
+    source,
+  };
+  const checks: Checked<undefined>[] = [];
+  for (const signature of signatures) {
+    if (signature.type.result.type.computational_exists === undefined) {
+      continue;
+    }
+    const definition = definitions.find((candidate) =>
+      candidate.name === signature.name &&
+      candidate.scope === signature.scope &&
+      candidate.span.start >= signature.span.end
+    );
+    if (definition === undefined) continue;
+    const binding = find_source_binding(
+      source,
+      signature.name,
+      definition.span,
+    );
+    if (
+      binding === undefined ||
+      (binding.value.tag !== "lam" && binding.value.tag !== "rec")
+    ) {
+      continue;
+    }
+    const returns = computational_callable_return_expressions(
+      binding.value.body,
+      context,
+    );
+    for (const returned of returns) {
+      const actual = computational_type_for_expression(
+        returned,
+        context,
+        new Set(),
+      );
+      if (
+        actual !== undefined &&
+        prefix_computational_types_match(signature.type.result.type, actual)
+      ) {
+        continue;
+      }
+      checks.push(fail(compiler_diagnostic(
+        diagnostic_codes.computational_existential_invalid,
+        `Return from ${signature.name} does not produce its signed computational existential family.`,
+        source_span(returned),
+        [{
+          message: "The signed result is declared here.",
+          span: signature.type.result.span,
+        }],
+      )));
+    }
+  }
+  return checks;
+}
+
+function enclosing_prefix_definition(
+  span: PrefixSpan,
+  definitions: readonly PrefixDefinition[],
+): PrefixDefinition | undefined {
+  let enclosing: PrefixDefinition | undefined;
+  for (const definition of definitions) {
+    if (definition.span.start > span.start || definition.span.end < span.end) {
+      continue;
+    }
+    if (
+      enclosing === undefined ||
+      definition.span.end - definition.span.start <
+        enclosing.span.end - enclosing.span.start
+    ) {
+      enclosing = definition;
+    }
+  }
+  return enclosing;
+}
+
+function prefix_computational_types_match(
+  left: PrefixTypeReference,
+  right: PrefixTypeReference,
+): boolean {
+  const left_some = left.computational_exists;
+  const right_some = right.computational_exists;
+  if (left_some === undefined || right_some === undefined) return false;
+  if (
+    left_some.witness.canonical !== right_some.witness.canonical ||
+    left_some.payload.canonical !== right_some.payload.canonical ||
+    left_some.witness.representation !== right_some.witness.representation ||
+    left_some.payload.representation !== right_some.payload.representation
+  ) {
+    return false;
+  }
+  const left_refinement = left_some.payload.refinement;
+  const right_refinement = right_some.payload.refinement;
+  if (left_refinement === undefined || right_refinement === undefined) {
+    return left_refinement === undefined && right_refinement === undefined;
+  }
+  let left_proposition = rename_prefix_proposition_reference(
+    left_refinement.proposition,
+    left_some.binder,
+    "$duck:some:witness",
+  );
+  left_proposition = rename_prefix_proposition_reference(
+    left_proposition,
+    left_refinement.binder,
+    "$duck:some:payload",
+  );
+  let right_proposition = rename_prefix_proposition_reference(
+    right_refinement.proposition,
+    right_some.binder,
+    "$duck:some:witness",
+  );
+  right_proposition = rename_prefix_proposition_reference(
+    right_proposition,
+    right_refinement.binder,
+    "$duck:some:payload",
+  );
+  return canonical_prefix_proposition(left_proposition) ===
+    canonical_prefix_proposition(right_proposition);
+}
+
+function canonical_prefix_proposition(
+  proposition: PrefixProposition,
+  binder_depth = 0,
+): string {
+  if (proposition.tag === "true" || proposition.tag === "false") {
+    return JSON.stringify([proposition.tag]);
+  }
+  if (proposition.tag === "holds") {
+    return JSON.stringify([
+      proposition.tag,
+      canonical_prefix_term(proposition.value),
+    ]);
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    return JSON.stringify([
+      proposition.tag,
+      canonical_prefix_term(proposition.left),
+      canonical_prefix_term(proposition.right),
+    ]);
+  }
+  if (proposition.tag === "is") {
+    return JSON.stringify([
+      proposition.tag,
+      canonical_prefix_term(proposition.value),
+      proposition.type.canonical,
+    ]);
+  }
+  if (proposition.tag === "not") {
+    return JSON.stringify([
+      proposition.tag,
+      canonical_prefix_proposition(proposition.proposition, binder_depth),
+    ]);
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return JSON.stringify([
+      proposition.tag,
+      canonical_prefix_proposition(proposition.left, binder_depth),
+      canonical_prefix_proposition(proposition.right, binder_depth),
+    ]);
+  }
+  if (proposition.tag !== "forall" && proposition.tag !== "exists") {
+    throw new Error("Unknown prefix proposition.");
+  }
+  const binder_name = "$duck:some:quantifier:" + binder_depth.toString();
+  const body = rename_prefix_proposition_reference(
+    proposition.proposition,
+    proposition.binder.name,
+    binder_name,
+  );
+  return JSON.stringify([
+    proposition.tag,
+    proposition.binder.type.canonical,
+    canonical_prefix_proposition(body, binder_depth + 1),
+  ]);
+}
+
+function canonical_prefix_term(term: PrefixTerm): unknown {
+  const shape = term.shape;
+  if (shape.tag === "name") return [shape.tag, shape.name];
+  if (
+    shape.tag === "number" || shape.tag === "string" ||
+    shape.tag === "character" || shape.tag === "boolean"
+  ) {
+    return [shape.tag, term.text];
+  }
+  if (shape.tag === "binary") {
+    return [
+      shape.tag,
+      shape.operator,
+      canonical_prefix_term(shape.left),
+      canonical_prefix_term(shape.right),
+    ];
+  }
+  if (shape.tag === "unary") {
+    return [shape.tag, shape.operator, canonical_prefix_term(shape.operand)];
+  }
+  if (shape.tag === "call") {
+    return [
+      shape.tag,
+      canonical_prefix_term(shape.function),
+      shape.arguments.map(canonical_prefix_term),
+    ];
+  }
+  if (shape.tag === "product") {
+    return [shape.tag, shape.values.map(canonical_prefix_term)];
+  }
+  if (shape.tag === "field") {
+    return [shape.tag, canonical_prefix_term(shape.object), shape.field];
+  }
+  if (shape.tag === "index") {
+    return [shape.tag, canonical_prefix_term(shape.object)];
+  }
+  if (shape.tag === "parenthesized") {
+    return canonical_prefix_term(shape.value);
+  }
+  return [shape.tag, term.text];
+}
+
+type PrefixComputationalBrandContext = {
+  binding_index: BindingIndex;
+  definitions: readonly PrefixDefinition[];
+  packs: readonly PrefixComputationalPack[];
+  signatures: readonly PrefixSignature[];
+  source: SourceNode;
+};
+
+function check_prefix_computational_opens(
+  opens: readonly PrefixComputationalOpen[],
+  packs: readonly PrefixComputationalPack[],
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  binding_index: BindingIndex,
+): Checked<undefined>[] {
+  const checks: Checked<undefined>[] = [];
+  const context: PrefixComputationalBrandContext = {
+    binding_index,
+    definitions,
+    packs,
+    signatures,
+    source,
+  };
+  for (const opened of opens) {
+    const package_expression = front_expression_with_span(source, {
+      span: opened.package.span,
+    });
+    let package_type: PrefixTypeReference | undefined;
+    if (package_expression !== undefined) {
+      package_type = computational_type_for_expression(
+        package_expression,
+        context,
+        new Set(),
+      );
+    }
+    if (package_type === undefined) {
+      const occurrence = binding_occurrence_within_span(
+        opened.package.span,
+        binding_index,
+      );
+      if (occurrence?.entity === undefined) {
+        checks.push(fail(
+          compiler_diagnostic(
+            diagnostic_codes.computational_existential_invalid,
+            `Cannot open ${opened.package.text}: the value is not a signed computational existential package.`,
+            opened.package.span,
+          ),
+        ));
+        continue;
+      }
+      package_type = computational_type_for_entity_at(
+        occurrence.entity,
+        opened.package.span.start,
+        context,
+        new Set(),
+      );
+    }
+    if (package_type !== undefined) continue;
+    checks.push(fail(
+      compiler_diagnostic(
+        diagnostic_codes.computational_existential_invalid,
+        `Cannot open ${opened.package.text}: the value is not a signed computational existential package.`,
+        opened.package.span,
+      ),
+    ));
+  }
+  return checks;
+}
+
+function binding_occurrence_within_span(
+  span: PrefixSpan,
+  binding_index: BindingIndex,
+) {
+  for (const occurrence of binding_index.occurrences.values()) {
+    if (
+      occurrence.span.start >= span.start && occurrence.span.end <= span.end &&
+      (occurrence.role === "reference" || occurrence.role === "consume")
+    ) {
+      return occurrence;
+    }
+  }
+  return undefined;
+}
+
+function binding_definition_at_span(
+  span: PrefixSpan,
+  binding_index: BindingIndex,
+) {
+  for (const occurrence of binding_index.occurrences.values()) {
+    if (
+      occurrence.span.start === span.start &&
+      occurrence.span.end === span.end &&
+      (occurrence.role === "definition" || occurrence.role === "shadow")
+    ) {
+      return occurrence;
+    }
+  }
+  return undefined;
+}
+
+function opened_computational_hypotheses(
+  call_span: PrefixSpan,
+  opens: readonly PrefixComputationalOpen[],
+  packs: readonly PrefixComputationalPack[],
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  binding_index: BindingIndex,
+  term_types: Map<string, LogicalTermType>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+): PrefixCallHypothesis[] {
+  const hypotheses: PrefixCallHypothesis[] = [];
+  const context: PrefixComputationalBrandContext = {
+    binding_index,
+    definitions,
+    packs,
+    signatures,
+    source,
+  };
+  for (const opened of opens) {
+    if (opened.span.end > call_span.start) continue;
+    const package_expression = front_expression_with_span(source, {
+      span: opened.package.span,
+    });
+    let package_type: PrefixTypeReference | undefined;
+    if (package_expression !== undefined) {
+      package_type = computational_type_for_expression(
+        package_expression,
+        context,
+        new Set(),
+      );
+    }
+    if (package_type === undefined) {
+      const package_occurrence = binding_occurrence_within_span(
+        opened.package.span,
+        binding_index,
+      );
+      if (package_occurrence?.entity === undefined) continue;
+      package_type = computational_type_for_entity_at(
+        package_occurrence.entity,
+        opened.package.span.start,
+        context,
+        new Set(),
+      );
+    }
+    const computational_exists = package_type?.computational_exists;
+    const refinement = computational_exists?.payload.refinement;
+    if (computational_exists === undefined || refinement === undefined) {
+      continue;
+    }
+    const witness_occurrence = binding_definition_at_span(
+      opened.witness_span,
+      binding_index,
+    );
+    const payload_occurrence = binding_definition_at_span(
+      opened.payload_span,
+      binding_index,
+    );
+    if (
+      witness_occurrence?.entity === undefined ||
+      payload_occurrence?.entity === undefined
+    ) {
+      continue;
+    }
+    const witness_name = logical_entity_name(witness_occurrence.entity);
+    const payload_name = logical_entity_name(payload_occurrence.entity);
+    if (!term_types.has(witness_name) && !term_types.has(payload_name)) {
+      continue;
+    }
+    term_types.set(
+      witness_name,
+      logical_computational_component_type(computational_exists.witness),
+    );
+    term_types.set(
+      payload_name,
+      logical_computational_component_type(computational_exists.payload),
+    );
+    const substitutions = new Map<string, PrefixTerm>();
+    substitutions.set(computational_exists.binder, {
+      text: opened.witness_name,
+      references: [witness_name],
+      shape: { tag: "name", name: witness_name },
+      span: opened.witness_span,
+    });
+    substitutions.set(refinement.binder, {
+      text: opened.payload_name,
+      references: [payload_name],
+      shape: { tag: "name", name: payload_name },
+      span: opened.payload_span,
+    });
+    hypotheses.push({
+      proposition: substitute_prefix_proposition(
+        refinement.proposition,
+        substitutions,
+      ),
+      facts,
+    });
+  }
+  return hypotheses;
+}
+
+function front_expression_with_span(
+  source: SourceNode,
+  search: {
+    span: PrefixSpan;
+    product_entries?: readonly PrefixSpan[];
+  },
+): FrontExpr | undefined {
+  const pending: object[] = [source];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Source expression traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (is_computational_package_expression(current)) {
+      if (
+        (search.product_entries === undefined || current.tag === "product") &&
+        has_source_span(current) &&
+        source_span(current).start === search.span.start &&
+        source_span(current).end === search.span.end
+      ) {
+        return current;
+      }
+      if (
+        current.tag === "product" &&
+        search.product_entries !== undefined &&
+        current.entries.length === search.product_entries.length &&
+        current.entries.every((entry, index) => {
+          const expected_span = search.product_entries?.[index];
+          return expected_span !== undefined &&
+            has_source_span(entry.value) &&
+            source_span(entry.value).start === expected_span.start &&
+            source_span(entry.value).end === expected_span.end;
+        })
+      ) {
+        return current;
+      }
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        continue;
+      }
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+  return undefined;
+}
+
+function is_computational_package_expression(
+  candidate: object,
+): candidate is FrontExpr {
+  if (!("tag" in candidate)) return false;
+  if (
+    candidate.tag === "var" || candidate.tag === "app" ||
+    candidate.tag === "captured" || candidate.tag === "comptime" ||
+    candidate.tag === "scratch" || candidate.tag === "block" ||
+    candidate.tag === "if" || candidate.tag === "if_let" ||
+    candidate.tag === "match" || candidate.tag === "loop"
+  ) {
+    return true;
+  }
+  if (candidate.tag !== "product" || !("entries" in candidate)) return false;
+  if (!Array.isArray(candidate.entries)) return false;
+  return candidate.entries.every((entry) =>
+    entry !== null && typeof entry === "object" && "value" in entry
+  );
+}
+
+function front_expression_contains_linear_use(
+  expression: FrontExpr,
+  binding_index: BindingIndex,
+  active_entities: Set<EntityId> = new Set(),
+): boolean {
+  const pending: object[] = [expression];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Linear package traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (
+      "tag" in current &&
+      (current.tag === "var" || current.tag === "linear")
+    ) {
+      if (current.tag === "linear") return true;
+      const occurrence = binding_index.occurrence_of(current, "name");
+      if (occurrence?.entity !== undefined) {
+        const entity = binding_index.entities.get(occurrence.entity);
+        if (entity?.linear === true) return true;
+        if (entity !== undefined && !active_entities.has(entity.id)) {
+          let defining_expression: FrontExpr | undefined;
+          if (
+            "tag" in entity.definition_subject &&
+            (entity.definition_subject.tag === "bind" ||
+              entity.definition_subject.tag === "assign")
+          ) {
+            const definition = entity.definition_subject as Extract<
+              Stmt,
+              { tag: "bind" | "assign" }
+            >;
+            defining_expression = definition.value;
+          }
+          if (defining_expression === undefined) continue;
+          active_entities.add(entity.id);
+          try {
+            if (
+              front_expression_contains_linear_use(
+                defining_expression,
+                binding_index,
+                active_entities,
+              )
+            ) return true;
+          } finally {
+            active_entities.delete(entity.id);
+          }
+        }
+      }
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        continue;
+      }
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+  return false;
+}
+
+function computational_type_for_expression(
+  expression: FrontExpr,
+  context: PrefixComputationalBrandContext,
+  active_entities: Set<EntityId>,
+): PrefixTypeReference | undefined {
+  const span = source_span(expression);
+  const pack = context.packs.find((candidate) =>
+    candidate.span.start === span.start && candidate.span.end === span.end
+  );
+  if (pack !== undefined) return pack.type;
+  if (expression.tag === "var" || expression.tag === "linear") {
+    const occurrence = context.binding_index.occurrence_of(expression, "name");
+    if (occurrence?.entity === undefined) return undefined;
+    return computational_type_for_entity_at(
+      occurrence.entity,
+      span.start,
+      context,
+      active_entities,
+    );
+  }
+  if (expression.tag === "app" && expression.func.tag === "var") {
+    const occurrence = context.binding_index.occurrence_of(
+      expression.func,
+      "name",
+    );
+    if (occurrence?.entity === undefined) return undefined;
+    return computational_result_for_callable_entity(
+      occurrence.entity,
+      context,
+      active_entities,
+    );
+  }
+  if (
+    expression.tag === "captured" || expression.tag === "comptime"
+  ) {
+    return computational_type_for_expression(
+      expression.expr,
+      context,
+      active_entities,
+    );
+  }
+  if (expression.tag === "scratch") {
+    return computational_type_for_expression(
+      expression.body,
+      context,
+      active_entities,
+    );
+  }
+  if (expression.tag === "block") {
+    const final_statement = expression.statements.at(-1);
+    if (final_statement === undefined) return undefined;
+    const result = stmt_result_expr(final_statement);
+    if (result === undefined) return undefined;
+    return computational_type_for_expression(
+      result,
+      context,
+      active_entities,
+    );
+  }
+  if (expression.tag === "if" || expression.tag === "if_let") {
+    const then_type = computational_type_for_expression(
+      expression.then_branch,
+      context,
+      active_entities,
+    );
+    const else_type = computational_type_for_expression(
+      expression.else_branch,
+      context,
+      active_entities,
+    );
+    if (
+      then_type !== undefined && else_type !== undefined &&
+      prefix_computational_types_match(then_type, else_type)
+    ) {
+      return then_type;
+    }
+    if (
+      then_type === undefined &&
+      computational_expression_diverges(expression.then_branch, context)
+    ) {
+      return else_type;
+    }
+    if (
+      else_type === undefined &&
+      computational_expression_diverges(expression.else_branch, context)
+    ) {
+      return then_type;
+    }
+    return undefined;
+  }
+  if (expression.tag === "match") {
+    let arm_type: PrefixTypeReference | undefined;
+    for (const arm of expression.arms) {
+      const candidate = computational_type_for_expression(
+        arm.body,
+        context,
+        active_entities,
+      );
+      if (
+        candidate === undefined &&
+        computational_expression_diverges(arm.body, context)
+      ) {
+        continue;
+      }
+      if (candidate === undefined) return undefined;
+      if (
+        arm_type !== undefined &&
+        !prefix_computational_types_match(arm_type, candidate)
+      ) {
+        return undefined;
+      }
+      arm_type = candidate;
+    }
+    return arm_type;
+  }
+  if (expression.tag === "loop") {
+    const exits = computational_loop_exits(expression);
+    if (!exits.has_exit || exits.has_bare_exit) return undefined;
+    let exit_type: PrefixTypeReference | undefined;
+    for (const value of exits.values) {
+      const candidate = computational_type_for_expression(
+        value,
+        context,
+        active_entities,
+      );
+      if (candidate === undefined) return undefined;
+      if (
+        exit_type !== undefined &&
+        !prefix_computational_types_match(exit_type, candidate)
+      ) {
+        return undefined;
+      }
+      exit_type = candidate;
+    }
+    return exit_type;
+  }
+  return undefined;
+}
+
+function computational_expression_diverges(
+  expression: FrontExpr,
+  context: PrefixComputationalBrandContext,
+  active_callables: Set<EntityId> = new Set(),
+): boolean {
+  if (expression_does_not_fall_through(expression)) return true;
+  if (expression.tag === "app" && expression.func.tag === "var") {
+    const occurrence = context.binding_index.occurrence_of(
+      expression.func,
+      "name",
+    );
+    if (
+      occurrence?.entity !== undefined &&
+      computational_callable_diverges(
+        occurrence.entity,
+        context,
+        active_callables,
+      )
+    ) {
+      return true;
+    }
+  }
+  if (expression.tag === "captured" || expression.tag === "comptime") {
+    return computational_expression_diverges(
+      expression.expr,
+      context,
+      active_callables,
+    );
+  }
+  if (expression.tag === "scratch") {
+    return computational_expression_diverges(
+      expression.body,
+      context,
+      active_callables,
+    );
+  }
+  if (expression.tag === "block") {
+    const final_statement = expression.statements.at(-1);
+    if (final_statement === undefined) return false;
+    if (
+      final_statement.tag === "return" || final_statement.tag === "break" ||
+      final_statement.tag === "continue"
+    ) return true;
+    const result = stmt_result_expr(final_statement);
+    if (result === undefined) return false;
+    return computational_expression_diverges(
+      result,
+      context,
+      active_callables,
+    );
+  }
+  if (expression.tag === "if" || expression.tag === "if_let") {
+    return computational_expression_diverges(
+      expression.then_branch,
+      context,
+      active_callables,
+    ) && computational_expression_diverges(
+      expression.else_branch,
+      context,
+      active_callables,
+    );
+  }
+  if (expression.tag === "match") {
+    return expression.arms.length > 0 &&
+      expression.arms.every((arm) =>
+        computational_expression_diverges(arm.body, context, active_callables)
+      );
+  }
+  if (expression.tag === "loop") {
+    return !computational_loop_exits(expression).has_exit;
+  }
+  return false;
+}
+
+function computational_callable_diverges(
+  entity_id: EntityId,
+  context: PrefixComputationalBrandContext,
+  active_callables: Set<EntityId>,
+): boolean {
+  if (active_callables.has(entity_id)) return false;
+  const entity = context.binding_index.entities.get(entity_id);
+  if (entity === undefined) return false;
+  const subject = entity.definition_subject;
+  if (!("tag" in subject) || subject.tag !== "bind") return false;
+  const binding = subject as Extract<Stmt, { tag: "bind" }>;
+  active_callables.add(entity_id);
+  try {
+    if (binding.value.tag === "var") {
+      const occurrence = context.binding_index.occurrence_of(
+        binding.value,
+        "name",
+      );
+      if (occurrence?.entity === undefined) return false;
+      return computational_callable_diverges(
+        occurrence.entity,
+        context,
+        active_callables,
+      );
+    }
+    if (binding.value.tag !== "lam" && binding.value.tag !== "rec") {
+      return false;
+    }
+    return computational_callable_return_expressions(
+      binding.value.body,
+      context,
+      active_callables,
+    ).length === 0;
+  } finally {
+    active_callables.delete(entity_id);
+  }
+}
+
+type ComputationalLoopExits = {
+  has_exit: boolean;
+  has_bare_exit: boolean;
+  values: FrontExpr[];
+};
+
+function computational_loop_exits(
+  loop: Extract<FrontExpr, { tag: "loop" }>,
+): ComputationalLoopExits {
+  let has_exit = false;
+  let has_bare_exit = false;
+  const values: FrontExpr[] = [];
+  const pending: object[] = [...loop.body];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Loop exit traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (
+      "tag" in current &&
+      (current.tag === "lam" || current.tag === "rec" ||
+        current.tag === "loop")
+    ) {
+      continue;
+    }
+    if (
+      "tag" in current && current.tag === "handler" &&
+      "state" in current && Array.isArray(current.state)
+    ) {
+      for (const state of current.state) {
+        if (
+          state !== null && typeof state === "object" && "value" in state &&
+          state.value !== null && typeof state.value === "object"
+        ) {
+          pending.push(state.value);
+        }
+      }
+      continue;
+    }
+    if ("tag" in current && current.tag === "break") {
+      has_exit = true;
+      if (!("value" in current) || current.value === undefined) {
+        has_bare_exit = true;
+      } else {
+        values.push(current.value as FrontExpr);
+      }
+      continue;
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        continue;
+      }
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+  return { has_exit, has_bare_exit, values };
+}
+
+function computational_callable_return_expressions(
+  body: FrontExpr,
+  context: PrefixComputationalBrandContext,
+  active_callables: Set<EntityId> = new Set(),
+): FrontExpr[] {
+  const returned = new Set<FrontExpr>();
+  const pending: object[] = [body];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Callable return traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (
+      current !== body && "tag" in current &&
+      (current.tag === "lam" || current.tag === "rec")
+    ) {
+      continue;
+    }
+    if (
+      "tag" in current && current.tag === "handler" &&
+      "state" in current && Array.isArray(current.state)
+    ) {
+      for (const state of current.state) {
+        if (
+          state !== null && typeof state === "object" && "value" in state &&
+          state.value !== null && typeof state.value === "object"
+        ) {
+          pending.push(state.value);
+        }
+      }
+      continue;
+    }
+    if (
+      "tag" in current &&
+      (current.tag === "block" || current.tag === "loop")
+    ) {
+      let statements: Stmt[];
+      if (current.tag === "block") {
+        expect(
+          "statements" in current && Array.isArray(current.statements),
+          "Callable block lost its statements.",
+        );
+        statements = current.statements as Stmt[];
+      } else {
+        expect(
+          "body" in current && Array.isArray(current.body),
+          "Callable loop lost its body.",
+        );
+        statements = current.body as Stmt[];
+      }
+      const reachable: Stmt[] = [];
+      for (const statement of statements) {
+        reachable.push(statement);
+        if (
+          computational_statement_stops_sequence(
+            statement,
+            context,
+            active_callables,
+          )
+        ) break;
+      }
+      for (let index = reachable.length - 1; index >= 0; index -= 1) {
+        const statement = reachable[index];
+        expect(statement !== undefined, "Reachable statement disappeared.");
+        pending.push(statement);
+      }
+      continue;
+    }
+    if ("tag" in current && current.tag === "return" && "value" in current) {
+      const value = current.value as FrontExpr;
+      if (
+        !computational_expression_diverges(value, context, active_callables)
+      ) {
+        returned.add(value);
+      }
+      continue;
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        continue;
+      }
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+
+  const fallthrough: FrontExpr[] = [body];
+  while (fallthrough.length > 0) {
+    const expression = fallthrough.pop();
+    expect(expression !== undefined, "Callable fallthrough disappeared.");
+    if (
+      computational_expression_diverges(expression, context, active_callables)
+    ) continue;
+    if (expression.tag === "captured" || expression.tag === "comptime") {
+      fallthrough.push(expression.expr);
+      continue;
+    }
+    if (expression.tag === "scratch") {
+      fallthrough.push(expression.body);
+      continue;
+    }
+    if (expression.tag === "if" || expression.tag === "if_let") {
+      fallthrough.push(expression.then_branch, expression.else_branch);
+      continue;
+    }
+    if (expression.tag === "match") {
+      for (const arm of expression.arms) fallthrough.push(arm.body);
+      continue;
+    }
+    if (expression.tag === "loop") {
+      if (computational_loop_exits(expression).has_exit) {
+        returned.add(expression);
+      }
+      continue;
+    }
+    if (expression.tag === "block") {
+      const final_statement = expression.statements.at(-1);
+      if (final_statement === undefined) {
+        returned.add(expression);
+        continue;
+      }
+      if (final_statement.tag === "return") continue;
+      const result = stmt_result_expr(final_statement);
+      if (result === undefined) {
+        returned.add(expression);
+        continue;
+      }
+      fallthrough.push(result);
+      continue;
+    }
+    returned.add(expression);
+  }
+  return [...returned];
+}
+
+function computational_statement_stops_sequence(
+  statement: Stmt,
+  context: PrefixComputationalBrandContext,
+  active_callables: Set<EntityId>,
+): boolean {
+  if (
+    statement.tag === "return" || statement.tag === "break" ||
+    statement.tag === "continue"
+  ) return true;
+  if (statement.tag === "expr") {
+    return computational_expression_diverges(
+      statement.expr,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "bind") {
+    return computational_expression_diverges(
+      statement.value,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "assign") {
+    return computational_expression_diverges(
+      statement.value,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "index_assign") {
+    return computational_expression_diverges(
+      statement.index,
+      context,
+      active_callables,
+    ) || computational_expression_diverges(
+      statement.value,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "if_stmt") {
+    return computational_expression_diverges(
+      statement.cond,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "if_let_stmt") {
+    return computational_expression_diverges(
+      statement.target,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "for_range") {
+    return computational_expression_diverges(
+      statement.start,
+      context,
+      active_callables,
+    ) || computational_expression_diverges(
+      statement.end,
+      context,
+      active_callables,
+    ) || computational_expression_diverges(
+      statement.step,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "for_collection") {
+    return computational_expression_diverges(
+      statement.collection,
+      context,
+      active_callables,
+    );
+  }
+  if (statement.tag === "type_check") {
+    return computational_expression_diverges(
+      statement.target,
+      context,
+      active_callables,
+    );
+  }
+  return false;
+}
+
+function computational_type_for_entity(
+  entity_id: EntityId,
+  context: PrefixComputationalBrandContext,
+  active_entities: Set<EntityId>,
+): PrefixTypeReference | undefined {
+  if (active_entities.has(entity_id)) return undefined;
+  const entity = context.binding_index.entities.get(entity_id);
+  if (entity === undefined) return undefined;
+  active_entities.add(entity_id);
+  try {
+    const subject = entity.definition_subject;
+    if (
+      "tag" in subject &&
+      (subject.tag === "bind" || subject.tag === "assign")
+    ) {
+      const definition = subject as Extract<
+        Stmt,
+        { tag: "bind" | "assign" }
+      >;
+      return computational_type_for_expression(
+        definition.value,
+        context,
+        active_entities,
+      );
+    }
+    for (const signature of context.signatures) {
+      const definition = context.definitions.find((candidate) =>
+        candidate.name === signature.name &&
+        candidate.scope === signature.scope &&
+        candidate.span.start >= signature.span.end
+      );
+      if (definition === undefined) continue;
+      const binding = find_source_binding(
+        context.source,
+        signature.name,
+        definition.span,
+      );
+      if (
+        binding === undefined ||
+        (binding.value.tag !== "lam" && binding.value.tag !== "rec")
+      ) {
+        continue;
+      }
+      const parameter_index = binding.value.params.findIndex((parameter) =>
+        parameter === subject
+      );
+      if (parameter_index < 0) continue;
+      const parameter = signature.type.parameters[parameter_index];
+      if (parameter === undefined) return undefined;
+      if (parameter.type.computational_exists !== undefined) {
+        return parameter.type;
+      }
+      return undefined;
+    }
+    return undefined;
+  } finally {
+    active_entities.delete(entity_id);
+  }
+}
+
+function computational_type_for_entity_at(
+  entity_id: EntityId,
+  use_offset: number,
+  context: PrefixComputationalBrandContext,
+  active_entities: Set<EntityId>,
+): PrefixTypeReference | undefined {
+  const package_type = computational_type_for_entity(
+    entity_id,
+    context,
+    active_entities,
+  );
+  if (package_type === undefined) return undefined;
+  const use_callable = enclosing_computational_callable(
+    context.source,
+    use_offset,
+  );
+  for (const candidate of context.binding_index.entities.values()) {
+    if (candidate.id === entity_id || candidate.definition === undefined) {
+      continue;
+    }
+    let replaced = candidate.replaces;
+    while (replaced !== undefined && replaced !== entity_id) {
+      replaced = context.binding_index.entities.get(replaced)?.replaces;
+    }
+    if (replaced === undefined) continue;
+    const definition = context.binding_index.occurrences.get(
+      candidate.definition,
+    );
+    if (definition === undefined) continue;
+    const loop_backedge = computational_offsets_share_loop(
+      context.source,
+      definition.span.start,
+      use_offset,
+    );
+    if (definition.span.start >= use_offset && !loop_backedge) continue;
+    const replacement_callable = enclosing_computational_callable(
+      context.source,
+      definition.span.start,
+    );
+    if (
+      !computational_callable_can_reach(
+        replacement_callable,
+        use_callable,
+      )
+    ) continue;
+    if (replacement_callable === use_callable && !loop_backedge) {
+      const use_occurrence = context.binding_index.occurrence_at(use_offset);
+      if (
+        use_occurrence !== undefined &&
+        !binding_scope_contains(
+          context.binding_index,
+          candidate.scope,
+          use_occurrence.scope,
+        ) &&
+        !binding_scope_contains(
+          context.binding_index,
+          use_occurrence.scope,
+          candidate.scope,
+        )
+      ) continue;
+    }
+    const replacement_type = computational_type_for_entity(
+      candidate.id,
+      context,
+      active_entities,
+    );
+    if (
+      replacement_type === undefined ||
+      !prefix_computational_types_match(package_type, replacement_type)
+    ) return undefined;
+  }
+  return package_type;
+}
+
+function enclosing_computational_callable(
+  source: SourceNode,
+  offset: number,
+): FrontExpr | undefined {
+  const pending: object[] = [source];
+  const visited = new WeakSet<object>();
+  let enclosing: FrontExpr | undefined;
+  let enclosing_width = Number.POSITIVE_INFINITY;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(
+      current !== undefined,
+      "Computational callable traversal lost a node.",
+    );
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (
+      "tag" in current && (current.tag === "lam" || current.tag === "rec")
+    ) {
+      const callable = current as Extract<
+        FrontExpr,
+        { tag: "lam" | "rec" }
+      >;
+      if (has_source_span(callable.body)) {
+        const span = source_span(callable.body);
+        const width = span.end - span.start;
+        if (
+          span.start <= offset && offset <= span.end &&
+          width < enclosing_width
+        ) {
+          enclosing = callable;
+          enclosing_width = width;
+        }
+      }
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) continue;
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+  return enclosing;
+}
+
+function computational_callable_can_reach(
+  replacement: FrontExpr | undefined,
+  use: FrontExpr | undefined,
+): boolean {
+  if (replacement === undefined) return true;
+  if (use === undefined) return false;
+  if (replacement === use) return true;
+  expect(
+    (replacement.tag === "lam" || replacement.tag === "rec") &&
+      (use.tag === "lam" || use.tag === "rec") &&
+      has_source_span(replacement.body) && has_source_span(use.body),
+    "Computational callable ancestry requires callable bodies.",
+  );
+  const replacement_span = source_span(replacement.body);
+  const use_span = source_span(use.body);
+  return replacement_span.start <= use_span.start &&
+    replacement_span.end >= use_span.end;
+}
+
+function binding_scope_contains(
+  binding_index: BindingIndex,
+  ancestor: string,
+  descendant: string,
+): boolean {
+  let current: string | undefined = descendant;
+  while (current !== undefined) {
+    if (current === ancestor) return true;
+    current = binding_index.scopes.get(current)?.parent;
+  }
+  return false;
+}
+
+function computational_offsets_share_loop(
+  source: SourceNode,
+  left: number,
+  right: number,
+): boolean {
+  const pending: object[] = [source];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Computational loop traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (
+      "tag" in current &&
+      (current.tag === "loop" || current.tag === "for_range" ||
+        current.tag === "for_collection") &&
+      has_source_span(current)
+    ) {
+      const span = source_span(current);
+      if (
+        span.start <= left && left <= span.end &&
+        span.start <= right && right <= span.end
+      ) return true;
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) continue;
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+  return false;
+}
+
+function computational_result_for_callable_entity(
+  entity_id: EntityId,
+  context: PrefixComputationalBrandContext,
+  active_entities: Set<EntityId>,
+): PrefixTypeReference | undefined {
+  if (active_entities.has(entity_id)) return undefined;
+  const entity = context.binding_index.entities.get(entity_id);
+  if (entity === undefined) return undefined;
+  const subject = entity.definition_subject;
+  if (!("tag" in subject) || subject.tag !== "bind") return undefined;
+  const binding = subject as Extract<Stmt, { tag: "bind" }>;
+  active_entities.add(entity_id);
+  try {
+    if (binding.value.tag === "var") {
+      const occurrence = context.binding_index.occurrence_of(
+        binding.value,
+        "name",
+      );
+      if (occurrence?.entity === undefined) return undefined;
+      return computational_result_for_callable_entity(
+        occurrence.entity,
+        context,
+        active_entities,
+      );
+    }
+    const definition = enclosing_prefix_definition(
+      source_span(binding),
+      context.definitions,
+    );
+    const signature = context.signatures.find((candidate) =>
+      definition !== undefined && candidate.name === definition.name &&
+      candidate.scope === definition.scope &&
+      candidate.span.end <= definition.span.start
+    );
+    const result_type = signature?.type.result.type;
+    if (result_type?.computational_exists === undefined) return undefined;
+    if (binding.value.tag !== "lam" && binding.value.tag !== "rec") {
+      return undefined;
+    }
+    const returns = computational_callable_return_expressions(
+      binding.value.body,
+      context,
+    );
+    for (const returned of returns) {
+      const actual = computational_type_for_expression(
+        returned,
+        context,
+        active_entities,
+      );
+      if (
+        actual === undefined ||
+        !prefix_computational_types_match(result_type, actual)
+      ) {
+        return undefined;
+      }
+    }
+    return result_type;
+  } finally {
+    active_entities.delete(entity_id);
+  }
+}
+
+function collect_computational_package_index(
+  packs: readonly PrefixComputationalPack[],
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  binding_index: BindingIndex,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  types: ReadonlyMap<ValueId, RepresentationType>,
+  origins: ReadonlyMap<ValueId, SemanticOrigin>,
+): ComputationalPackageIndex {
+  const context: PrefixComputationalBrandContext = {
+    binding_index,
+    definitions,
+    packs,
+    signatures,
+    source,
+  };
+  const package_types = new Map<ValueId, PrefixTypeReference>();
+  for (const [entity_id, value] of binding_values) {
+    const package_type = computational_type_for_entity(
+      entity_id,
+      context,
+      new Set(),
+    );
+    if (package_type !== undefined) package_types.set(value, package_type);
+  }
+  for (const [value, origin] of origins) {
+    const pack = packs.find((candidate) =>
+      candidate.span.start === origin.start && candidate.span.end === origin.end
+    );
+    if (pack !== undefined) package_types.set(value, pack.type);
+  }
+  const entries: [ValueId, ComputationalPackageFact][] = [];
+  for (const [value, package_type] of package_types) {
+    const representation = types.get(value);
+    if (representation === undefined) continue;
+    expect(
+      representation.tag === "product" &&
+        representation.fields.length === 2,
+      `Computational package ${value} does not erase to a two-field product.`,
+    );
+    const witness = representation.fields[0];
+    const payload = representation.fields[1];
+    expect(
+      witness !== undefined && payload !== undefined,
+      `Computational package ${value} lost its runtime fields.`,
+    );
+    const computational_exists = package_type.computational_exists;
+    expect(
+      computational_exists !== undefined,
+      `Computational package ${value} lost its dependent type.`,
+    );
+    const relation = normalized_prefix_computational_relation(package_type);
+    entries.push([
+      value,
+      Object.freeze({
+        family: JSON.stringify([
+          computational_exists.witness.representation,
+          computational_exists.payload.representation,
+          relation,
+        ]),
+        witness: witness.type,
+        payload: payload.type,
+        relation,
+      }),
+    ]);
+  }
+  return new FrozenMap(entries);
+}
+
+function normalized_prefix_computational_relation(
+  type: PrefixTypeReference,
+): string | undefined {
+  const computational_exists = type.computational_exists;
+  const refinement = computational_exists?.payload.refinement;
+  if (computational_exists === undefined || refinement === undefined) {
+    return undefined;
+  }
+  let proposition = rename_prefix_proposition_reference(
+    refinement.proposition,
+    computational_exists.binder,
+    "$duck:some:witness",
+  );
+  proposition = rename_prefix_proposition_reference(
+    proposition,
+    refinement.binder,
+    "$duck:some:payload",
+  );
+  return requirement_text(proposition);
+}
 
 type PrefixCallObligation = {
   kind?: "decreases";
@@ -2917,6 +4907,8 @@ function check_prefix_call_obligations(
   binding_values: ReadonlyMap<EntityId, ValueId>,
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+  computational_opens: readonly PrefixComputationalOpen[],
+  computational_packs: readonly PrefixComputationalPack[],
 ): Checked<
   { key: string; proof: CheckedKernelCertificate } | undefined
 >[] {
@@ -3196,6 +5188,47 @@ function check_prefix_call_obligations(
       );
       continue;
     }
+    const package_context: PrefixComputationalBrandContext = {
+      binding_index,
+      definitions,
+      packs: computational_packs,
+      signatures,
+      source,
+    };
+    let package_arguments_valid = true;
+    for (let index = 0; index < runtime_parameters.length; index += 1) {
+      const parameter = runtime_parameters[index];
+      const argument = call.args[index];
+      expect(
+        parameter !== undefined && argument !== undefined,
+        `Call to ${contract.signature.name} lost package argument ${index}.`,
+      );
+      if (parameter.type.computational_exists === undefined) continue;
+      const argument_type = computational_type_for_expression(
+        argument,
+        package_context,
+        new Set(),
+      );
+      if (
+        argument_type !== undefined &&
+        prefix_computational_types_match(parameter.type, argument_type)
+      ) {
+        continue;
+      }
+      package_arguments_valid = false;
+      checks.push(fail(
+        compiler_diagnostic(
+          diagnostic_codes.computational_existential_invalid,
+          `Call to ${contract.signature.name} requires a package from the signed computational existential family for parameter ${parameter.name}.`,
+          source_span(argument),
+          [{
+            message: "The package parameter is signed here.",
+            span: parameter.span,
+          }],
+        ),
+      ));
+    }
+    if (!package_arguments_valid) continue;
     const substitutions = new Map<string, PrefixTerm>();
     const term_types = new Map<string, LogicalTermType>();
     for (let index = 0; index < runtime_parameters.length; index += 1) {
@@ -3291,6 +5324,17 @@ function check_prefix_call_obligations(
     for (const [name, type] of caller_prefix_term_types(caller)) {
       term_types.set(name, type);
     }
+    hypotheses.push(...opened_computational_hypotheses(
+      call_span,
+      computational_opens,
+      computational_packs,
+      signatures,
+      definitions,
+      source,
+      binding_index,
+      term_types,
+      caller_facts,
+    ));
     const obligations = [...instantiate_prefix_call_obligations(
       contract.signature,
       substitutions,
@@ -3448,12 +5492,22 @@ function verified_branch_hypotheses(
   hypotheses: readonly PrefixCallHypothesis[],
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+  target_kind: "call" | "checkpoint" = "call",
 ): VerifiedBranchHypotheses {
-  const candidate = unique_control_flow_for_call(
-    call_span,
-    control_flow,
-    callable_control_flow,
-  );
+  let candidate: SemanticCfg | undefined;
+  if (target_kind === "call") {
+    candidate = unique_control_flow_for_call(
+      call_span,
+      control_flow,
+      callable_control_flow,
+    );
+  } else {
+    candidate = unique_control_flow_for_checkpoint(
+      call_span,
+      control_flow,
+      callable_control_flow,
+    );
+  }
   if (candidate === undefined) {
     return {
       propositions: [],
@@ -3496,19 +5550,39 @@ function verified_branch_hypotheses(
     binding_values,
   );
   if (machine_requirement !== undefined) {
-    const certificate = infer_semantic_machine_certificate(
-      candidate,
-      call_span,
-      machine_requirement,
-    );
+    let certificate: SemanticMachineCertificate | undefined;
+    if (target_kind === "call") {
+      certificate = infer_semantic_machine_certificate(
+        candidate,
+        call_span,
+        machine_requirement,
+      );
+    } else {
+      certificate = infer_semantic_machine_checkpoint_certificate(
+        candidate,
+        call_span,
+        machine_requirement,
+      );
+    }
     if (certificate !== undefined) {
-      expect(
-        verify_semantic_machine_certificate(
+      let verified: boolean;
+      if (target_kind === "call") {
+        verified = verify_semantic_machine_certificate(
           certificate,
           candidate,
           call_span,
           machine_requirement,
-        ),
+        );
+      } else {
+        verified = verify_semantic_machine_checkpoint_certificate(
+          certificate,
+          candidate,
+          call_span,
+          machine_requirement,
+        );
+      }
+      expect(
+        verified,
         "FactGraph produced an invalid semantic machine certificate.",
       );
       return {
@@ -3718,6 +5792,29 @@ function unique_control_flow_for_call(
       if (found !== undefined) return undefined;
       found = candidate;
     }
+  }
+  return found;
+}
+
+function unique_control_flow_for_checkpoint(
+  checkpoint_span: SourceSpan,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): SemanticCfg | undefined {
+  const candidates: SemanticCfg[] = [];
+  if (control_flow !== undefined) candidates.push(control_flow);
+  for (const callable of callable_control_flow.values()) {
+    candidates.push(callable.control_flow);
+  }
+  let found: SemanticCfg | undefined;
+  for (const candidate of candidates) {
+    if (
+      unique_semantic_node_at_span(candidate, checkpoint_span) === undefined
+    ) {
+      continue;
+    }
+    if (found !== undefined) return undefined;
+    found = candidate;
   }
   return found;
 }
@@ -4233,9 +6330,11 @@ function prefix_signature_requires_checked_use(
   signature: PrefixSignature,
 ): boolean {
   return signature.decreases.length > 0 || signature.requires.length > 0 ||
+    signature.type.result.type.computational_exists !== undefined ||
     signature.type.parameters.some((parameter) =>
       parameter.type.proof !== undefined ||
-      parameter.type.refinement !== undefined
+      parameter.type.refinement !== undefined ||
+      parameter.type.computational_exists !== undefined
     );
 }
 
@@ -4536,10 +6635,37 @@ function check_prefix_call_obligation(
   let certificate_goal = goal;
   for (const hypothesis of kernel_hypotheses) {
     if (
-      !proposition_equal(hypothesis, goal, {
+      proposition_equal(hypothesis, goal, {
         environment,
         term_context: stable_term_context,
       })
+    ) {
+      certificate_goal = {
+        tag: "implies",
+        premise: hypothesis,
+        conclusion: goal,
+      };
+      proof = {
+        tag: "implies_intro",
+        premise: hypothesis,
+        body: { tag: "assumption", index: 0 },
+      };
+      break;
+    }
+    if (
+      hypothesis.tag !== "equal" || goal.tag !== "equal" ||
+      !term_equal(
+        hypothesis.left,
+        goal.right,
+        stable_term_context,
+        environment,
+      ) ||
+      !term_equal(
+        hypothesis.right,
+        goal.left,
+        stable_term_context,
+        environment,
+      )
     ) {
       continue;
     }
@@ -4551,7 +6677,10 @@ function check_prefix_call_obligation(
     proof = {
       tag: "implies_intro",
       premise: hypothesis,
-      body: { tag: "assumption", index: 0 },
+      body: {
+        tag: "symm",
+        proof: { tag: "assumption", index: 0 },
+      },
     };
     break;
   }
@@ -4881,7 +7010,7 @@ function prefix_term_from_front_expr(
   const span = source_span(expression);
   let text = source_text.slice(span.start, span.end);
   if (text.length === 0 && expression.tag === "var") text = expression.name;
-  if (expression.tag === "var") {
+  if (expression.tag === "var" || expression.tag === "linear") {
     const occurrence = binding_index.occurrence_of(expression, "name");
     let name = expression.name;
     if (occurrence?.entity !== undefined) {
@@ -5008,7 +7137,7 @@ function record_front_expr_logical_types(
   binding_index: BindingIndex,
   term_types: Map<string, LogicalTermType>,
 ): void {
-  if (expression.tag === "var") {
+  if (expression.tag === "var" || expression.tag === "linear") {
     const occurrence = binding_index.occurrence_of(expression, "name");
     if (occurrence?.entity === undefined) return;
     const semantic_name = logical_entity_name(occurrence.entity);
@@ -5094,6 +7223,65 @@ function resolve_prefix_type_reference(
   source_text: string,
   type_variables: ReadonlySet<string>,
 ): PrefixTypeReference {
+  const computational_exists = type.computational_exists;
+  if (computational_exists !== undefined) {
+    const witness = resolve_prefix_type_reference(
+      computational_exists.witness,
+      aliases,
+      type_definitions,
+      source,
+      cst_root,
+      source_text,
+      type_variables,
+    );
+    const payload = resolve_prefix_type_reference(
+      computational_exists.payload,
+      aliases,
+      type_definitions,
+      source,
+      cst_root,
+      source_text,
+      type_variables,
+    );
+    const resolved_computational_exists = {
+      ...computational_exists,
+      witness,
+      payload,
+    };
+    if (
+      witness.resolved !== true || payload.resolved !== true ||
+      witness.expression === undefined || payload.expression === undefined
+    ) {
+      return {
+        ...type,
+        computational_exists: resolved_computational_exists,
+      };
+    }
+    const expression: TypeExpr = {
+      tag: "product",
+      entries: [
+        { type_expr: witness.expression },
+        { type_expr: payload.expression },
+      ],
+    };
+    const canonical = format_type_expr(expression);
+    let representation = canonical;
+    if (
+      witness.representation !== undefined &&
+      payload.representation !== undefined
+    ) {
+      representation = "(" + witness.representation + ", " +
+        payload.representation + ")";
+    }
+    return {
+      ...type,
+      canonical,
+      computational_exists: resolved_computational_exists,
+      expression,
+      representation,
+      resolved: true,
+    };
+  }
   let proof = type.proof;
   if (proof !== undefined) {
     proof = resolve_prefix_proposition_types(
@@ -5150,7 +7338,7 @@ function resolve_prefix_type_reference(
     ].map((match) => match[0]).filter((name) => type_variables.has(name));
     const resolved_name = resolved_name_of_source_type(
       source,
-      lowered,
+      normalized_expression,
       type_variables,
     );
     if (resolved_name !== "unknown") {
@@ -5164,7 +7352,7 @@ function resolve_prefix_type_reference(
       }
       const representation = representation_type_of_source_type(
         source,
-        lowered,
+        normalized_expression,
         type_variables,
       );
       let representation_name: string | undefined;
@@ -6399,6 +8587,47 @@ function prefix_kernel_term(
       context,
       facts,
     );
+  }
+  if (term.shape.tag === "product") {
+    const logical_type = checked_value(
+      check_prefix_term_type(
+        declaration_name,
+        term,
+        context.term_types,
+        facts,
+        new Set(),
+      ),
+    );
+    if (logical_type === undefined) return undefined;
+    const entries = term.shape.values.map((value) =>
+      prefix_kernel_term(declaration_name, value, context, facts)
+    );
+    if (entries.some((entry) => entry === undefined)) return undefined;
+    const type_name = logical_type.representation;
+    const type: KernelType = { tag: "constant", name: type_name };
+    let constructor_type: KernelType = type;
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      expect(entry !== undefined, `Logical product lost entry ${index}.`);
+      constructor_type = {
+        tag: "pi",
+        domain: entry.type,
+        codomain: constructor_type,
+      };
+    }
+    const constructor_name = "constructor:product:" + type_name;
+    context.declarations.set(type_name, type_sort(0));
+    context.declarations.set(constructor_name, constructor_type);
+    let result: KernelTerm = {
+      tag: "constant",
+      name: constructor_name,
+      type: constructor_type,
+    };
+    for (const entry of entries) {
+      expect(entry !== undefined, "Logical product lost a checked entry.");
+      result = { tag: "app", function: result, argument: entry.term };
+    }
+    return { term: result, type, type_name };
   }
   let signed_number: { literal: PrefixTerm; sign: bigint } | undefined;
   if (term.shape.tag === "unary") {
@@ -8918,47 +11147,104 @@ function check_prefix_refinement_formation(
   ];
   const checks: Checked<undefined>[] = [];
   for (const reference of references) {
-    const refinement = reference.refinement;
-    if (refinement === undefined) continue;
+    checks.push(...check_prefix_dependent_type_formation(
+      signature,
+      reference,
+      term_types,
+      signatures,
+      definitions,
+      declared_type_names,
+    ));
+  }
+  return all(checks).map(() => undefined);
+}
+
+function check_prefix_dependent_type_formation(
+  signature: PrefixSignature,
+  reference: PrefixTypeReference,
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  declared_type_names: ReadonlySet<string>,
+): readonly Checked<undefined>[] {
+  const computational_exists = reference.computational_exists;
+  if (computational_exists !== undefined) {
+    const witness = computational_exists.witness;
+    const payload = computational_exists.payload;
     if (
-      reference.resolved !== true || reference.canonical === "Type" ||
-      reference.canonical === "Prop"
+      witness.resolved !== true || payload.resolved !== true ||
+      witness.representation === undefined ||
+      payload.representation === undefined
     ) {
-      checks.push(
-        fail(
-          compiler_diagnostic(
-            diagnostic_codes.prefix_signature_mismatch,
-            `Prefix signature ${signature.name} cannot refine ${reference.text}.`,
-            refinement.span,
-          ),
+      return [fail(
+        compiler_diagnostic(
+          diagnostic_codes.non_uniform_dependent_layout,
+          `Computational existential ${reference.text} does not have a concrete runtime layout.`,
+          computational_exists.span,
         ),
-      );
-      continue;
+      )];
+    }
+    const payload_type_names = [
+      ...payload.text.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g),
+    ].map((match) => match[0]);
+    if (payload_type_names.includes(computational_exists.binder)) {
+      return [fail(
+        compiler_diagnostic(
+          diagnostic_codes.non_uniform_dependent_layout,
+          `Computational existential payload layout ${payload.text} depends on hidden witness ${computational_exists.binder}.`,
+          payload.span,
+        ),
+      )];
     }
     const scoped_terms = new Map(term_types);
     scoped_terms.set(
-      refinement.binder,
-      logical_term_type_from_reference({
-        ...reference,
-        refinement: undefined,
-      }),
+      computational_exists.binder,
+      logical_term_type_from_reference(witness),
     );
-    const formation = check_prefix_proposition(
-      signature.name,
-      refinement.proposition,
+    return check_prefix_dependent_type_formation(
+      signature,
+      payload,
       scoped_terms,
-      signature_type_names(signature, declared_type_names),
-      prefix_fact_signatures(
-        signatures,
-        definitions,
-        signature.scope,
-        signature.span.start,
-      ),
-      new Set(),
+      signatures,
+      definitions,
+      declared_type_names,
     );
-    checks.push(formation);
   }
-  return all(checks).map(() => undefined);
+  const refinement = reference.refinement;
+  if (refinement === undefined) return [];
+  if (
+    reference.resolved !== true || reference.canonical === "Type" ||
+    reference.canonical === "Prop"
+  ) {
+    return [fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} cannot refine ${reference.text}.`,
+        refinement.span,
+      ),
+    )];
+  }
+  const scoped_terms = new Map(term_types);
+  scoped_terms.set(
+    refinement.binder,
+    logical_term_type_from_reference({
+      ...reference,
+      refinement: undefined,
+    }),
+  );
+  return [check_prefix_proposition(
+    signature.name,
+    refinement.proposition,
+    scoped_terms,
+    signature_type_names(signature, declared_type_names),
+    prefix_fact_signatures(
+      signatures,
+      definitions,
+      signature.scope,
+      signature.span.start,
+    ),
+    new Set(),
+  )];
 }
 
 function check_prefix_requires(
@@ -9422,6 +11708,15 @@ function logical_term_type_from_reference(
     name,
     representation,
   };
+}
+
+function logical_computational_component_type(
+  type: PrefixTypeReference,
+): LogicalTermType {
+  return logical_term_type_from_reference({
+    ...type,
+    refinement: undefined,
+  });
 }
 
 function prefix_fact_signatures(
@@ -10049,6 +12344,46 @@ function check_prefix_term_type(
       nonzero_terms,
     );
   }
+  if (shape.tag === "product") {
+    let checked_types: Checked<LogicalTermType[]> = ok([]);
+    for (const value of shape.values) {
+      checked_types = Applicative.lift(
+        (types: LogicalTermType[], type: LogicalTermType) => [
+          ...types,
+          type,
+        ],
+        checked_types,
+        check_prefix_term_type(
+          declaration_name,
+          value,
+          term_types,
+          facts,
+          nonzero_terms,
+        ),
+      );
+    }
+    return checked_types.map((types) => {
+      const entries: TypeExpr[] = [];
+      for (const type of types) {
+        if (type.expression !== undefined) {
+          entries.push(type.expression);
+        } else {
+          entries.push({ tag: "name", name: type.name });
+        }
+      }
+      const expression: TypeExpr = {
+        tag: "product",
+        entries: entries.map((type_expr) => ({ type_expr })),
+      };
+      const name = format_type_expr(expression);
+      return {
+        expression,
+        name,
+        representation: "(" +
+          types.map((type) => type.representation).join(", ") + ")",
+      };
+    });
+  }
   if (shape.tag === "unary") {
     let literal_operand = shape.operand;
     while (literal_operand.shape.tag === "parenthesized") {
@@ -10428,8 +12763,13 @@ function logical_term_types_match(
   left: LogicalTermType,
   right: LogicalTermType,
 ): boolean {
-  return left.name === right.name ||
-    left.representation === right.representation;
+  if (left.name === right.name) return true;
+  if (left.representation === right.representation) return true;
+  if (
+    left.expression !== undefined && right.expression !== undefined &&
+    format_type_expr(left.expression) === format_type_expr(right.expression)
+  ) return true;
+  return logical_term_type_display(left) === logical_term_type_display(right);
 }
 
 function logical_term_type_display(type: LogicalTermType): string {
@@ -11262,6 +13602,15 @@ function check_prefix_signature_representation(
   types: ReadonlyMap<ValueId, RepresentationType>,
   origins: ReadonlyMap<ValueId, SemanticOrigin>,
 ): Checked<undefined> {
+  const result_some = signature.type.result.type.computational_exists;
+  if (result_some !== undefined) {
+    const payload_type_names = [
+      ...result_some.payload.text.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g),
+    ].map((match) => match[0]);
+    if (payload_type_names.includes(result_some.binder)) {
+      return ok(undefined);
+    }
+  }
   const unsupported_binder = signature.type.binders.find((binder) =>
     binder.type.canonical !== "Type"
   );
@@ -11398,6 +13747,9 @@ function check_prefix_callable_body(
   );
   if (diagnostics_of(parameter_type_check).length > 0) {
     return parameter_type_check;
+  }
+  if (signature.type.result.type.computational_exists !== undefined) {
+    return ok(undefined);
   }
   expect(
     parameter_types.length === parameters.length,
@@ -11818,6 +14170,7 @@ export function lower_duck_source(
   if (analysis_state.has_errors) {
     return fail(...analysis.diagnostics);
   }
+  validate_computational_package_erasure(analysis);
   try {
     const lowering_source = source_with_host_callable_exports(
       clone_source_tree(analysis.source),
@@ -11846,6 +14199,25 @@ export function lower_duck_source(
       return fail(error.diagnostic);
     }
     throw error;
+  }
+}
+
+function validate_computational_package_erasure(analysis: DuckAnalysis): void {
+  for (const [value, package_fact] of analysis.computational_packages) {
+    const representation = analysis.types.get(value);
+    expect(
+      representation !== undefined && representation.tag === "product" &&
+        representation.fields.length === 2,
+      `Computational package ${value} lost its erased product layout.`,
+    );
+    const witness = representation.fields[0];
+    const payload = representation.fields[1];
+    expect(
+      witness !== undefined && payload !== undefined &&
+        same_representation_type(witness.type, package_fact.witness) &&
+        same_representation_type(payload.type, package_fact.payload),
+      `Computational package ${value} changed representation before Core lowering.`,
+    );
   }
 }
 

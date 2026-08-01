@@ -22,6 +22,9 @@ token prefix_and_keyword priority 3 = /and/ ;
 token prefix_not_keyword priority 3 = /not/ ;
 token prefix_forall_keyword priority 3 = /forall/ ;
 token prefix_exists_keyword priority 3 = /exists/ ;
+token prefix_some_keyword priority 3 = /some/ ;
+token prefix_pack_keyword priority 3 = /pack/ ;
+token prefix_open_keyword priority 3 = /open/ ;
 contextual prefix_proof_keyword priority 3 = /Proof/ ;
 contextual proof_prefixed_identifier priority 4 = /Proof_[A-Za-z0-9_]*/ ;
 token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*/ ;
@@ -61,6 +64,7 @@ _module_statement = (
                       | effect_binding_statement
                       | resume_dup_statement
                       | binding_statement
+                      | computational_open_statement
                       | type_pattern_statement
                       | for_statement
                       | break_statement
@@ -77,6 +81,7 @@ _statement = (
                | prefix_fact_statement
                | prefix_unsafe_proof_statement
                | binding_statement
+               | computational_open_statement
                | type_pattern_statement
                | return_statement
                | for_statement
@@ -340,8 +345,20 @@ prefix_signature_result = (
 prefix_signature_value_type = (
                               prefix_proof_type
                               | prefix_refinement_type
+                              | prefix_computational_existential_type
                               | type_reference
                             ) ;
+
+prefix_computational_existential_type = (
+                                         prefix_some_keyword
+                                         "("
+                                         name:(lowercase_identifier)
+                                         ":"
+                                         witness:(type_reference)
+                                         ")"
+                                         "."
+                                         payload:((prefix_refinement_type | type_reference))
+                                       ) ;
 
 prefix_proof_type = (
                     prefix_proof_keyword
@@ -1188,6 +1205,7 @@ handler_return_clause = ("return" ":" value:(arrow_function)) ;
 
 _primary_expression = (
                         prefix_by_proof_expression
+                        | computational_pack_expression
                         | number
                         | string
                         | character
@@ -1215,6 +1233,48 @@ _primary_expression = (
                         | block
                         | parenthesized_expression
                       ) ;
+
+computational_pack_expression = (
+                                 prefix_pack_keyword
+                                 witness:(_expression)
+                                 ","
+                                 payload:(_computational_pack_payload)
+                                 "as"
+                                 type:(prefix_computational_existential_type)
+                               ) ;
+
+_computational_pack_payload = (
+                               condition_expression
+                               | try_with_expression
+                               | loop_expression
+                               | if_expression
+                               | case_function_expression
+                               | case_expression
+                               | effect_handler_expression
+                               | recursive_call_expression
+                               | template_literal
+                               | wildcard
+                               | import_expression
+                               | include_expression
+                               | named_product
+                               | array_expression
+                               | array_repeat_expression
+                               | shape_value
+                               | scratch_expression
+                               | block
+                             ) ;
+
+computational_open_statement = (
+                                prefix_open_keyword
+                                package:(condition_expression)
+                                "as"
+                                "("
+                                witness:(identifier)
+                                ","
+                                payload:(identifier)
+                                ")"
+                                ";"
+                              ) ;
 
 template_literal = (
                      template_start

@@ -314,6 +314,7 @@ export type FrontExpr =
     params: Param[];
     body: FrontExpr;
     case_function?: true;
+    computational_package_result?: true;
     /**
      * Parameter names synthesised from argument holes, in the order the holes
      * were written. Present only on a lambda the parser lifted out of
@@ -322,7 +323,13 @@ export type FrontExpr =
      */
     hole_params?: string[];
   }
-  | { tag: "rec"; pattern?: Pattern; params: Param[]; body: FrontExpr }
+  | {
+    tag: "rec";
+    pattern?: Pattern;
+    params: Param[];
+    body: FrontExpr;
+    computational_package_result?: true;
+  }
   | {
     tag: "app";
     func: FrontExpr;

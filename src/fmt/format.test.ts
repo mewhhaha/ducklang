@@ -68,6 +68,28 @@ Deno.test("format_text round trips prefix refinement signatures", () => {
   assert_equals(format_text(formatted), formatted);
 });
 
+Deno.test("format_text round trips computational existential packages", () => {
+  const source = "type make=(value:I32)->" +
+    "some(witness:I32).{payload:I32|payload=witness}\n" +
+    "let make=value=>pack value,value as " +
+    "some(hidden:I32).{element:I32|element=hidden};\n" +
+    "let package=make(1i32);\n" +
+    "open package as(witness,payload);\n";
+  const formatted = format_text(source);
+  assert_equals(
+    formatted,
+    "type make =\n" +
+      "  (value: I32) -> " +
+      "some (witness: I32). { payload: I32 | payload = witness }\n" +
+      "let make =\n" +
+      "  value => pack value, value as " +
+      "some (hidden: I32). { element: I32 | element = hidden };\n" +
+      "let package = make 1i32;\n" +
+      "open package as (witness, payload);\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
 Deno.test("format_text round trips direct proof declarations", () => {
   const source = "type keep=(value:I32,evidence:Proof value=value)" +
     "->Proof value=value\n" +

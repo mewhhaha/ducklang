@@ -1897,6 +1897,10 @@ function index_synthetic_names(
         next_no_demand += 1;
       }
     }
+    if (node.kind === "computational_open_statement") {
+      no_demand_names.set(node, no_demand_name(next_no_demand));
+      next_no_demand += 1;
+    }
     if (
       node.kind === "if_expression" || node.kind === "else_if_clause"
     ) {
@@ -3035,6 +3039,53 @@ function lower_statement(
     }
     if (proof_body !== undefined) semantic_proof_placeholders.add(proof_body);
     return lower_binding(node, source);
+  }
+
+  if (node.kind === "computational_open_statement") {
+    const package_node = node.children.find((child) =>
+      child.kind === "condition_expression"
+    );
+    const names = node.children.filter((child) => child.kind === "identifier");
+    const witness_node = names[0];
+    const payload_node = names[1];
+    if (
+      package_node === undefined || witness_node === undefined ||
+      payload_node === undefined
+    ) {
+      return unsupported(node);
+    }
+    const name = no_demand_names.get(node);
+    expect(name !== undefined, "Computational package open lost its identity.");
+    const lowered_package = lower_expression(package_node, source);
+    const package_value = checked_value(lowered_package);
+    let component_mode: "default" | "linear" = "default";
+    if (package_value?.tag === "linear") component_mode = "linear";
+    return Applicative.lift(
+      (package_value: FrontExpr, witness: Pattern, payload: Pattern) => {
+        const pattern: Pattern = {
+          tag: "product",
+          entries: [{ pattern: witness }, { pattern: payload }],
+        };
+        mark_source_span(pattern, {
+          start: witness_node.start,
+          end: payload_node.end,
+        });
+        const statement: Stmt = {
+          tag: "bind",
+          kind: "let",
+          pattern,
+          name,
+          is_linear: false,
+          annotation: undefined,
+          value: package_value,
+        };
+        mark_source_span(statement, { start: node.start, end: node.end });
+        return statement;
+      },
+      lowered_package,
+      lower_pattern(witness_node, source, component_mode),
+      lower_pattern(payload_node, source, component_mode),
+    );
   }
 
   if (node.kind === "type_pattern_statement") {
@@ -5783,6 +5834,26 @@ function lower_expression(
     const expression: FrontExpr = { tag: "unit" };
     mark_source_span(expression, { start: node.start, end: node.end });
     return ok(expression);
+  }
+  if (node.kind === "computational_pack_expression") {
+    const values = node.children.filter((child) => is_expression_node(child));
+    const witness_node = values[0];
+    const payload_node = values[1];
+    if (witness_node === undefined || payload_node === undefined) {
+      return unsupported(node);
+    }
+    return Applicative.lift(
+      (witness: FrontExpr, payload: FrontExpr) => {
+        const expression: FrontExpr = {
+          tag: "product",
+          entries: [{ value: witness }, { value: payload }],
+        };
+        mark_source_span(expression, { start: node.start, end: node.end });
+        return expression;
+      },
+      lower_expression(witness_node, source),
+      lower_expression(payload_node, source),
+    );
   }
   const lifted_prefix = lifted_expression_prefixes.get(node);
   if (
@@ -9323,6 +9394,7 @@ function semantic_child(node: BabaCstNode): BabaCstNode | undefined {
 
 function is_expression_node(node: BabaCstNode): boolean {
   return node.kind === "prefix_by_proof_expression" ||
+    node.kind === "computational_pack_expression" ||
     node.kind === "postfix_expression" ||
     node.kind === "parenthesized_expression" ||
     node.kind === "parenthesized_or_product" ||

@@ -8,7 +8,7 @@ let select = (input: Maybe) => do
   value + 1
 end;
 
-let some: Maybe = #Some 41;
+let present: Maybe = #Some 41;
 let none: Maybe = #None;
 
-select some + select none
+select present + select none

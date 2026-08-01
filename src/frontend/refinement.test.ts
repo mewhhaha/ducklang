@@ -371,9 +371,9 @@ Deno.test("computational existentials retain witness and payload layout", () => 
   assert_equals(erase_semantic_type(package_type), {
     tag: "product",
     fields: [
-      { label: "witness", type: { tag: "scalar", name: "U32" } },
+      { label: undefined, type: { tag: "scalar", name: "U32" } },
       {
-        label: "payload",
+        label: undefined,
         type: { tag: "owned", ownership: "unique_heap", value: scalar },
       },
     ],

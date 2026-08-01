@@ -198,6 +198,8 @@ export type {
 } from "./frontend/function_summary.ts";
 export { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
 export type {
+  ComputationalPackageFact,
+  ComputationalPackageIndex,
   DuckAnalysis,
   DuckAnalyzeOptions,
   DuckSemanticProgram,

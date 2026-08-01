@@ -118,6 +118,929 @@ Deno.test("callable control flow flattens transient argument packs", () => {
   assert_equals(call?.inputs, [select, left, right]);
 });
 
+Deno.test("computational existential relations survive signed calls and open", () => {
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "let package = make(7i32);\n" +
+    "open package as (witness, payload);\n" +
+    "let result = same(witness, payload);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const package_value = analysis.symbols.get("package")?.[0];
+  if (package_value === undefined) {
+    throw new Error("Expected computational package identity.");
+  }
+  assert_equals(
+    analysis.computational_packages.get(package_value)?.relation,
+    "$duck:some:payload = $duck:some:witness",
+  );
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  const program = checked_value(lowered);
+  if (program === undefined) {
+    throw new Error("Expected computational existential program to lower.");
+  }
+  const core = JSON.stringify(program.core);
+  assert_equals(core.includes("some"), false);
+  assert_equals(core.includes('"tag":"pack"'), false);
+  assert_equals(core.includes("refinement"), false);
+  assert_equals(core.includes('"index"'), true);
+});
+
+Deno.test("signed computational package calls can be opened directly", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "open make(7i32) as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("explicitly typed computational packages need no callable signature", () => {
+  const source = "let package = pack 1i32, 1i32 as " +
+    "some (witness: I32). { payload: I32 | payload = witness };\n" +
+    "open package as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages accept uniform product witnesses", () => {
+  const source = "let package = pack [1i32, 2i32], 0i32 as " +
+    "some (witness: [I32, I32]). I32;\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages preserve refined product layouts", () => {
+  const source = "let package = pack 0i32, [1i32, 2i32] as " +
+    "some (witness: I32). { payload: [I32, I32] | True };\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages resolve transparent product aliases", () => {
+  const source = "type Pair = [I32, I32];\n" +
+    "let package = pack 0i32, [1i32, 2i32] as " +
+    "some (witness: I32). Pair;\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages prove relations between product values", () => {
+  const package_type = "some (witness: [I32, I32]). " +
+    "{ payload: [I32, I32] | payload = witness }";
+  const source = "let package = pack [1i32, 2i32], [1i32, 2i32] as " +
+    package_type + ";\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("malformed package witness shapes remain diagnostics", () => {
+  const source = 'let package = pack ("hello", 1i32), 0i32 as ' +
+    "some (witness: freeze (Text, I32)). I32;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("consuming a computational package transfers linear components", () => {
+  const source = "let !package = pack 1i32, 1i32 as " +
+    "some (witness: I32). { payload: I32 | payload = witness };\n" +
+    "open !package as (witness, payload);\n" +
+    "!witness + !payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packs reject ownership-transferring components", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (left: I32, right: I32) -> " + package_type +
+    "\n" +
+    "let make = (!left, !right) => " +
+    "pack !left, !right as " + package_type + ";\n" +
+    "let !package = make(1i32, 2i32);\n" +
+    "open !package as (witness, payload);\n" +
+    "!witness + !payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("signed package results cannot duplicate transferred owners", () => {
+  const package_type = "some (witness: Text). I32";
+  const source = "type make = (text: Text) -> " + package_type + "\n" +
+    "let make = !text => pack !text, 0i32 as " + package_type + ";\n" +
+    'let package = make("hello");\n' +
+    "open package as (first, left);\n" +
+    "open package as (second, right);\n" +
+    "(first, second, left + right)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2609" &&
+      diagnostic.message.includes("ownership-transferring")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("linear aliases cannot retain package relations", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  for (
+    const alias_binding of [
+      "let !alias = !value",
+      "let alias = !value",
+      "let alias = value; alias := !value",
+    ]
+  ) {
+    const source = "type same = (left: I32, right: I32) -> I32\n" +
+      "requires left = right\n" +
+      "let same = (left, right) => left;\n" +
+      "type make = (value: I32) -> " + package_type + "\n" +
+      "let make = !value => do\n" +
+      "  " + alias_binding + ";\n" +
+      "  pack alias, alias as " + package_type + "\n" +
+      "end;\n" +
+      "let package = make(1i32);\n" +
+      "open package as (witness, payload);\n" +
+      "same(witness, payload)\n";
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    const package_value = analysis.symbols.get("package")?.[0];
+    if (package_value === undefined) {
+      throw new Error("Expected aliased package identity.");
+    }
+    assert_equals(analysis.computational_packages.has(package_value), false);
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes("left = right")
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("a consumed computational package cannot be opened twice", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  for (const second_open of ["!package", "package"]) {
+    const source = "let !package = pack 1i32, 1i32 as " + package_type +
+      ";\n" +
+      "open !package as (witness, payload);\n" +
+      "open " + second_open + " as (again, other);\n" +
+      "!witness + !payload + !again + !other\n";
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.map((diagnostic) => diagnostic.code),
+      ["DUCK2201"],
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("a consumed computational package cannot be reused as a value", () => {
+  const source = "let !package = pack 1i32, 1i32 as " +
+    "some (witness: I32). I32;\n" +
+    "open !package as (witness, payload);\n" +
+    "(!witness, !payload, package)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2201"],
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("computational packs use local aliases as exact evidence", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => do\n" +
+    "  let alias = value;\n" +
+    "  pack alias, alias as " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packs use branch-established evidence", () => {
+  const source = "type make = (left: I32, right: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = (left, right) => " +
+    "if left == right then\n" +
+    "  pack left, right as " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "else\n" +
+    "  pack left, left as " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("compact conditional packs retain distinct source identities", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type make = (left: I32, right: I32) -> " + package_type +
+    "\n" +
+    "let make = (left, right) => if left == right then " +
+    "pack left, right as " + package_type + " else " +
+    "pack left, right as " + package_type + " end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2604"],
+  );
+  assert_equals(
+    analysis.diagnostics[0]?.span.start,
+    source.lastIndexOf("pack"),
+  );
+});
+
+Deno.test("computational results reject ordinary early returns", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type make = (flag: Bool, left: I32, right: I32) -> " + package_type +
+    "\n" +
+    "let make = (flag, left, right) => do\n" +
+    "  if flag then\n" +
+    "    return (left, right);\n" +
+    "  end\n" +
+    "  pack left, left as " + package_type + "\n" +
+    "end;\n" +
+    "open make(true, 1i32, 2i32) as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609", "DUCK2609", "DUCK2604"],
+  );
+  assert_equals(
+    analysis.diagnostics[0]?.span.start,
+    source.indexOf("(left, right)", source.indexOf("return")),
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("computational results accept packages on every return", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type make = (flag: Bool, left: I32, right: I32) -> " +
+    package_type + "\n" +
+    "let make = (flag, left, right) => do\n" +
+    "  if flag then\n" +
+    "    return pack left, left as " + package_type + ";\n" +
+    "  end\n" +
+    "  pack right, right as " + package_type + "\n" +
+    "end;\n" +
+    "open make(true, 1i32, 2i32) as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("diverging paths do not need a computational package result", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (diverge: Bool) -> " + package_type + "\n" +
+    "let make = diverge => if diverge then\n" +
+    "  loop do continue; end\n" +
+    "else\n" +
+    "  pack 21i32, 21i32 as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("returned conditionals ignore diverging package paths", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (diverge: Bool) -> " + package_type + "\n" +
+    "let make = diverge => do\n" +
+    "  return if diverge then\n" +
+    "    loop do continue; end\n" +
+    "  else\n" +
+    "    pack 21i32, 21i32 as " + package_type + "\n" +
+    "  end;\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("package aliases ignore diverging conditional paths", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (diverge: Bool) -> " + package_type + "\n" +
+    "let make = diverge => do\n" +
+    "  let package = if diverge then\n" +
+    "    loop do continue; end\n" +
+    "  else\n" +
+    "    pack 21i32, 21i32 as " + package_type + "\n" +
+    "  end;\n" +
+    "  package\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("trapping paths do not need a computational package result", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (fail: Bool) -> " + package_type + "\n" +
+    "let make = fail => if fail then\n" +
+    '  @panic("no package")\n' +
+    "else\n" +
+    "  pack 21i32, 21i32 as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("Never calls do not need a computational package result", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = 'let abort = ignored => @panic("stop");\n' +
+    "type make = (fail: Bool) -> " + package_type + "\n" +
+    "let make = fail => if fail then\n" +
+    "  abort(0i32)\n" +
+    "else\n" +
+    "  pack 21i32, 21i32 as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("ordinary returning callables cannot forge package families", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let ordinary: (I32, I32) -> Never = " +
+    "(left, right) => do return (left, right); end;\n" +
+    "type make = (plain: Bool, left: I32, right: I32) -> " +
+    package_type + "\n" +
+    "let make = (plain, left, right) => if plain then\n" +
+    "  ordinary(left, right)\n" +
+    "else\n" +
+    "  pack left, left as " + package_type + "\n" +
+    "end;\n" +
+    "open make(true, 1i32, 2i32) as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("unreachable fallthrough does not become a package return", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = () -> " + package_type + "\n" +
+    "let make = () => do\n" +
+    "  return pack 21i32, 21i32 as " + package_type + ";\n" +
+    "  (2i32, 3i32)\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("unreachable explicit returns do not change package families", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = () -> " + package_type + "\n" +
+    "let make = () => do\n" +
+    "  return pack 21i32, 21i32 as " + package_type + ";\n" +
+    "  return (2i32, 3i32);\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("nested handler returns do not become callable package returns", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "effect Marker { mark: () => Unit }\n" +
+    "type make = (left: I32, right: I32) -> " + package_type + "\n" +
+    "let make = (left, right) => do\n" +
+    "  let unused = handler Marker {\n" +
+    "    mark: (!resume) => !resume(()),\n" +
+    "    return: value => do return (left, right); end,\n" +
+    "  };\n" +
+    "  pack left, left as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("loop exits preserve computational package families", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type make = (value: I32) -> " + package_type + "\n" +
+    "let make = value => loop do\n" +
+    "  break pack value, value as " + package_type + ";\n" +
+    "end;\n" +
+    "open make(21i32) as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("every computational loop exit must preserve its package family", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (plain: Bool) -> " + package_type + "\n" +
+    "let make = plain => loop do\n" +
+    "  if plain then break (1i32, 1i32); end\n" +
+    "  break pack 2i32, 2i32 as " + package_type + ";\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609"],
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("nested loop exits do not change the outer package family", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = () -> " + package_type + "\n" +
+    "let make = () => loop do\n" +
+    "  let ignored = loop do break 1i32; end;\n" +
+    "  break pack ignored, ignored as " + package_type + ";\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("ordinary products cannot be opened as computational existentials", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let pair = (1i32, 1i32);\n" +
+      "open pair as (witness, payload);\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609"],
+  );
+});
+
+Deno.test("signed computational package parameters preserve their relation", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "read(make(21i32))\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational package brands survive aliases and branch joins", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "let alias = make;\n" +
+    "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "let package = if true then alias(20i32) else make(22i32) end;\n" +
+    "read(package)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational package brands follow assignment ValueIds", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "let package = pack 1i32, 1i32 as " + package_type +
+    ";\n" +
+    "package := pack 2i32, 2i32 as " + package_type + ";\n" +
+    "open package as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const package_values = analysis.symbols.get("package");
+  if (package_values === undefined) {
+    throw new Error("Expected reassigned package identities.");
+  }
+  assert_equals(package_values.length, 2);
+  for (const value of package_values) {
+    assert_equals(analysis.computational_packages.has(value), true);
+  }
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("package reassignment invalidates a different family", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type choose = (flag: Bool) -> I32\n" +
+    "let choose = flag => do\n" +
+    "  let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "  if flag then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  end\n" +
+    "  open package as (witness, payload);\n" +
+    "  same(witness, payload)\n" +
+    "end;\n" +
+    "choose(true)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("left = right")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("nested callable assignments do not invalidate outer packages", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "let mutate = ignored => do\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  0i32\n" +
+    "end;\n" +
+    "open package as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("called closure assignments do not replace caller packages", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "let mutate = ignored => do\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  0i32\n" +
+    "end;\n" +
+    "mutate(0i32);\n" +
+    "open package as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("nested closures capture the package family at their join", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type outer = (flag: Bool) -> I32\n" +
+    "let outer = flag => do\n" +
+    "  let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "  if flag then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  end\n" +
+    "  let read = ignored => do\n" +
+    "    open package as (witness, payload);\n" +
+    "    same(witness, payload)\n" +
+    "  end;\n" +
+    "  read(0i32)\n" +
+    "end;\n" +
+    "outer(true)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" || diagnostic.code === "DUCK2609"
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("sibling branches do not share package assignments", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type choose = (flag: Bool) -> I32\n" +
+    "let choose = flag => do\n" +
+    "  let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "  if flag then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "    0i32\n" +
+    "  else\n" +
+    "    open package as (witness, payload);\n" +
+    "    same(witness, payload)\n" +
+    "  end\n" +
+    "end;\n" +
+    "choose(false)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("loop backedges invalidate nested package captures", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  let read = ignored => do\n" +
+    "    open package as (witness, payload);\n" +
+    "    same(witness, payload)\n" +
+    "  end;\n" +
+    "  read(index);\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" || diagnostic.code === "DUCK2609"
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("loop backedges invalidate package arguments", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type read = (package: " + equal_package + ") -> I32\n" +
+    "let read = package => 0i32;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  read(package);\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("loop backedges connect sibling branch package families", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type read = (package: " + equal_package + ") -> I32\n" +
+    "let read = package => 0i32;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  if index == 0i32 then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  else\n" +
+    "    read(package)\n" +
+    "  end\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("loop-carried package projections remain checked diagnostics", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  open package as (witness, payload);\n" +
+    "  same(witness, payload);\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("ordinary products cannot satisfy computational package parameters", () => {
+  const source = "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "let pair = [21i32, 21i32];\n" +
+    "read(pair)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609"],
+  );
+});
+
+Deno.test("computational package families distinguish equal-width integers", () => {
+  const source = "type make = (value: I32) -> some (witness: I32). I32\n" +
+    "let make = value => " +
+    "pack value, value as some (witness: I32). I32;\n" +
+    "type read = (package: some (witness: U32). U32) -> U32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  payload\n" +
+    "end;\n" +
+    "read(make(21i32))\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+});
+
+Deno.test("computational package families preserve proposition grouping", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). " +
+    "{ payload: I32 | True or (False and False) }\n" +
+    "let make = value => pack value, value as " +
+    "some (witness: I32). " +
+    "{ payload: I32 | True or (False and False) };\n" +
+    "type read = (package: some (witness: I32). " +
+    "{ payload: I32 | (True or False) and False }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  payload\n" +
+    "end;\n" +
+    "read(make(1i32))\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+});
+
+Deno.test("computational package callables cannot bypass direct checks", () => {
+  const source = "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  payload\n" +
+    "end;\n" +
+    "let escaped = [read];\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("computational packs reject unproved payload refinements", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type make = (value: I32) -> " +
+      "some (witness: I32). { payload: I32 | payload = witness }\n" +
+      "let make = value => " +
+      "pack value, 8i32 as " +
+      "some (witness: I32). { payload: I32 | payload = witness };\n",
+  ));
+  assert_equals(analysis.diagnostics[0]?.code, "DUCK2604");
+  assert_equals(
+    analysis.diagnostics[0]?.message.includes("8i32 = value"),
+    true,
+  );
+});
+
+Deno.test("failed pack proofs introduce no package relation", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 2i32 as " + package_type + ";\n" +
+    "open package as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  const package_value = analysis.symbols.get("package")?.[0];
+  if (package_value === undefined) {
+    throw new Error("Expected invalid package identity.");
+  }
+  assert_equals(analysis.computational_packages.has(package_value), false);
+  assert_equals(
+    analysis.diagnostics.filter((diagnostic) => diagnostic.code === "DUCK2604")
+      .length,
+    2,
+  );
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2609" &&
+      diagnostic.message.includes("Cannot open package")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("rebinding an opened witness does not transfer its relation", () => {
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (witness: I32). { payload: I32 | payload = witness };\n" +
+    "let package = make(7i32);\n" +
+    "open package as (witness, payload);\n" +
+    "witness := witness + 1i32;\n" +
+    "let result = same(witness, payload);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.at(-1)?.code, "DUCK2604");
+  assert_equals(
+    analysis.diagnostics.at(-1)?.message.includes("left = right"),
+    true,
+  );
+});
+
+Deno.test("computational existentials reject witness-dependent runtime layouts", () => {
+  const source =
+    "type make = (value: I32) -> some (witness: I32). [I32; witness]\n" +
+    "let make = value => " +
+    "pack value, [value] as some (witness: I32). [I32; witness];\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.every((diagnostic) => diagnostic.code === "DUCK2610"),
+    true,
+  );
+  assert_equals(analysis.diagnostics.length, 2);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("nested callable control flow records lexical captures", () => {
   const source = "let outer = (base: I32) => do\n" +
     "  let inner = (value: I32) => base + value;\n" +

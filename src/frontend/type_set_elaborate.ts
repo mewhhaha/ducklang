@@ -759,7 +759,8 @@ function materialize_structural_function_result_types(
     if (
       stmt.tag !== "bind" ||
       (stmt.value.tag !== "lam" && stmt.value.tag !== "rec") ||
-      stmt.type_annotation?.tag === "forall"
+      stmt.type_annotation?.tag === "forall" ||
+      stmt.value.computational_package_result === true
     ) {
       materialized.push(stmt);
       continue;
@@ -1134,6 +1135,9 @@ function elaborate_binding_pattern(
 ): Stmt[] {
   const pattern = stmt.pattern;
   expect(pattern, "Missing complex binding pattern");
+  const transfers_linear_components = pattern_bindings(pattern).some(
+    (binding) => binding.mode === "linear",
+  );
   const source_name = fresh_pattern_source_name(scope);
   let source_shape = resolve_binding_pattern_source(
     stmt.value,
@@ -1167,7 +1171,7 @@ function elaborate_binding_pattern(
       kind: stmt.kind,
       name: source_name,
       is_recursive: stmt.is_recursive,
-      is_linear: false,
+      is_linear: transfers_linear_components,
       annotation: source_annotation,
       type_annotation: stmt.type_annotation,
       effectful: stmt.effectful,

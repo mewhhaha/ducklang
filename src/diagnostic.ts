@@ -235,6 +235,16 @@ export const diagnostic_registry = {
     "proof_refinement",
     "error",
   ),
+  computational_existential_invalid: diagnostic_definition(
+    "DUCK2609",
+    "proof_refinement",
+    "error",
+  ),
+  non_uniform_dependent_layout: diagnostic_definition(
+    "DUCK2610",
+    "proof_refinement",
+    "error",
+  ),
 } as const;
 
 export type DiagnosticName = keyof typeof diagnostic_registry;

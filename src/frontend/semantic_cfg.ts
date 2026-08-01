@@ -699,6 +699,23 @@ export function semantic_calls_at_span(
   return calls;
 }
 
+export function unique_semantic_node_at_span(
+  control_flow: SemanticCfg,
+  span: SourceSpan,
+): { block: SemanticBlock; node: SemanticNode } | undefined {
+  let found: { block: SemanticBlock; node: SemanticNode } | undefined;
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (node.span.start !== span.start || node.span.end !== span.end) {
+        continue;
+      }
+      if (found !== undefined) return undefined;
+      found = { block, node };
+    }
+  }
+  return found;
+}
+
 export function unique_semantic_index_at_span(
   control_flow: SemanticCfg,
   span: SourceSpan,

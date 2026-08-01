@@ -21,6 +21,7 @@ import {
   unique_semantic_call_at_span,
   unique_semantic_index_at_span,
   unique_semantic_narrowing_at_span,
+  unique_semantic_node_at_span,
   unique_semantic_primitive_at_span,
   unique_semantic_slice_at_span,
 } from "./semantic_cfg.ts";
@@ -919,6 +920,38 @@ export function verify_semantic_machine_certificate(
     control_flow,
     call_span,
     requirement,
+  ) === "proved";
+}
+
+export function verify_semantic_machine_checkpoint_certificate(
+  certificate: SemanticMachineCertificate,
+  control_flow: SemanticCfg,
+  checkpoint_span: SourceSpan,
+  requirement: SemanticMachineRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic machine checkpoint certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "machine_fact",
+    "Semantic machine checkpoint certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== checkpoint_span.start ||
+    certificate.call_span.end !== checkpoint_span.end ||
+    !same_machine_requirement(certificate.requirement, requirement)
+  ) {
+    return false;
+  }
+  const target = unique_semantic_node_at_span(control_flow, checkpoint_span);
+  if (target === undefined) return false;
+  return verify_semantic_paths(
+    control_flow,
+    checkpoint_span,
+    requirement,
+    undefined,
+    target,
   ) === "proved";
 }
 

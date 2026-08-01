@@ -78,6 +78,30 @@ Deno.test("Duck compiler checks and erases contracts before gpufuck", async () =
   }
 });
 
+Deno.test("Duck compiler retains computational witnesses after proof erasure", async () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "read(make(21i32))\n";
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(source);
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases checked refinement signatures", async () => {
   const refined_source = "type identity = " +
     "(value: {refined: I32 | refined = refined}) -> " +
