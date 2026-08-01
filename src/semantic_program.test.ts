@@ -2156,6 +2156,24 @@ Deno.test("checked refinement signatures erase to their base representation", ()
   assert_equals(reflexive.diagnostics, []);
   assert_equals(reflexive.proofs.size, 1);
 
+  const product_parameter = analyze_duck_source(parse_duck_source(
+    "type accept = " +
+      "(input: {value: I32 | [value, value] = [value, value]}) -> I32\n" +
+      "let accept = input => input;\n" +
+      "accept(1i32)\n",
+  ));
+  assert_equals(product_parameter.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(product_parameter)), []);
+
+  const product_result = analyze_duck_source(parse_duck_source(
+    "type make = () -> " +
+      "{value: I32 | [value, value] = [value, value]}\n" +
+      "let make = () => 1i32;\n" +
+      "make()\n",
+  ));
+  assert_equals(product_result.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(product_result)), []);
+
   const unproved = analyze_duck_source(parse_duck_source(
     "type identity = (value: I32) -> {answer: I32 | answer = 0}\n" +
       "let identity = value => value;\n" +
@@ -6159,6 +6177,23 @@ Deno.test("direct quantified proof terms produce checked kernel terms", () => {
       true,
     );
   }
+});
+
+Deno.test("quantified proofs elaborate structural product terms", () => {
+  const source = "type empty_product_reflexivity = () -> Proof [] = []\n" +
+    "let empty_product_reflexivity = () => by refl;\n" +
+    "type singleton_product_reflexivity = () -> " +
+    "Proof forall (value: I32). [value] = [value]\n" +
+    "let singleton_product_reflexivity = () => " +
+    "by { intro value exact refl };\n" +
+    "type product_reflexivity = () -> " +
+    "Proof forall (value: I32). [value, value] = [value, value]\n" +
+    "let product_reflexivity = () => by { intro value exact refl };\n" +
+    "42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 3);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
 });
 
 Deno.test("direct equality transformations produce checked kernel terms", () => {

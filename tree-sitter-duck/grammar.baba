@@ -464,6 +464,7 @@ prefix_proposition_postfix_term = (
                                    | prefix_proposition_field_term
                                    | prefix_proposition_index_term
                                    | prefix_proposition_parenthesized_term
+                                   | prefix_proposition_product_term
                                    | number
                                    | string
                                    | character
@@ -475,6 +476,18 @@ prefix_proposition_postfix_term = (
                                    | _aggregate_constructor_identifier
                                    | _effect_identifier_alias
                                    | linear_reference
+                                 ) ;
+
+prefix_proposition_product_term = (
+                                   "["
+                                   (
+                                     (
+                                       prefix_proposition_term
+                                       (("," prefix_proposition_term))*
+                                     )
+                                     (",")?
+                                   )?
+                                   "]"
                                  ) ;
 
 prefix_proposition_call_term = (

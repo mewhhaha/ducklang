@@ -1257,6 +1257,14 @@ function term_shape_from_node(
       ).map((child) => term_from_node(child, source)),
     };
   }
+  if (node.kind === "prefix_proposition_product_term") {
+    return {
+      tag: "product",
+      values: node.children.filter((child) =>
+        child.kind === "prefix_proposition_term"
+      ).map((child) => term_from_node(child, source)),
+    };
+  }
   if (node.kind === "computational_pack_expression") {
     const values = computational_pack_value_nodes(node);
     if (values.length !== 2) return { tag: "unsupported" };

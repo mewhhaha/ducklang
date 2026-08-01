@@ -7822,6 +7822,9 @@ function prefix_term_has_kernel_representation(term: PrefixTerm): boolean {
     ) && prefix_term_has_kernel_representation(term.shape.left) &&
       prefix_term_has_kernel_representation(term.shape.right);
   }
+  if (term.shape.tag === "product") {
+    return term.shape.values.every(prefix_term_has_kernel_representation);
+  }
   return false;
 }
 
@@ -13333,6 +13336,18 @@ function rename_prefix_term_reference(
       },
     };
   }
+  if (shape.tag === "product") {
+    return {
+      ...term,
+      references,
+      shape: {
+        tag: "product",
+        values: shape.values.map((value) =>
+          rename_prefix_term_reference(value, from, to)
+        ),
+      },
+    };
+  }
   if (shape.tag === "field" || shape.tag === "index") {
     return {
       ...term,
@@ -13403,6 +13418,100 @@ function check_prefix_ensures(
         ensures.span,
       ),
     );
+  }
+  const declared_result_name = signature.type.result.name;
+  if (declared_result_name !== undefined) {
+    const declarations = new Map<string, KernelType>();
+    const term_context: KernelType[] = [];
+    const term_indices = new Map<string, number>();
+    const term_types = new Map<string, LogicalTermType>();
+    for (const parameter of signature.type.parameters) {
+      if (parameter.type.proof !== undefined) continue;
+      const logical_type = logical_term_type_from_reference({
+        ...parameter.type,
+        refinement: undefined,
+      });
+      declarations.set(logical_type.representation, type_sort(0));
+      term_indices.set(parameter.name, term_context.length);
+      term_types.set(parameter.name, logical_type);
+      term_context.push({
+        tag: "constant",
+        name: logical_type.representation,
+      });
+    }
+    const logical_result = logical_term_type_from_reference({
+      ...signature.type.result.type,
+      refinement: undefined,
+    });
+    declarations.set(logical_result.representation, type_sort(0));
+    term_indices.set(declared_result_name, term_context.length);
+    term_types.set(declared_result_name, logical_result);
+    term_context.push({
+      tag: "constant",
+      name: logical_result.representation,
+    });
+    const facts = new Map<string, PrefixFactSignature>();
+    const context: PrefixKernelProofContext = {
+      allow_unsafe: false,
+      declaration_name: signature.name,
+      declarations,
+      facts,
+      proof_indices: new Map(),
+      proof_propositions: new Map(),
+      term_context,
+      term_indices,
+      term_types,
+      type_names: new Set(
+        [...term_types.values()].map((type) => type.representation),
+      ),
+    };
+    const left = prefix_kernel_term(
+      signature.name,
+      ensures.left,
+      context,
+      facts,
+    );
+    const right = prefix_kernel_term(
+      signature.name,
+      ensures.right,
+      context,
+      facts,
+    );
+    const environment = KernelEnvironment.from(declarations);
+    const stable_term_context = snapshot_kernel_context(term_context);
+    if (
+      left !== undefined && right !== undefined &&
+      left.type_name === right.type_name &&
+      term_equal(
+        left.term,
+        right.term,
+        stable_term_context,
+        environment,
+      )
+    ) {
+      const goal = {
+        tag: "equal" as const,
+        type: left.type,
+        left: left.term,
+        right: right.term,
+      };
+      return ok({
+        key: proof_key,
+        proof: Object.freeze({
+          certificate: check_proof(
+            { tag: "refl", type: left.type, term: left.term },
+            goal,
+            {
+              allow_unsafe: false,
+              environment,
+              term_context: stable_term_context,
+            },
+          ),
+          environment,
+          term_context: stable_term_context,
+        }),
+      });
+    }
   }
   if (ensures.left.text === "result" && ensures.right.text === "result") {
     const result_type_name = signature.type.result.type.canonical;

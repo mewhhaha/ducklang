@@ -64,6 +64,49 @@ Deno.test("prefix source extraction retains constructor membership", () => {
   assert_equals(proof.type.canonical, "#Some");
 });
 
+Deno.test("prefix source extraction retains proposition products", () => {
+  const source = "type empty = () -> Proof [] = []\n" +
+    "let empty = () => by refl;\n" +
+    "type reflexive = () -> " +
+    "Proof forall (value: I32). [value, value] = [value, value]\n" +
+    "let reflexive = () => by { intro value exact refl };\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  const empty = metadata.signatures[0]?.type.result.type.proof;
+  if (empty?.tag !== "equal") {
+    throw new Error("Expected empty product equality.");
+  }
+  assert_equals(empty.left.shape, { tag: "product", values: [] });
+  const proof = metadata.signatures[1]?.type.result.type.proof;
+  if (proof?.tag !== "forall" || proof.proposition.tag !== "equal") {
+    throw new Error("Expected quantified product equality.");
+  }
+  const left = proof.proposition.left.shape;
+  if (left.tag !== "product") {
+    throw new Error("Expected a product proposition term.");
+  }
+  assert_equals(
+    left.values.map((value) => value.shape),
+    [
+      { tag: "name", name: "value" },
+      { tag: "name", name: "value" },
+    ],
+  );
+
+  const singleton_source = "type singleton = () -> " +
+    "Proof forall (value: I32). [value] = [value]\n" +
+    "let singleton = () => by { intro value exact refl };\n";
+  const singleton = extract_prefix_source_metadata(
+    parse_duck_source(singleton_source),
+  ).signatures[0]?.type.result.type.proof;
+  if (
+    singleton?.tag !== "forall" || singleton.proposition.tag !== "equal" ||
+    singleton.proposition.left.shape.tag !== "product"
+  ) {
+    throw new Error("Expected singleton product equality.");
+  }
+  assert_equals(singleton.proposition.left.shape.values.length, 1);
+});
+
 Deno.test("prefix source extraction records fact definition kinds", () => {
   const source = "type multiple_of = (value: I32) -> Prop\n" +
     "opaque fact multiple_of = value => true;\n";

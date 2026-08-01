@@ -6791,7 +6791,26 @@
           "named": true
         },
         {
+          "type": "prefix_proposition_product_term",
+          "named": true
+        },
+        {
           "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "prefix_proposition_product_term",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "prefix_proposition_term",
           "named": true
         }
       ]

@@ -219,6 +219,17 @@ Deno.test("format_text round trips quantified proof terms", () => {
     "package, witness, evidence => exists_intro(witness, evidence));\n";
   const wide_formatted = format_text(wide);
   assert_equals(format_text(wide_formatted), wide_formatted);
+
+  const product = "type empty_product_reflexivity=()->Proof []=[]\n" +
+    "let empty_product_reflexivity=()=>by refl;\n" +
+    "type singleton_product_reflexivity=()->" +
+    "Proof forall(value:I32).[value]=[value]\n" +
+    "let singleton_product_reflexivity=()=>by{intro value exact refl};\n" +
+    "type product_reflexivity=()->" +
+    "Proof forall(value:I32).[value,value]=[value,value]\n" +
+    "let product_reflexivity=()=>by{intro value exact refl};\n";
+  const product_formatted = format_text(product);
+  assert_equals(format_text(product_formatted), product_formatted);
 });
 
 Deno.test("format_text round trips unsafe proof assumptions", () => {
