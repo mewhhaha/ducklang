@@ -9,29 +9,29 @@ const { .decode_list_mcp_resource_args, .decode_read_mcp_resource_args, .resourc
 
 type ResourceJsonParsed = McpResourceParsedArgs
 
-const parse_resource_json: [Text, Bool] -> ResourceJsonParsed = (
+const parse_resource_json: (Text, Bool) -> ResourceJsonParsed = (
   document: Text,
   read_resource: Bool,
-) => {
+) => do
   let normalized = text_trim_ascii_whitespace document;
-  if normalized == "" {
-    if read_resource { resource_parse_failure "expected value" } else {
+  if normalized == "" then
+    if read_resource then resource_parse_failure "expected value" else
       decode_list_mcp_resource_args(
-        `Null ()
-      ) }
-  } else {
+        #Null
+      ) end;
+  else
     let parsed = parse_json_document normalized;
-    if let `Ok value_and_position = parsed {
+    if let #Ok value_and_position = parsed then
       let [value, _] = value_and_position;
-      if read_resource { decode_read_mcp_resource_args value } else { decode_list_mcp_resource_args
-        value }
-    } else if let `Err error = parsed {
+      if read_resource then decode_read_mcp_resource_args value else decode_list_mcp_resource_args
+        value end;
+    else let #Err error = parsed then
       let [position, message] = error;
       resource_parse_failure(text_append(message, text_append(" at byte ", format_i32 position)))
-    } else {
+    else
       resource_parse_failure "invalid JSON parse result"
-    }
-  }
-};
+    end;
+  end;
+end;
 
 return { .parse_resource_json };

@@ -1,0 +1,34 @@
+module () where
+
+const { .render_realtime_diff } = import "./realtime.duck" ();
+
+return {
+  .absent_inactive = render_realtime_diff(
+    #RealtimeInactive,
+    #NoRealtimeSnapshot,
+  ),
+  .absent_active = render_realtime_diff(
+    #RealtimeActive,
+    #NoRealtimeSnapshot,
+  ),
+  .inactive_to_custom = render_realtime_diff(
+    #RealtimeActiveWithInstructions "custom realtime instructions",
+    #KnownRealtimeInactive,
+  ),
+  .active_to_changed_custom = render_realtime_diff(
+    #RealtimeActiveWithInstructions "changed custom realtime instructions",
+    #KnownRealtimeActive,
+  ),
+  .active_to_inactive = render_realtime_diff(
+    #RealtimeInactive,
+    #KnownRealtimeActive,
+  ),
+  .unknown_active = render_realtime_diff(
+    #RealtimeActive,
+    #UnknownRealtimeSnapshot,
+  ),
+  .unknown_inactive = render_realtime_diff(
+    #RealtimeInactive,
+    #UnknownRealtimeSnapshot,
+  ),
+};

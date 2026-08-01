@@ -8,7 +8,7 @@ type FixtureQuestion = RequestUserInputQuestion
 type FixtureQuestionNode = RequestUserInputQuestionNode
 type FixtureQuestions = RequestUserInputQuestions
 
-let missing_questions: FixtureQuestions = `Cons (
+let missing_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -16,13 +16,14 @@ let missing_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = false,
-      .options = `Missing (),
+      .options = #Missing,
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
-let missing: FixtureArgs = [.questions = missing_questions, .auto_resolution = `NoAutoResolution ()];
-let empty_questions: FixtureQuestions = `Cons (
+let missing: FixtureArgs =
+  [.questions = missing_questions, .auto_resolution = #NoAutoResolution];
+let empty_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -30,19 +31,21 @@ let empty_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = false,
-      .options = `Present (`Nil ()),
+      .options = #Present (#Nil),
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
-let empty: FixtureArgs = [.questions = empty_questions, .auto_resolution = `NoAutoResolution ()];
+let empty: FixtureArgs = [.questions = empty_questions, .auto_resolution = #NoAutoResolution];
 let score = 0;
 
-if let `Invalid message = normalize_request_user_input_args missing {
-  if message == "request_user_input requires non-empty options for every question" { score = score + 1 }
-}
-if let `Invalid message = normalize_request_user_input_args empty {
-  if message == "request_user_input requires non-empty options for every question" { score = score + 10 }
-}
+if let #Invalid message = normalize_request_user_input_args missing then
+  if message == "request_user_input requires non-empty options for every question" then
+    score = score + 1 end;
+end;
+if let #Invalid message = normalize_request_user_input_args empty then
+  if message == "request_user_input requires non-empty options for every question" then
+    score = score + 10 end;
+end;
 
 return { .score = score };

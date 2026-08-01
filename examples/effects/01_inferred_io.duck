@@ -9,11 +9,11 @@ declare Init {
   io: Io
 }
 
-let greet = () => {
+let greet = () => do
   name <- Io.read()
   _ <- Io.print(&name)
   name
-};
+end;
 
 result <- greet();
 return { .result = result };

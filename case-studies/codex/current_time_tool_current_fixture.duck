@@ -7,17 +7,19 @@ type FixtureDefinitions = ToolDefinitions
 
 let definitions: FixtureDefinitions = current_time_tool_definitions(true, false);
 let score = 0;
-if let `Cons node = definitions {
+if let #Cons node = definitions then
   let [definition, tail] = node;
   let [name, _, tool_handler, _, supports_parallel, waits_for_cancellation] = definition;
   let [namespace, local_name] = name;
   if namespace == "clock" && local_name == "curr_time" && !(supports_parallel) && !(
     waits_for_cancellation
-  ) {
-    if let `CurrentTime () = tool_handler {
-      if let `Nil () = tail { score = 1 }
-    }
-  }
-}
+  ) then
+    if let #CurrentTime = tool_handler then
+      if let #Nil = tail then
+        score = 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

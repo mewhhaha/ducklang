@@ -1,17 +1,18 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@mewhhaha/baba@6.1.0": "6.1.0",
-    "jsr:@mewhhaha/gpufuck@0.4": "0.4.0",
+    "jsr:@mewhhaha/baba@7.0.0": "7.0.0",
+    "jsr:@mewhhaha/gpufuck@0.7": "0.7.0",
     "jsr:@mewhhaha/typeclasses@~0.5.2": "0.5.2",
-    "npm:typescript@5.9.3": "5.9.3"
+    "npm:typescript@5.9.3": "5.9.3",
+    "npm:web-tree-sitter@0.26.11": "0.26.11"
   },
   "jsr": {
-    "@mewhhaha/baba@6.1.0": {
-      "integrity": "b33c190bff560c41a20af553302c6b3745ddf06fbc263f40d2ab8aedcfc54f76"
+    "@mewhhaha/baba@7.0.0": {
+      "integrity": "ffcf9676f69b1f560465bf674f46cf41d44130e8600ba1bf20e8635546b6b705"
     },
-    "@mewhhaha/gpufuck@0.4.0": {
-      "integrity": "c63f2652b8a7ac71a49d00912079985e5f622382e588ed1243936af97e52e248"
+    "@mewhhaha/gpufuck@0.7.0": {
+      "integrity": "bbc731d57f3b5443c337fa06a5c3cec0d3b8c75cf29a84a1e55abcb0fcec5b10"
     },
     "@mewhhaha/typeclasses@0.5.2": {
       "integrity": "0e853aae75065735a1879eb62c24d6e9ae7c826e9c4cf892cec559ee47182cae",
@@ -24,13 +25,17 @@
     "typescript@5.9.3": {
       "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
       "bin": true
+    },
+    "web-tree-sitter@0.26.11": {
+      "integrity": "sha512-Q5Dm3YTIXSXuH6FxX6RuzX2Qwpc4DPGiYMU87Wg5Z8OIStiQFiUex4zMDc0vBTw78EphaYJacncJghCHzbZptg=="
     }
   },
   "workspace": {
     "dependencies": [
-      "jsr:@mewhhaha/baba@6.1.0",
-      "jsr:@mewhhaha/gpufuck@0.4",
-      "jsr:@mewhhaha/typeclasses@~0.5.2"
+      "jsr:@mewhhaha/baba@7.0.0",
+      "jsr:@mewhhaha/gpufuck@0.7",
+      "jsr:@mewhhaha/typeclasses@~0.5.2",
+      "npm:web-tree-sitter@0.26.11"
     ]
   }
 }

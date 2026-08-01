@@ -7,27 +7,33 @@ type SyncExecutionArgs = TestSyncArgs
 type SyncExecutionResult = TestSyncExecutionResult
 type SyncExecutionBarrierResult = TestSyncBarrierHostResult
 
-let run_test_sync = (args: SyncExecutionArgs) => {
-  if let `SyncDurationPresent duration = args.sleep_before_ms {
-    if duration != "0" { _ <- TestSyncHost.sleep(&duration) }
-  }
+let run_test_sync = (args: SyncExecutionArgs) => do
+  if let #SyncDurationPresent duration = args.sleep_before_ms then
+    if duration != "0" then
+      _ <- TestSyncHost.sleep(&duration)
+    end;
+  end;
 
-  let result: SyncExecutionResult = `Completed "ok";
+  let result: SyncExecutionResult = #Completed "ok";
   let continue_after_barrier = true;
-  if let `SyncBarrierPresent barrier = args.barrier {
+  if let #SyncBarrierPresent barrier = args.barrier then
     host_result <- TestSyncHost.barrier(&barrier)
     let barrier_result: SyncExecutionBarrierResult = host_result;
     result = finish_test_sync_barrier(barrier.id, barrier_result)
-    if let `Rejected _ = result { continue_after_barrier = false }
-  }
+    if let #Rejected _ = result then
+      continue_after_barrier = false
+    end;
+  end;
 
-  if continue_after_barrier {
-    if let `SyncDurationPresent duration = args.sleep_after_ms {
-      if duration != "0" { _ <- TestSyncHost.sleep(&duration) }
-    }
-  }
+  if continue_after_barrier then
+    if let #SyncDurationPresent duration = args.sleep_after_ms then
+      if duration != "0" then
+        _ <- TestSyncHost.sleep(&duration)
+      end;
+    end;
+  end;
 
   result
-};
+end;
 
 return { .run_test_sync };

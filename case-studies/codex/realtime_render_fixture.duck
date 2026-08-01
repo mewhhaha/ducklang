@@ -1,0 +1,17 @@
+module () where
+
+const {
+  .realtime_end_instructions,
+  .realtime_start_instructions,
+  .realtime_start_with_instructions,
+} = import "./realtime.duck" ();
+
+let default_start: Text = realtime_start_instructions();
+let custom_start: Text = realtime_start_with_instructions "custom realtime instructions";
+let end_instructions: Text = realtime_end_instructions "inactive";
+
+return {
+  .default_start = default_start,
+  .custom_start = custom_start,
+  .end = end_instructions,
+};

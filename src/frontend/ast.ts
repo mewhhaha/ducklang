@@ -236,6 +236,7 @@ export type Stmt =
     annotation: string | undefined;
     type_annotation?: TypeExpr;
     effectful?: boolean;
+    duck_member_alias?: true;
     mutual?: RecursiveBinding[];
     attribute_groups?: AttributeGroup[];
     value: FrontExpr;
@@ -312,6 +313,8 @@ export type FrontExpr =
     pattern?: Pattern;
     params: Param[];
     body: FrontExpr;
+    case_function?: true;
+    computational_package_result?: true;
     /**
      * Parameter names synthesised from argument holes, in the order the holes
      * were written. Present only on a lambda the parser lifted out of
@@ -320,7 +323,13 @@ export type FrontExpr =
      */
     hole_params?: string[];
   }
-  | { tag: "rec"; pattern?: Pattern; params: Param[]; body: FrontExpr }
+  | {
+    tag: "rec";
+    pattern?: Pattern;
+    params: Param[];
+    body: FrontExpr;
+    computational_package_result?: true;
+  }
   | {
     tag: "app";
     func: FrontExpr;
@@ -330,7 +339,12 @@ export type FrontExpr =
     operator_syntax?: OperatorSyntax;
     effect_type_arguments?: { name: string; type_name: string }[];
   }
-  | { tag: "product"; entries: ProductExprEntry[]; value_pack?: true }
+  | {
+    tag: "product";
+    entries: ProductExprEntry[];
+    value_pack?: true;
+    template_literal?: true;
+  }
   | { tag: "shape"; entries: ProductExprEntry[] }
   | {
     tag: "array";
@@ -493,13 +507,14 @@ export type FrontType =
   | { tag: "wide_int"; integer: IntegerType }
   | { tag: "f32x4" }
   | { tag: "atom"; name: string }
-  | { tag: "text"; encoding?: "bytes" }
+  | { tag: "text"; encoding?: "bytes"; literal?: string }
   | { tag: "type" }
   | { tag: "set"; type_expr: TypeExpr }
   | {
     tag: "struct";
     fields: string[];
     field_types: TypeField[] | undefined;
+    field_value_types?: FrontType[];
     nominal_name?: string;
   }
   | { tag: "union"; case_name: string }

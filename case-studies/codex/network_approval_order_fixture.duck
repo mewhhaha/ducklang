@@ -14,8 +14,8 @@ type FixtureCall = NetworkApprovalCall
 type FixtureState = NetworkApprovalState
 type FixtureFinish = NetworkFinishOutcome
 
-let deferred: FixtureMode = `Deferred ();
-let no_outcome: FixtureOutcome = `NoOutcome ();
+let deferred: FixtureMode = #Deferred;
+let no_outcome: FixtureOutcome = #NoOutcome;
 let first: FixtureCall = ["registration-a", "local", "curl a", deferred, no_outcome, false];
 let second: FixtureCall = ["registration-b", "local", "curl b", deferred, no_outcome, false];
 let third: FixtureCall = ["registration-c", "local", "curl c", deferred, no_outcome, false];
@@ -24,55 +24,56 @@ state = register_network_call(state, first)
 state = register_network_call(state, second)
 state = register_network_call(state, third)
 
-let updated = record_call_outcome(state, "registration-b", `DeniedByPolicy "blocked", false);
+let updated = record_call_outcome(state, "registration-b", #DeniedByPolicy "blocked", false);
 let [active, _, _, _] = updated;
 let update_ordered = false;
-if let `Cons first_node = active {
+if let #Cons first_node = active then
   let [first_active, tail] = first_node;
   let [first_id, _, _, _, _, _] = first_active;
-  if let `Cons second_node = tail {
+  if let #Cons second_node = tail then
     let [second_active, tail] = second_node;
     let [second_id, _, _, _, second_outcome, _] = second_active;
-    if let `Cons third_node = tail {
+    if let #Cons third_node = tail then
       let [third_active, tail] = third_node;
       let [third_id, _, _, _, _, _] = third_active;
-      if let `Nil () = tail {
-        if let `DeniedByPolicy message = second_outcome {
-          if first_id == "registration-c" && second_id == "registration-b" && third_id == "registration-a" && message == "blocked" {
-            update_ordered = true
-          }
-        }
-      }
-    }
-  }
-}
+      if let #Nil = tail then
+        if let #DeniedByPolicy message = second_outcome then
+          if first_id == "registration-c" && second_id == "registration-b" && third_id
+            == "registration-a" && message == "blocked" then
+              update_ordered = true
+            end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let finished = finish_network_call(updated, "registration-b");
 let [finish_state, raw_finish] = finished;
 let finish: FixtureFinish = raw_finish;
 let [remaining, _, _, _] = finish_state;
 let finish_ordered = false;
-if let `Cons first_node = remaining {
+if let #Cons first_node = remaining then
   let [first_active, tail] = first_node;
   let [first_id, _, _, _, _, _] = first_active;
-  if let `Cons second_node = tail {
+  if let #Cons second_node = tail then
     let [second_active, tail] = second_node;
     let [second_id, _, _, _, _, _] = second_active;
-    if let `Nil () = tail {
-      if first_id == "registration-c" && second_id == "registration-a" {
+    if let #Nil = tail then
+      if first_id == "registration-c" && second_id == "registration-a" then
         finish_ordered = true
-      }
-    }
-  }
-}
+      end;
+    end;
+  end;
+end;
 
 let score = 0;
-if update_ordered && finish_ordered {
-  if let `Rejected message = finish {
-    if message == "blocked" {
+if update_ordered && finish_ordered then
+  if let #Rejected message = finish then
+    if message == "blocked" then
       score = score + 1
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

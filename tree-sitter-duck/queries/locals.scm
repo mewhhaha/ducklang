@@ -1,6 +1,7 @@
 [
   (source_file)
   (block)
+  (conditional_branch)
   (arrow_function)
   (recursive_function)
   (effect_handler_expression)

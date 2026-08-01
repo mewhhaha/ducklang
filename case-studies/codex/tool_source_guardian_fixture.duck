@@ -8,11 +8,11 @@ type FixtureFacts = ToolSourceFacts
 type FixtureDefinition = SourceDefinition
 type FixtureDefinitions = ToolSourceDefinitions
 
-const guardian_facts: FixtureEnvironment -> FixtureFacts = environment => {
+const guardian_facts: FixtureEnvironment -> FixtureFacts = environment => do
   [
     .guardian_reviewer = true,
     .environment = environment,
-    .shell = `DisabledShell (),
+    .shell = #DisabledShell,
     .has_mcp_servers = true,
     .deferred_executor = true,
     .request_user_input = true,
@@ -20,31 +20,31 @@ const guardian_facts: FixtureEnvironment -> FixtureFacts = environment => {
     .token_budget = true,
     .current_time = true,
     .sleep_tool = true,
-    .plugin_install = `ListPluginInstall (),
+    .plugin_install = #ListPluginInstall,
     .apply_patch = true,
     .test_sync = true,
-    .collaboration = `CollaborationV2 (),
+    .collaboration = #CollaborationV2,
     .collaboration_direct_model_only = true,
     .namespace_tools = true,
     .collaboration_namespace = "collaboration",
     .tool_search = true,
     .agent_jobs = true,
     .agent_job_worker = true]
-};
+end;
 
 let configured: FixtureDefinition = [
   ["fixture", "configured"],
-  `Deferred (),
-  `Dynamic "configured",
-  `FunctionPayload (),
+  #Deferred,
+  #Dynamic "configured",
+  #FunctionPayload,
   false,
   false,
 ];
-let configured_runtimes: FixtureDefinitions = `Cons ([configured, `Nil ()]);
-let empty_extension_runtimes: FixtureDefinitions = `Nil ();
-let empty_dynamic_runtimes: FixtureDefinitions = `Nil ();
+let configured_runtimes: FixtureDefinitions = #Cons ([configured, #Nil]);
+let empty_extension_runtimes: FixtureDefinitions = #Nil;
+let empty_dynamic_runtimes: FixtureDefinitions = #Nil;
 let current = tool_source_definitions(
-  guardian_facts(`MultipleEnvironments ()),
+  guardian_facts(#MultipleEnvironments),
   configured_runtimes,
   empty_extension_runtimes,
   empty_dynamic_runtimes,
@@ -54,38 +54,50 @@ let trace = "";
 let handler_count = 0;
 let done = false;
 
-loop {
-  if let `Cons node = current {
+loop do
+  if let #Cons node = current then
     let [definition, tail] = node;
     let [[_, local_name], _, tool_handler, _, _, _] = definition;
-    trace = text_append [local_name, text_append ["|", trace]]
-    if local_name == "exec_command" {
-      if let `UnifiedExec () = tool_handler { handler_count = handler_count + 1 }
-    } else if local_name == "write_stdin" {
-      if let `WriteStdin () = tool_handler { handler_count = handler_count + 1 }
-    } else if local_name == "view_image" {
-      if let `ViewImage () = tool_handler { handler_count = handler_count + 1 }
-    }
+    trace = text_append (local_name, text_append ("|", trace))
+    if local_name == "exec_command" then
+      if let #UnifiedExec = tool_handler then
+        handler_count = handler_count + 1
+      end;
+    else local_name == "write_stdin" then
+      if let #WriteStdin = tool_handler then
+        handler_count = handler_count + 1
+      end;
+    else local_name == "view_image" then
+      if let #ViewImage = tool_handler then
+        handler_count = handler_count + 1
+      end;
+    end;
     current = tail
-  } else {
+  else
     done = true
-  }
+  end;
 
-  if done { break; }
-}
+  if done then
+    break;
+  end;
+end;
 
-if trace == "view_image|write_stdin|exec_command|" { score = score + 1 }
-if handler_count == 3 { score = score + 10 }
-let empty_configured_runtimes: FixtureDefinitions = `Nil ();
-empty_extension_runtimes = `Nil ()
-empty_dynamic_runtimes = `Nil ()
-if let `Nil () = tool_source_definitions(
-  guardian_facts(`NoEnvironment ()),
+if trace == "view_image|write_stdin|exec_command|" then
+  score = score + 1
+end;
+if handler_count == 3 then
+  score = score + 10
+end;
+let empty_configured_runtimes: FixtureDefinitions = #Nil;
+empty_extension_runtimes = #Nil
+empty_dynamic_runtimes = #Nil
+if let #Nil = tool_source_definitions(
+  guardian_facts(#NoEnvironment),
   empty_configured_runtimes,
   empty_extension_runtimes,
   empty_dynamic_runtimes,
-) {
+) then
   score = score + 100
-}
+end;
 
 return { .score = score };

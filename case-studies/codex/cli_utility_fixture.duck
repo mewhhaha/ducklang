@@ -18,11 +18,13 @@ let doctor_input: FixtureArgs = args.prepend(
   ),
 );
 let doctor: FixtureResult = parse_doctor_options doctor_input;
-if let `Ok command = doctor {
-  if let `RunDoctor options = command {
-    if options.json && options.summary && options.all && options.no_color && options.ascii { score = score + 1 }
-  }
-}
+if let #Ok command = doctor then
+  if let #RunDoctor options = command then
+    if options.json && options.summary && options.all && options.no_color && options.ascii then
+      score = score + 1
+    end;
+  end;
+end;
 
 let apply_input: FixtureArgs = args.prepend(
   "task-7",
@@ -32,16 +34,19 @@ let apply_input: FixtureArgs = args.prepend(
   ),
 );
 let apply: FixtureResult = parse_apply_options apply_input;
-if let `Ok command = apply {
-  if let `ApplyTask options = command {
+if let #Ok command = apply then
+  if let #ApplyTask options = command then
     let first = args.nth_or("", 0, options.config_overrides);
     let second = args.nth_or("", 1, options.config_overrides);
-    if options.task_id == "task-7" && first == "model=o3" && second == "sandbox=workspace-write" {
-      score = score + 10 }
-  }
-}
+    if options.task_id == "task-7" && first == "model=o3" && second
+      == "sandbox=workspace-write" then
+        score = score + 10 end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_apply_options(args.empty());
-if let `Err _ = invalid { score = score + 100 }
+if let #Err _ = invalid then
+  score = score + 100
+end;
 
 return { .score = score };

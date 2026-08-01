@@ -22,4 +22,4 @@ let matches = texts.length(command) == 3 && texts.nth_or("", 0, command) == "rg"
   command,
 ) == "-g*.duck" && texts.nth_or("", 2, command) == "hello world";
 
-return { .score = if matches { 2 } else { 0 } };
+return { .score = if matches then 2 else 0 end };

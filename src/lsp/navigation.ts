@@ -416,18 +416,52 @@ export function rename_symbol(
     return undefined;
   }
 
-  if (rename_conflicts(index, entity, new_name)) {
+  const rename_entities = new Map<EntityId, BindingEntity>([
+    [entity.id, entity],
+  ]);
+  const pending = [entity];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined) {
+      throw new Error("Rename entity queue cannot contain holes");
+    }
+    if (current.replaces !== undefined) {
+      const replaced = index.entities.get(current.replaces);
+      if (replaced === undefined) {
+        throw new Error("Missing replaced rename entity: " + current.replaces);
+      }
+      if (!rename_entities.has(replaced.id)) {
+        rename_entities.set(replaced.id, replaced);
+        pending.push(replaced);
+      }
+    }
+    for (const candidate of index.entities.values()) {
+      if (
+        candidate.replaces === current.id &&
+        !rename_entities.has(candidate.id)
+      ) {
+        rename_entities.set(candidate.id, candidate);
+        pending.push(candidate);
+      }
+    }
+  }
+
+  if (rename_conflicts(index, [...rename_entities.values()], new_name)) {
     return undefined;
   }
 
-  const occurrences = entity_occurrences(index, entity.id, true);
+  const occurrences: BindingOccurrence[] = [];
+  for (const current of rename_entities.values()) {
+    occurrences.push(...entity_occurrences(index, current.id, true));
+  }
+  occurrences.sort((left, right) => left.span.start - right.span.start);
 
   for (const item of occurrences) {
     const visible = index.visible_at(item.span.start);
 
     if (
       visible.some((candidate) =>
-        candidate.id !== entity.id && candidate.name === new_name
+        !rename_entities.has(candidate.id) && candidate.name === new_name
       )
     ) {
       return undefined;
@@ -605,24 +639,35 @@ function rename_occurrence(
 
 function rename_conflicts(
   index: BindingIndex,
-  entity: BindingEntity,
+  entities: readonly BindingEntity[],
   new_name: string,
 ): boolean {
-  if (entity.owner !== undefined) {
-    const members = index.members.get(entity.owner);
-    let existing: EntityId | undefined;
-
-    if (members !== undefined) {
-      existing = members.get(new_name);
+  if (entities.length === 0) {
+    throw new Error("Rename requires at least one entity");
+  }
+  const renamed = new Set(entities.map((candidate) => candidate.id));
+  for (const entity of entities) {
+    if (entity.owner !== undefined) {
+      const members = index.members.get(entity.owner);
+      let existing: EntityId | undefined;
+      if (members !== undefined) {
+        existing = members.get(new_name);
+      }
+      if (existing !== undefined && !renamed.has(existing)) {
+        return true;
+      }
+      continue;
     }
 
-    return existing !== undefined && existing !== entity.id;
+    const conflicts = [...index.entities.values()].some((candidate) =>
+      !renamed.has(candidate.id) && candidate.owner === undefined &&
+      candidate.scope === entity.scope && candidate.name === new_name
+    );
+    if (conflicts) {
+      return true;
+    }
   }
-
-  return [...index.entities.values()].some((candidate) =>
-    candidate.id !== entity.id && candidate.owner === undefined &&
-    candidate.scope === entity.scope && candidate.name === new_name
-  );
+  return false;
 }
 
 function valid_rename_name(entity: BindingEntity, name: string): boolean {

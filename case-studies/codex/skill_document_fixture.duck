@@ -8,11 +8,11 @@ type FixtureTextOption = SkillTextOption
 type FixtureProductOption = SkillProductOption
 type FixtureScope = SkillScope
 
-let no_text: FixtureTextOption = `None ();
+let no_text: FixtureTextOption = #None;
 let metadata: FixtureTextOption =
-  `Some "policy:\n  allow_implicit_invocation: true\n  products: [codex]";
-let scope: FixtureScope = `System ();
-let product: FixtureProductOption = `Some (`Codex ());
+  #Some "policy:\n  allow_implicit_invocation: true\n  products: [codex]";
+let scope: FixtureScope = #System;
+let product: FixtureProductOption = #Some (#Codex);
 let parsed = parse_skill_document(
   "/system/alpha/SKILL.md",
   "---\nname: alpha\ndescription: Search source trees\n---\nUse rg.",
@@ -25,23 +25,25 @@ let parsed = parse_skill_document(
 let [document, message] = parsed;
 let score = 0;
 
-if let `Some loaded = document {
+if let #Some loaded = document then
   let [skill, _] = loaded;
   let [name, description, _, _, _, policy, _, _, _] = skill;
 
-  if name == "alpha" && description == "Search source trees" {
+  if name == "alpha" && description == "Search source trees" then
     score = score + 1
-  }
+  end;
 
   let [implicit, _] = policy;
 
-  if let `Some allowed = implicit {
-    if allowed { score = score + 10 }
-  }
-}
+  if let #Some allowed = implicit then
+    if allowed then
+      score = score + 10
+    end;
+  end;
+end;
 
-if let `None () = message {
+if let #None = message then
   score = score + 100
-}
+end;
 
 return { .score = score };

@@ -8,30 +8,30 @@ const {} = import "./mcp_resource_types.duck" ();
 type ResourceReadOutputOperation = McpResourceOperation
 type ResourceReadOutputTextResult = McpResourceTextResult
 
-let read_payload_json: [ResourceReadOutputOperation, Text] -> ResourceReadOutputTextResult = (
+let read_payload_json: (ResourceReadOutputOperation, Text) -> ResourceReadOutputTextResult = (
   operation: ResourceReadOutputOperation,
   document: Text,
-) => {
-  if let `ReadResource args = operation {
+) => do
+  if let #ReadResource args = operation then
     let parsed = parse_json_document document;
-    if let `Ok value_and_position = parsed {
+    if let #Ok value_and_position = parsed then
       let [value, _] = value_and_position;
-      if let `Object object = value {
+      if let #Object object = value then
         let fields = json_object_prepend(
           "server",
           json_string args.server,
           json_object_prepend("uri", json_string args.uri, object),
         );
-        `ResourceText (encode_json(json_object fields))
-      } else {
-        `ResourceFailed "MCP resource read returned a non-object result"
-      }
-    } else {
-      `ResourceFailed "MCP resource read returned invalid JSON"
-    }
-  } else {
-    `ResourceFailed "MCP resource read received the wrong operation"
-  }
-};
+        #ResourceText (encode_json(json_object fields))
+      else
+        #ResourceFailed "MCP resource read returned a non-object result"
+      end;
+    else
+      #ResourceFailed "MCP resource read returned invalid JSON"
+    end;
+  else
+    #ResourceFailed "MCP resource read received the wrong operation"
+  end;
+end;
 
 return { .read_payload_json };

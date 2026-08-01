@@ -9,55 +9,57 @@ let score = 0;
 let delta: FixtureEventResult =
   decode_model_event "{\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}";
 
-if let `Ok event = delta {
-  if let `Message text = event {
-    if text == "Hello" {
+if let #Ok event = delta then
+  if let #Message text = event then
+    if text == "Hello" then
       score = score + 1
-    }
-  }
-}
+    end;
+  end;
+end;
 
 let call: FixtureEventResult =
   decode_model_event "{\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"call_id\":\"call-1\"}}";
 
-if let `Ok event = call {
-  if let `ToolCall tool_call = event {
+if let #Ok event = call then
+  if let #ToolCall tool_call = event then
     let typed_call: FixtureToolCall = tool_call;
     let [call_id, name, arguments] = typed_call;
 
-    if call_id == "call-1" && name == "read_file" && arguments == "{\"path\":\"README.md\"}" {
+    if call_id == "call-1" && name == "read_file" && arguments == "{\"path\":\"README.md\"}" then
       score = score + 10
-    }
-  }
-}
+    end;
+  end;
+end;
 
 let message: FixtureEventResult =
   decode_model_event "{\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello \"},{\"type\":\"output_text\",\"text\":\"world\"}]}}";
 
-if let `Ok event = message {
-  if let `Message text = event {
-    if text == "Hello world" {
+if let #Ok event = message then
+  if let #Message text = event then
+    if text == "Hello world" then
       score = score + 100
-    }
-  }
-}
+    end;
+  end;
+end;
 
 let completed: FixtureEventResult =
   decode_model_event "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}";
 
-if let `Ok event = completed {
-  if let `Completed () = event {
+if let #Ok event = completed then
+  if let #Completed = event then
     score = score + 1000
-  }
-}
+  end;
+end;
 
-if encode_user_message "Read \"README\"" == "{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Read \\\"README\\\"\"}]}" {
-  score = score + 10000
-}
+if encode_user_message "Read \"README\""
+  == "{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Read \\\"README\\\"\"}]}" then
+    score = score + 10000
+  end;
 
 if encode_tool_result("call-1",
-  "# Binned") == "{\"type\":\"function_call_output\",\"call_id\":\"call-1\",\"output\":\"# Binned\"}" {
+  "# Binned")
+  == "{\"type\":\"function_call_output\",\"call_id\":\"call-1\",\"output\":\"# Binned\"}" then
     score = score + 100000
-  }
+  end;
 
 score

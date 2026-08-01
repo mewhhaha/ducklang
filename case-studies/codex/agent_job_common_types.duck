@@ -1,11 +1,11 @@
 module () where
 
 type AgentJobTextOption =
-  | `None Unit
-  | `Some Text
+  | #None
+  | #Some Text
 
 type AgentJobPayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 return {};

@@ -4,6 +4,8 @@ const { .natural_log_positive_q10 } = import "./tool_search_rank_math.duck" ();
 
 let score = 0;
 let logarithm = natural_log_positive_q10 2048;
-if logarithm >= 709 && logarithm <= 711 { score = 1 }
+if logarithm >= 709 && logarithm <= 711 then
+  score = 1
+end;
 
 return { .score = score };

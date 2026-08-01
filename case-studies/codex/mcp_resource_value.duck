@@ -11,101 +11,109 @@ type ResourceValueParsed = McpResourceParsedArgs
 type ResourceValueReadArgs = McpResourceReadArgs
 type ResourceValueTextOption = McpResourceTextOption
 
-const resource_parse_failure: Text -> ResourceValueParsed = reason => {
-  `ParseFailed (text_append("failed to parse function arguments: ", reason))
-};
+const resource_parse_failure: Text -> ResourceValueParsed = reason => do
+  #ParseFailed (text_append("failed to parse function arguments: ", reason))
+end;
 
-const decode_list_mcp_resource_args: ResourceValueJson -> ResourceValueParsed = value => {
-  if let `Null () = value {
-    `ListParsed [.server = `None (), .cursor = `None ()]
-  } else if let `Object object = value {
-    if json_object_key_count("server", object) > 1 {
+const decode_list_mcp_resource_args: ResourceValueJson -> ResourceValueParsed = value => do
+  if let #Null = value then
+    #ListParsed [.server = #None, .cursor = #None]
+  else let #Object object = value then
+    if json_object_key_count("server", object) > 1 then
       resource_parse_failure "server must appear at most once"
-    } else if json_object_key_count("cursor", object) > 1 {
+    else json_object_key_count("cursor", object) > 1 then
       resource_parse_failure "cursor must appear at most once"
-    } else {
-      let server: ResourceValueTextOption = `None ();
-      let cursor: ResourceValueTextOption = `None ();
+    else
+      let server: ResourceValueTextOption = #None;
+      let cursor: ResourceValueTextOption = #None;
       let failure = "";
 
       let server_lookup = json_object_get("server", object);
-      if let `Found server_value = server_lookup {
-        if let `String server_text = server_value {
+      if let #Found server_value = server_lookup then
+        if let #String server_text = server_value then
           let normalized = text_trim_ascii_whitespace server_text;
-          if normalized != "" { server = `Some normalized }
-        } else if let `Null () = server_value {
-          server = `None ()
-        } else {
+          if normalized != "" then
+            server = #Some normalized
+          end;
+        else let #Null = server_value then
+          server = #None
+        else
           failure = "server must be a string or null"
-        }
-      }
+        end;
+      end;
 
       let cursor_lookup = json_object_get("cursor", object);
-      if let `Found cursor_value = cursor_lookup {
-        if let `String cursor_text = cursor_value {
+      if let #Found cursor_value = cursor_lookup then
+        if let #String cursor_text = cursor_value then
           let normalized = text_trim_ascii_whitespace cursor_text;
-          if normalized != "" { cursor = `Some normalized }
-        } else if let `Null () = cursor_value {
-          cursor = `None ()
-        } else {
+          if normalized != "" then
+            cursor = #Some normalized
+          end;
+        else let #Null = cursor_value then
+          cursor = #None
+        else
           failure = "cursor must be a string or null"
-        }
-      }
+        end;
+      end;
 
-      if failure == "" {
+      if failure == "" then
         let args: ResourceValueListArgs = [.server = server, .cursor = cursor];
-        `ListParsed args
-      } else {
+        #ListParsed args
+      else
         resource_parse_failure failure
-      }
-    }
-  } else {
+      end;
+    end;
+  else
     resource_parse_failure "arguments must be an object or null"
-  }
-};
+  end;
+end;
 
-const decode_read_mcp_resource_args: ResourceValueJson -> ResourceValueParsed = value => {
-  if let `Object object = value {
-    if json_object_key_count("server", object) != 1 {
+const decode_read_mcp_resource_args: ResourceValueJson -> ResourceValueParsed = value => do
+  if let #Object object = value then
+    if json_object_key_count("server", object) != 1 then
       resource_parse_failure "server must be provided"
-    } else if json_object_key_count("uri", object) != 1 {
+    else json_object_key_count("uri", object) != 1 then
       resource_parse_failure "uri must be provided"
-    } else {
+    else
       let server = "";
       let uri = "";
       let failure = "";
 
       let server_lookup = json_object_get("server", object);
-      if let `Found server_value = server_lookup {
-        if let `String server_text = server_value {
+      if let #Found server_value = server_lookup then
+        if let #String server_text = server_value then
           server = text_trim_ascii_whitespace server_text
-          if server == "" { failure = "server must be provided" }
-        } else {
+          if server == "" then
+            failure = "server must be provided"
+          end;
+        else
           failure = "server must be a string"
-        }
-      }
+        end;
+      end;
 
       let uri_lookup = json_object_get("uri", object);
-      if let `Found uri_value = uri_lookup {
-        if let `String uri_text = uri_value {
+      if let #Found uri_value = uri_lookup then
+        if let #String uri_text = uri_value then
           uri = text_trim_ascii_whitespace uri_text
-          if uri == "" { failure = "uri must be provided" }
-        } else {
+          if uri == "" then
+            failure = "uri must be provided"
+          end;
+        else
           failure = "uri must be a string"
-        }
-      }
+        end;
+      end;
 
-      if failure == "" {
+      if failure == "" then
         let args: ResourceValueReadArgs = [.server = server, .uri = uri];
-        `ReadParsed args
-      } else {
+        #ReadParsed args
+      else
         resource_parse_failure failure
-      }
-    }
-  } else {
+      end;
+    end;
+  else
     resource_parse_failure "arguments must be an object"
-  }
-};
+  end;
+end;
 
 return {
   .decode_list_mcp_resource_args,

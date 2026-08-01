@@ -2,21 +2,21 @@ const { .struct } = import "duck:prelude" ();
 
 type Vec3 = struct { .x = Int, .y = Int, .z = Int }
 type Pair = [Int, Int]
-type Maybe a = | `Just a | `Nothing Unit
+type Maybe a = | #Just a | #Nothing
 type MaybeInt = Maybe I32
 
 let point: Vec3 = [40, 1, 1];
 let pair: Pair = [point.x, point.y];
 let by_name: Int = point.x + point.y + point.z;
 let by_index: Int = point[0] + point[1] + point[2];
-let result: MaybeInt = `Just (if by_name == by_index {
+let result: MaybeInt = #Just (if by_name == by_index then
   pair[0] + pair[1] + point[2]
-} else {
+else
   0
-});
+end);
 
-if let `Just value = result {
+if let #Just value = result then
   value
-} else {
+else
   0
-}
+end;

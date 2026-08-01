@@ -8,7 +8,7 @@ import type {
   TypeExpr,
 } from "./ast.ts";
 import { collect_linear_closure_names } from "./linear_closure_names.ts";
-import { apply_function_result_context } from "./parser_stmt/binding.ts";
+import { apply_function_result_context } from "./function_context.ts";
 import { stmt_result_expr } from "./block_result.ts";
 import { analyze_front_expression_effects } from "./effect_analysis.ts";
 import {
@@ -489,6 +489,7 @@ function function_type(params: TypeExpr[], result: TypeExpr): TypeExpr {
     param = {
       tag: "product",
       entries: params.map((type_expr) => ({ type_expr })),
+      value_pack: true,
     };
   }
 

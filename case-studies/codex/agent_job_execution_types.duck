@@ -6,14 +6,14 @@ const {} = import "./agent_job_prepare_types.duck" ();
 const {} = import "./agent_job_runner_types.duck" ();
 
 type AgentJobCreateOutcome =
-  | `JobCreated Unit
-  | `JobCreateFailed Text
+  | #JobCreated
+  | #JobCreateFailed Text
 
 type AgentJobCreateItem = [Text, I32, AgentJobTextOption, AgentJobCreateHeaders, Text, Text]
 type AgentJobCreateItemNode = [AgentJobCreateItem, AgentJobCreateItems]
 type AgentJobCreateItems =
-  | `Nil Unit
-  | `Cons AgentJobCreateItemNode
+  | #Nil
+  | #Cons AgentJobCreateItemNode
 
 type AgentJobCreateRequest = struct {
   .job_id = Text,
@@ -35,8 +35,8 @@ type AgentJobSpawnWorkerRequest = struct {
 
 type AgentJobActiveThreadNode = [Text, AgentJobActiveThreads]
 type AgentJobActiveThreads =
-  | `Nil Unit
-  | `Cons AgentJobActiveThreadNode
+  | #Nil
+  | #Cons AgentJobActiveThreadNode
 
 type AgentJobWaitRequest = struct {
   .job_id = Text,
@@ -45,8 +45,8 @@ type AgentJobWaitRequest = struct {
 }
 
 type AgentJobWaitOutcome =
-  | `WorkerCompleted AgentJobWorkerCompletion
-  | `WorkerWaitFailed Text
+  | #WorkerCompleted AgentJobWorkerCompletion
+  | #WorkerWaitFailed Text
 
 type AgentJobFinalizeRequest = struct {
   .job_id = Text,
@@ -65,11 +65,11 @@ type AgentJobFinalizeFacts = struct {
 }
 
 type AgentJobFinalizeOutcome =
-  | `JobFinalized AgentJobFinalizeFacts
-  | `JobFinalizeFailed Text
+  | #JobFinalized AgentJobFinalizeFacts
+  | #JobFinalizeFailed Text
 
 type AgentJobSpawnExecutionResult =
-  | `Completed AgentJobRunCompletion
-  | `Rejected Text
+  | #Completed AgentJobRunCompletion
+  | #Rejected Text
 
 return {};

@@ -10,11 +10,23 @@ let fields = json_object_prepend("threadId", json_string "thread-3", json_object
 let get_result: FixtureResult = decode_thread_goal_get(json_object fields);
 let clear_result: FixtureResult = decode_thread_goal_clear(json_object fields);
 let score = 0;
-if let `MethodOk method = get_result {
-  if let `ThreadGoal goal_method = method { if let `ThreadGoalGet thread_id = goal_method { if thread_id == "thread-3" { score = score + 1 } } }
-}
-if let `MethodOk method = clear_result {
-  if let `ThreadGoal goal_method = method { if let `ThreadGoalClear thread_id = goal_method { if thread_id == "thread-3" { score = score + 10 } } }
-}
+if let #MethodOk method = get_result then
+  if let #ThreadGoal goal_method = method then
+    if let #ThreadGoalGet thread_id = goal_method then
+      if thread_id == "thread-3" then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
+if let #MethodOk method = clear_result then
+  if let #ThreadGoal goal_method = method then
+    if let #ThreadGoalClear thread_id = goal_method then
+      if thread_id == "thread-3" then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

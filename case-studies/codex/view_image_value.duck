@@ -12,76 +12,80 @@ type ImageValueJson = Json
 type ImageValueParseResult = ViewImageParseResult
 type ImageValueTextOption = ViewImageTextOption
 
-const view_image_parse_failure: Text -> ImageValueParseResult = reason => {
-  `ParseFailed (text_append ["failed to parse function arguments: ", reason])
-};
+const view_image_parse_failure: Text -> ImageValueParseResult = reason => do
+  #ParseFailed (text_append ("failed to parse function arguments: ", reason))
+end;
 
-const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value => {
-  if let `Object object = value {
-    if json_object_key_count("path", object) != 1 {
+const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value => do
+  if let #Object object = value then
+    if json_object_key_count("path", object) != 1 then
       view_image_parse_failure "path is required exactly once"
-    } else if json_object_key_count("environment_id", object) > 1 {
+    else json_object_key_count("environment_id", object) > 1 then
       view_image_parse_failure "environment_id must appear at most once"
-    } else if json_object_key_count("detail", object) > 1 {
+    else json_object_key_count("detail", object) > 1 then
       view_image_parse_failure "detail must appear at most once"
-    } else {
+    else
       let path = "";
-      let environment_id: ImageValueTextOption = `ImageEnvironmentMissing ();
-      let detail: ImageValueDetailOption = `ImageDetailMissing ();
+      let environment_id: ImageValueTextOption = #ImageEnvironmentMissing;
+      let detail: ImageValueDetailOption = #ImageDetailMissing;
       let failure = "";
 
       let path_lookup = json_object_get("path", object);
-      if let `Found path_value = path_lookup {
-        if let `String path_text = path_value { path = path_text } else { failure = "path must be a string" }
-      }
+      if let #Found path_value = path_lookup then
+        if let #String path_text = path_value then
+          path = path_text
+        else
+          failure = "path must be a string"
+        end;
+      end;
 
       let environment_lookup = json_object_get("environment_id", object);
-      if let `Found environment_value = environment_lookup {
-        if let `String environment_text = environment_value {
-          environment_id = `ImageEnvironmentPresent environment_text
-        } else if let `Null () = environment_value {
-          environment_id = `ImageEnvironmentMissing ()
-        } else {
+      if let #Found environment_value = environment_lookup then
+        if let #String environment_text = environment_value then
+          environment_id = #ImageEnvironmentPresent environment_text
+        else let #Null = environment_value then
+          environment_id = #ImageEnvironmentMissing
+        else
           failure = "environment_id must be a string or null"
-        }
-      }
+        end;
+      end;
 
       let detail_lookup = json_object_get("detail", object);
-      if let `Found detail_value = detail_lookup {
-        if let `String detail_text = detail_value {
-          if detail_text == "high" {
-            let parsed_detail: ImageValueDetail = `High ();
-            detail = `ImageDetailPresent parsed_detail
-          } else if detail_text == "original" {
-            let parsed_detail: ImageValueDetail = `Original ();
-            detail = `ImageDetailPresent parsed_detail
-          } else {
-            failure = text_append [
+      if let #Found detail_value = detail_lookup then
+        if let #String detail_text = detail_value then
+          if detail_text == "high" then
+            let parsed_detail: ImageValueDetail = #High;
+            detail = #ImageDetailPresent parsed_detail
+          else detail_text == "original" then
+            let parsed_detail: ImageValueDetail = #Original;
+            detail = #ImageDetailPresent parsed_detail
+          else
+            failure = text_append (
               "view_image.detail only supports `high` or `original`; omit `detail` for default high resized behavior, got `",
-              text_append [detail_text, "`"],
-            ]
-          }
-        } else if let `Null () = detail_value {
-          detail = `ImageDetailMissing ()
-        } else {
+              text_append (detail_text, "`"),
+            )
+          end;
+        else let #Null = detail_value then
+          detail = #ImageDetailMissing
+        else
           failure = "detail must be a string or null"
-        }
-      }
+        end;
+      end;
 
-      if failure == "" {
+      if failure == "" then
         let args: ImageValueArgs = [
           .path = path,
           .environment_id = environment_id,
           .detail = detail,
         ];
-        `Parsed args;
-      } else {
+        #Parsed args;
+      else
         view_image_parse_failure failure
-      }
-    }
-  } else {
+      end;
+    end;
+  else
     view_image_parse_failure "view_image arguments must be an object"
-  }
-};
+  end;
+end;
 
 return { .decode_view_image_value, .view_image_parse_failure };

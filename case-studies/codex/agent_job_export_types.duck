@@ -5,8 +5,8 @@ const {} = import "./agent_job_common_types.duck" ();
 
 type AgentJobCreateHeaderNode = [Text, AgentJobCreateHeaders]
 type AgentJobCreateHeaders =
-  | `Nil Unit
-  | `Cons AgentJobCreateHeaderNode
+  | #Nil
+  | #Cons AgentJobCreateHeaderNode
 
 type AgentJobFailureSummary = struct {
   .item_id = Text,
@@ -16,14 +16,14 @@ type AgentJobFailureSummary = struct {
 
 type AgentJobFailureSummaryNode = [AgentJobFailureSummary, AgentJobFailureSummaries]
 type AgentJobFailureSummaries =
-  | `Nil Unit
-  | `Cons AgentJobFailureSummaryNode
+  | #Nil
+  | #Cons AgentJobFailureSummaryNode
 
 type AgentJobFinalItemStatus =
-  | `Pending Unit
-  | `Running Unit
-  | `Completed Unit
-  | `Failed Unit
+  | #Pending
+  | #Running
+  | #Completed
+  | #Failed
 
 type AgentJobFinalItem = struct {
   .row_values = AgentJobCreateHeaders,
@@ -41,8 +41,8 @@ type AgentJobFinalItem = struct {
 
 type AgentJobFinalItemNode = [AgentJobFinalItem, AgentJobFinalItems]
 type AgentJobFinalItems =
-  | `Nil Unit
-  | `Cons AgentJobFinalItemNode
+  | #Nil
+  | #Cons AgentJobFinalItemNode
 
 type AgentJobRunCompletion = struct {
   .job_id = Text,
@@ -58,8 +58,8 @@ type AgentJobRunCompletion = struct {
 }
 
 type AgentJobCsvExportResult =
-  | `CsvExported Text
-  | `CsvExportFailed Text
+  | #CsvExported Text
+  | #CsvExportFailed Text
 
 type AgentJobCsvWriteRequest = struct {
   .output_path = Text,
@@ -67,11 +67,11 @@ type AgentJobCsvWriteRequest = struct {
 }
 
 type AgentJobCsvWriteOutcome =
-  | `CsvWritten Unit
-  | `CsvWriteFailed Text
+  | #CsvWritten
+  | #CsvWriteFailed Text
 
 type AgentJobExportExecutionResult =
-  | `Completed Text
-  | `Rejected Text
+  | #Completed Text
+  | #Rejected Text
 
 return {};

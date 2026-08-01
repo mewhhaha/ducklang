@@ -8,14 +8,14 @@ type FixtureStep = UpdatePlanStep
 type FixtureStepNode = UpdatePlanStepNode
 type FixtureSteps = UpdatePlanSteps
 
-let steps: FixtureSteps = `Cons (
-  [[.step = "Port update_plan", .status = `InProgress ()] as FixtureStep, `Nil ()] as FixtureStepNode
+let steps: FixtureSteps = #Cons (
+  [[.step = "Port update_plan", .status = #InProgress] as FixtureStep, #Nil] as FixtureStepNode
 );
-let args: FixtureArgs = [.explanation = `Some "Publish the typed plan", .plan = steps];
+let args: FixtureArgs = [.explanation = #Some "Publish the typed plan", .plan = steps];
 _ <- UpdatePlanHost.publish(&args)
 let completion = update_plan_completion();
 let score =
-  if completion.text == "Plan updated" && completion.success && completion.code_mode == "{}" { 1
-  } else { 0 };
+  if completion.text == "Plan updated" && completion.success && completion.code_mode == "{}" then 1
+  else 0 end;
 
 return { .score = score };

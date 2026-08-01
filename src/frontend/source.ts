@@ -13,10 +13,10 @@ import {
   source_file_url,
 } from "./load.ts";
 import {
-  parse_source,
-  parse_source_with_diagnostics,
+  parse_baba_source,
+  parse_baba_source_with_diagnostics,
   type ParseSourceResult,
-} from "./parser.ts";
+} from "./source_parse.ts";
 import { analyze_frontend, source_effects } from "./pipeline.ts";
 import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
 import type { SyntaxDiagnostic } from "./syntax.ts";
@@ -34,15 +34,15 @@ export type SourceAnalyzeOptions = {
 
 export type SourceAnalysis = {
   source: SourceNode;
-  syntax: ReturnType<typeof parse_source_with_diagnostics>["syntax"];
+  syntax: ReturnType<typeof parse_baba_source_with_diagnostics>["syntax"];
   syntax_diagnostics: SyntaxDiagnostic[];
   diagnostics: SourceDiagnostic[];
 };
 
 export function Source() {}
 
-Source.parse = parse_source;
-Source.parse_with_diagnostics = parse_source_with_diagnostics;
+Source.parse = parse_baba_source;
+Source.parse_with_diagnostics = parse_baba_source_with_diagnostics;
 Source.with_import_meta = source_with_import_meta;
 
 Source.analyze = function analyze(

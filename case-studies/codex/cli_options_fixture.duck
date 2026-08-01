@@ -13,26 +13,34 @@ let score = 0;
 
 let empty: FixtureArgs = args.empty();
 let completion: FixtureCompletionResult = parse_completion_options empty;
-if let `Ok options = completion {
-  if let `Bash () = options.shell { score = score + 1 }
-}
+if let #Ok options = completion then
+  if let #Bash = options.shell then
+    score = score + 1
+  end;
+end;
 
 let zsh: FixtureCompletionResult = parse_completion_options(args.singleton("zsh"));
-if let `Ok options = zsh {
-  if let `Zsh () = options.shell { score = score + 10 }
-}
+if let #Ok options = zsh then
+  if let #Zsh = options.shell then
+    score = score + 10
+  end;
+end;
 
 let feature_args = args.prepend("enable", args.singleton("unified_exec"));
 let feature: FixtureFeatureResult = parse_feature_command feature_args;
-if let `Ok command = feature {
-  if let `Enable name = command {
-    if name == "unified_exec" { score = score + 100 }
-  }
-}
+if let #Ok command = feature then
+  if let #Enable name = command then
+    if name == "unified_exec" then
+      score = score + 100
+    end;
+  end;
+end;
 
 let invalid_feature: FixtureFeatureResult = parse_feature_command(args.singleton("enable"));
-if let `Err message = invalid_feature {
-  if message == "features enable requires a feature" { score = score + 1000 }
-}
+if let #Err message = invalid_feature then
+  if message == "features enable requires a feature" then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

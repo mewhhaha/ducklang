@@ -10,36 +10,36 @@ type CompactWindowClaim = AutoCompactWindowClaim
 type CompactWindowSnapshot = AutoCompactWindowSnapshot
 type CompactWindowTokenOption = AutoCompactWindowTokenOption
 
-const new_auto_compact_window: CompactWindowIds -> CompactWindow = ids => {
+const new_auto_compact_window: CompactWindowIds -> CompactWindow = ids => do
   [
     .window_number = 0i64,
     .ids = ids,
     .new_context_window_requested = false,
-    .prefill_input_tokens = `None (),
+    .prefill_input_tokens = #None,
     .token_budget_reminder = once(),
     .auto_compact_fallback = once(),
   ]
-};
+end;
 
-const clear_auto_compact_prefill: CompactWindow -> CompactWindow = window => {
-  window <& { .prefill_input_tokens = `None () }
-};
+const clear_auto_compact_prefill: CompactWindow -> CompactWindow = window => do
+  window <& { .prefill_input_tokens = #None }
+end;
 
-const restore_auto_compact_window: [CompactWindow, I64, CompactWindowIds] -> CompactWindow = (
+const restore_auto_compact_window: (CompactWindow, I64, CompactWindowIds) -> CompactWindow = (
   window: CompactWindow,
   window_number: I64,
   ids: CompactWindowIds,
-) => {
+) => do
   window <& { .window_number = window_number, .ids = ids }
-};
+end;
 
-const advance_auto_compact_window: [CompactWindow, Text] -> CompactWindow = (
+const advance_auto_compact_window: (CompactWindow, Text) -> CompactWindow = (
   window: CompactWindow,
   next_window_id: Text,
-) => {
+) => do
   let next_ids: CompactWindowIds = [
     .first_window_id = window.ids.first_window_id,
-    .previous_window_id = `Some window.ids.window_id,
+    .previous_window_id = #Some window.ids.window_id,
     .window_id = next_window_id,
   ];
   window <& {
@@ -49,77 +49,77 @@ const advance_auto_compact_window: [CompactWindow, Text] -> CompactWindow = (
     .token_budget_reminder = once(),
     .auto_compact_fallback = once(),
   }
-};
+end;
 
-const claim_token_budget_reminder: CompactWindow -> CompactWindowClaim = window => {
+const claim_token_budget_reminder: CompactWindow -> CompactWindowClaim = window => do
   let claim = once_claim window.token_budget_reminder;
   let claimed_window: CompactWindow = window <& { .token_budget_reminder = claim.state };
   [.window = claimed_window, .granted = claim.granted];
-};
+end;
 
-const claim_auto_compact_fallback: CompactWindow -> CompactWindowClaim = window => {
+const claim_auto_compact_fallback: CompactWindow -> CompactWindowClaim = window => do
   let claim = once_claim window.auto_compact_fallback;
   let claimed_window: CompactWindow = window <& { .auto_compact_fallback = claim.state };
   [.window = claimed_window, .granted = claim.granted];
-};
+end;
 
-const request_new_context_window: CompactWindow -> CompactWindow = window => {
+const request_new_context_window: CompactWindow -> CompactWindow = window => do
   window <& { .new_context_window_requested = true }
-};
+end;
 
-const take_new_context_window_request: CompactWindow -> CompactWindowClaim = window => {
+const take_new_context_window_request: CompactWindow -> CompactWindowClaim = window => do
   let granted = window.new_context_window_requested;
   let cleared_window: CompactWindow = window <& { .new_context_window_requested = false };
   [.window = cleared_window, .granted = granted];
-};
+end;
 
-const ensure_server_observed_prefill: [CompactWindow, I64] -> CompactWindow = (
+const ensure_server_observed_prefill: (CompactWindow, I64) -> CompactWindow = (
   window: CompactWindow,
   input_tokens: I64,
-) => {
-  if let `Some current = window.prefill_input_tokens {
-    if let `ServerObserved _ = current {
+) => do
+  if let #Some current = window.prefill_input_tokens then
+    if let #ServerObserved _ = current then
       window
-    } else {
-      let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 };
-      window <& { .prefill_input_tokens = `Some (`ServerObserved tokens) }
-    }
-  } else {
-    let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 };
-    window <& { .prefill_input_tokens = `Some (`ServerObserved tokens) }
-  }
-};
+    else
+      let tokens = if input_tokens > 0i64 then input_tokens else 0i64 end;
+      window <& { .prefill_input_tokens = #Some (#ServerObserved tokens) }
+    end;
+  else
+    let tokens = if input_tokens > 0i64 then input_tokens else 0i64 end;
+    window <& { .prefill_input_tokens = #Some (#ServerObserved tokens) }
+  end;
+end;
 
-const set_estimated_prefill: [CompactWindow, I64] -> CompactWindow = (
+const set_estimated_prefill: (CompactWindow, I64) -> CompactWindow = (
   window: CompactWindow,
   input_tokens: I64,
-) => {
-  if let `Some current = window.prefill_input_tokens {
-    if let `ServerObserved _ = current {
+) => do
+  if let #Some current = window.prefill_input_tokens then
+    if let #ServerObserved _ = current then
       window
-    } else {
-      let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 };
-      window <& { .prefill_input_tokens = `Some (`Estimated tokens) }
-    }
-  } else {
-    let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 };
-    window <& { .prefill_input_tokens = `Some (`Estimated tokens) }
-  }
-};
+    else
+      let tokens = if input_tokens > 0i64 then input_tokens else 0i64 end;
+      window <& { .prefill_input_tokens = #Some (#Estimated tokens) }
+    end;
+  else
+    let tokens = if input_tokens > 0i64 then input_tokens else 0i64 end;
+    window <& { .prefill_input_tokens = #Some (#Estimated tokens) }
+  end;
+end;
 
 const auto_compact_window_snapshot: &CompactWindow -> CompactWindowSnapshot = (
-  window: &CompactWindow ) => {
-  let prefill: CompactWindowTokenOption = `None ();
-  if let `Some current = window.prefill_input_tokens {
-    if let `ServerObserved tokens = current {
-      prefill = `Some tokens
-    } else if let `Estimated tokens = current {
-      prefill = `Some tokens
-    }
-  }
+  window: &CompactWindow) => do
+    let prefill: CompactWindowTokenOption = #None;
+    if let #Some current = window.prefill_input_tokens then
+      if let #ServerObserved tokens = current then
+        prefill = #Some tokens
+      else let #Estimated tokens = current then
+        prefill = #Some tokens
+      end;
+    end;
 
-  [.prefill_input_tokens = prefill]
-};
+    [.prefill_input_tokens = prefill]
+  end;
 
 return {
   .new_auto_compact_window,

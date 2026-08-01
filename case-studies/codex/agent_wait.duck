@@ -10,89 +10,89 @@ type WaitStatusEntryNode = AgentStatusEntryNode
 
 const status_entries_empty = () => AgentStatusEntries.Nil();
 
-const status_entries_prepend = (entry: WaitStatusEntry, tail: WaitStatusEntries) => {
+const status_entries_prepend = (entry: WaitStatusEntry, tail: WaitStatusEntries) => do
   let node: WaitStatusEntryNode = [entry, tail];
   AgentStatusEntries.Cons(node)
-};
+end;
 
-const status_entries_length = (entries: WaitStatusEntries) => {
+const status_entries_length = (entries: WaitStatusEntries) => do
   let current = entries;
   let count = 0;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   count
-};
+end;
 
-const final_statuses = (available: WaitStatusEntries) => {
+const final_statuses = (available: WaitStatusEntries) => do
   let current = available;
   let selected: WaitStatusEntries = status_entries_empty();
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [entry, tail] = node;
       let [_, status] = entry;
 
-      if agent_status_is_final status {
+      if agent_status_is_final status then
         selected = status_entries_prepend(entry, selected)
-      }
+      end;
 
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   selected
-};
+end;
 
-const select_wait_outcome = (initial: WaitStatusEntries, newly_final: WaitStatusEntries) => {
+const select_wait_outcome = (initial: WaitStatusEntries, newly_final: WaitStatusEntries) => do
   let initial_final = final_statuses initial;
-  let selected: WaitStatusEntries = if status_entries_length initial_final > 0 { initial_final
-  } else { newly_final };
+  let selected: WaitStatusEntries = if status_entries_length initial_final > 0 then initial_final
+  else newly_final end;
   [selected, status_entries_length selected == 0]
-};
+end;
 
-const agent_status_fails: AgentStatus -> Bool = status => {
-  if let `Errored _ = status {
+const agent_status_fails: AgentStatus -> Bool = status => do
+  if let #Errored _ = status then
     true
-  } else if let `NotFound () = status {
+  else let #NotFound = status then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const wait_statuses_fail: WaitStatusEntries -> Bool = statuses => {
+const wait_statuses_fail: WaitStatusEntries -> Bool = statuses => do
   let current = statuses;
   let failed = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [entry, tail] = node;
       let [_, status] = entry;
 
-      if agent_status_fails status {
+      if agent_status_fails status then
         failed = true
         break;
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   failed
-};
+end;
 
 return {
   .status_entries_empty,

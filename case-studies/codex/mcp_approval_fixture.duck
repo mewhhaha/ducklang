@@ -9,39 +9,39 @@ type FixtureAnnotations = McpToolAnnotations
 type FixtureMode = McpApprovalMode
 type FixtureDecision = McpApprovalDecision
 
-let yes: FixtureBoolOption = `Some true;
-let no: FixtureBoolOption = `Some false;
-let missing: FixtureBoolOption = `None ();
-let auto: FixtureMode = `Auto ();
-let writes: FixtureMode = `Writes ();
-let prompt: FixtureMode = `Prompt ();
+let yes: FixtureBoolOption = #Some true;
+let no: FixtureBoolOption = #Some false;
+let missing: FixtureBoolOption = #None;
+let auto: FixtureMode = #Auto;
+let writes: FixtureMode = #Writes;
+let prompt: FixtureMode = #Prompt;
 let read_only: FixtureAnnotations = [yes, missing, missing];
 let destructive: FixtureAnnotations = [yes, yes, missing];
 let writable: FixtureAnnotations = [no, no, no];
 let score = 0;
 
-if !(requires_mcp_tool_approval(read_only, auto, false)) {
+if !(requires_mcp_tool_approval(read_only, auto, false)) then
   score = score + 1
-}
+end;
 
-if requires_mcp_tool_approval(destructive, auto, false) {
+if requires_mcp_tool_approval(destructive, auto, false) then
   score = score + 1
-}
+end;
 
 if requires_mcp_tool_approval(writable, writes, false) && !(
   requires_mcp_tool_approval(read_only, writes, false)
-) {
+) then
   score = score + 1
-}
+end;
 
-if !(requires_mcp_tool_approval(writable, prompt, true)) {
+if !(requires_mcp_tool_approval(writable, prompt, true)) then
   score = score + 1
-}
+end;
 
-let remembered: FixtureDecision = `AcceptAndRemember ();
+let remembered: FixtureDecision = #AcceptAndRemember;
 let normalized: FixtureDecision = normalize_mcp_approval_decision(remembered, prompt);
-if let `Accept () = normalized {
+if let #Accept = normalized then
   score = score + 1
-}
+end;
 
 return { .score = score };

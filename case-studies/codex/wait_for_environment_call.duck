@@ -8,25 +8,25 @@ type WaitEnvironmentCallEnvironments = WaitForEnvironments
 type WaitEnvironmentCallPayload = WaitForEnvironmentPayload
 type WaitEnvironmentCallPlan = WaitForEnvironmentPlan
 
-let plan_wait_for_environment_call: [WaitEnvironmentCallPayload, WaitEnvironmentCallEnvironments] ->
+let plan_wait_for_environment_call: (WaitEnvironmentCallPayload, WaitEnvironmentCallEnvironments) ->
   WaitEnvironmentCallPlan = (
     payload: WaitEnvironmentCallPayload,
     environments: WaitEnvironmentCallEnvironments,
-  ) => {
-    if let `Unsupported () = payload {
-      `Fatal "wait_for_environment handler received unsupported payload"
-    } else if let `Function arguments = payload {
+  ) => do
+    if let #Unsupported = payload then
+      #Fatal "wait_for_environment handler received unsupported payload"
+    else let #Function arguments = payload then
       let parsed = parse_wait_for_environment_args arguments;
-      if let `Parsed args = parsed {
+      if let #Parsed args = parsed then
         plan_wait_for_environment(environments, args.environment_id)
-      } else if let `ParseFailed message = parsed {
-        `RejectRequest message
-      } else {
-        `RejectRequest "wait_for_environment argument parsing produced no result"
-      }
-    } else {
-      `Fatal "wait_for_environment handler received unsupported payload"
-    }
-  };
+      else let #ParseFailed message = parsed then
+        #RejectRequest message
+      else
+        #RejectRequest "wait_for_environment argument parsing produced no result"
+      end;
+    else
+      #Fatal "wait_for_environment handler received unsupported payload"
+    end;
+  end;
 
 return { .plan_wait_for_environment_call };

@@ -246,6 +246,16 @@ export abstract class ParserAggregate extends ParserParams {
         return { arg: first.value, args: [] };
       }
 
+      if (
+        first.value.tag === "product" &&
+        first.value.template_literal === true
+      ) {
+        return {
+          arg: first.value,
+          args: first.value.entries.map((entry) => entry.value),
+        };
+      }
+
       return { arg: first.value, args: [first.value] };
     }
 
@@ -490,7 +500,7 @@ function record_type_field_annotation_sites(
   let index = 0;
 
   for (const token of tokens) {
-    if (token.kind === "name") {
+    if (token.kind === "name" && token.text !== "freeze") {
       record_name_site(field, "type_name", token.text, token.span, index);
       index += 1;
     }

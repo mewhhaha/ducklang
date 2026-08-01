@@ -1,0 +1,25 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const {} = import "./apps_types.duck" ();
+const { .render_apps_section } = import "./apps.duck" ();
+
+type FixtureConnectorVisibilities = AppsConnectorVisibilities
+
+const connector_visibilities = comptime list I32;
+
+let empty: FixtureConnectorVisibilities = connector_visibilities.empty();
+let unavailable = connector_visibilities.prepend(
+  0,
+  connector_visibilities.singleton(0),
+);
+let available = connector_visibilities.prepend(
+  0,
+  connector_visibilities.singleton(1),
+);
+
+return {
+  .empty = render_apps_section empty,
+  .unavailable = render_apps_section unavailable,
+  .available = render_apps_section available,
+};

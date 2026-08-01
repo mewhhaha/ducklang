@@ -1,4 +1,5 @@
 import { expect } from "../expect.ts";
+import { classify_abi_primitive } from "../abi_primitive.ts";
 import type {
   EffectDeclaration,
   EffectOperation,
@@ -129,10 +130,11 @@ export function substitute_effect_type(
 }
 
 export function is_effect_scalar_type(type_name: string): boolean {
-  return type_name === "Unit" || type_name === "Bool" ||
-    type_name === "Char" || type_name === "Int" || type_name === "I32" ||
-    type_name === "U32" || type_name === "I64" || type_name === "F32" ||
-    type_name === "F64";
+  const classification = classify_abi_primitive(type_name);
+  if (classification.tag !== "supported") return false;
+  return classification.kind === "i32" || classification.kind === "i64" ||
+    classification.kind === "f32" || classification.kind === "f64" ||
+    classification.kind === "unit";
 }
 
 function source_fact_type_expr(

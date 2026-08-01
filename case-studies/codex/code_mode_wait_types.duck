@@ -2,10 +2,10 @@ module () where
 
 const { .struct } = import "duck:prelude/types" ();
 
-type CodeModeWaitU64 = `U64Decimal Text
+type CodeModeWaitU64 = #U64Decimal Text
 type CodeModeWaitU64Option =
-  | `WaitLimitMissing Unit
-  | `WaitLimitPresent CodeModeWaitU64
+  | #WaitLimitMissing
+  | #WaitLimitPresent CodeModeWaitU64
 
 type CodeModeWaitArgs = struct {
   .cell_id = Text,
@@ -15,12 +15,12 @@ type CodeModeWaitArgs = struct {
 }
 
 type CodeModeWaitPayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type CodeModeWaitParseResult =
-  | `Parsed CodeModeWaitArgs
-  | `ParseFailed Text
+  | #Parsed CodeModeWaitArgs
+  | #ParseFailed Text
 
 type CodeModeWaitRequest = struct {
   .cell_id = Text,
@@ -31,24 +31,24 @@ type CodeModeWaitExecution = [CodeModeWaitRequest, CodeModeWaitU64Option]
 type CodeModeWaitTermination = [Text, CodeModeWaitU64Option]
 
 type CodeModeWaitCallPlan =
-  | `Wait CodeModeWaitExecution
-  | `Terminate CodeModeWaitTermination
-  | `RejectRequest Text
-  | `Fatal Text
+  | #Wait CodeModeWaitExecution
+  | #Terminate CodeModeWaitTermination
+  | #RejectRequest Text
+  | #Fatal Text
 
 type CodeModeRuntimeStatus =
-  | `Yielded Unit
-  | `Terminated Unit
-  | `Result Unit
+  | #Yielded
+  | #Terminated
+  | #Result
 
 type CodeModeWaitOutcomeCell = [Text, CodeModeRuntimeStatus]
 type CodeModeWaitOutcome =
-  | `LiveCell CodeModeWaitOutcomeCell
-  | `MissingCell CodeModeWaitOutcomeCell
+  | #LiveCell CodeModeWaitOutcomeCell
+  | #MissingCell CodeModeWaitOutcomeCell
 
 type CodeModeWaitLifecyclePlan =
-  | `CellRemainsOpen Text
-  | `CloseCell Text
-  | `NoCellToClose Unit
+  | #CellRemainsOpen Text
+  | #CloseCell Text
+  | #NoCellToClose
 
 return {};

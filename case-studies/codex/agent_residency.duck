@@ -11,91 +11,91 @@ type ResidencyRecordNode = AgentRecordNode
 
 const agent_records_empty = () => AgentRecords.Nil();
 
-const agent_records_prepend = (record: ResidencyRecord, tail: ResidencyRecords) => {
+const agent_records_prepend = (record: ResidencyRecord, tail: ResidencyRecords) => do
   let node: ResidencyRecordNode = [record, tail];
   AgentRecords.Cons(node)
-};
+end;
 
-const agent_records_length = (values: ResidencyRecords) => {
+const agent_records_length = (values: ResidencyRecords) => do
   let current = values;
   let count = 0;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   count
-};
+end;
 
-const resident_is_unloadable = (record: ResidencyRecord) => {
+const resident_is_unloadable = (record: ResidencyRecord) => do
   let [_, _, _, _, status, active_turn, pending_mailbox] = record;
 
-  if agent_status_is_final status {
-    if active_turn {
+  if agent_status_is_final status then
+    if active_turn then
       false
-    } else if pending_mailbox {
+    else pending_mailbox then
       false
-    } else {
+    else
       true
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const choose_resident_to_unload: [ResidencyRecords, ResidencyTextOption] -> ResidencyTextOption = (
+const choose_resident_to_unload: (ResidencyRecords, ResidencyTextOption) -> ResidencyTextOption = (
   lru_records: ResidencyRecords,
   protected_id: ResidencyTextOption,
-) => {
+) => do
   let current = lru_records;
-  let candidate: ResidencyTextOption = `None ();
+  let candidate: ResidencyTextOption = #None;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [record, tail] = node;
       let [agent_id, _, _, _, _, _, _] = record;
-      let protected = if let `Some expected = protected_id { expected == agent_id } else { false };
+      let protected = if let #Some expected = protected_id then expected == agent_id else false end;
 
-      if protected {
+      if protected then
         current = tail
-      } else if resident_is_unloadable record {
-        candidate = `Some agent_id
+      else resident_is_unloadable record then
+        candidate = #Some agent_id
         break;
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   candidate
-};
+end;
 
 const reserve_residency = (
   lru_records: ResidencyRecords,
   pending_slots: I32,
   capacity: I32,
   protected_id: ResidencyTextOption,
-) => {
-  if agent_records_length lru_records + pending_slots < capacity {
-    `ResidencyAvailable ()
-  } else {
+) => do
+  if agent_records_length lru_records + pending_slots < capacity then
+    #ResidencyAvailable
+  else
     let candidate = choose_resident_to_unload(lru_records, protected_id);
 
-    if let `Some agent_id = candidate {
-      `UnloadResident agent_id
-    } else {
-      `ResidencyLimitReached capacity
-    }
-  }
-};
+    if let #Some agent_id = candidate then
+      #UnloadResident agent_id
+    else
+      #ResidencyLimitReached capacity
+    end;
+  end;
+end;
 
 return {
   .agent_records_empty,

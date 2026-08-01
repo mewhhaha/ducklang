@@ -4,8 +4,8 @@ const { .struct } = import "duck:prelude/types" ();
 
 type RolloutBudgetThresholdNode = [I32, RolloutBudgetThresholds]
 type RolloutBudgetThresholds =
-  | `Nil Unit
-  | `Cons RolloutBudgetThresholdNode
+  | #Nil
+  | #Cons RolloutBudgetThresholdNode
 
 type RolloutBudgetConfig = struct {
   .limit_tokens = I32,
@@ -28,8 +28,8 @@ type ThreadBudgetDelivery = struct {
 
 type ThreadBudgetDeliveryNode = [ThreadBudgetDelivery, ThreadBudgetDeliveries]
 type ThreadBudgetDeliveries =
-  | `Nil Unit
-  | `Cons ThreadBudgetDeliveryNode
+  | #Nil
+  | #Cons ThreadBudgetDeliveryNode
 
 type RolloutBudgetState = struct {
   .config = RolloutBudgetConfig,

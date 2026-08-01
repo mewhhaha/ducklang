@@ -5,6 +5,7 @@ import {
 } from "./linear_effect.ts";
 import { throw_linear_diagnostic } from "./linear_state.ts";
 import {
+  moved_projection_source,
   validate_linear_lam,
   validate_linear_rec,
   validate_linear_rest,
@@ -357,7 +358,10 @@ function validate_linear_statements(stmts: Stmt[]): void {
 
     validate_linear_stmt_lambdas(stmt);
 
-    if (stmt.tag === "bind" && stmt.is_linear) {
+    if (
+      stmt.tag === "bind" && stmt.is_linear &&
+      moved_projection_source(stmt.value) === undefined
+    ) {
       validate_linear_rest(stmt.name, stmts.slice(index + 1), stmt);
     }
   }

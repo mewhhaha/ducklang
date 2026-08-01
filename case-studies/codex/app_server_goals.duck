@@ -18,63 +18,66 @@ type GoalAvailability = AppServerThreadGoalAvailability
 type GoalPersistence = AppServerThreadPersistence
 type GoalBudgetPatch = FieldPatch I64
 
-const thread_goal_availability: [Bool, GoalPersistence, Text] -> GoalAvailability = (
+const thread_goal_availability: (Bool, GoalPersistence, Text) -> GoalAvailability = (
   enabled: Bool,
   persistence: GoalPersistence,
   thread_id: Text,
-) => {
-  if enabled {
-    if let `EphemeralThread () = persistence {
-      `EphemeralThreadGoalsUnsupported thread_id
-    } else {
-      `ThreadGoalsAvailable ()
-    }
-  } else {
-    `ThreadGoalsDisabled ()
-  }
-};
+) => do
+  if enabled then
+    if let #EphemeralThread = persistence then
+      #EphemeralThreadGoalsUnsupported thread_id
+    else
+      #ThreadGoalsAvailable
+    end;
+  else
+    #ThreadGoalsDisabled
+  end;
+end;
 
-const plan_thread_goal_set: [GoalOption, GoalSetParams] -> GoalSetPlanResult = (
+const plan_thread_goal_set: (GoalOption, GoalSetParams) -> GoalSetPlanResult = (
   current: GoalOption,
   params: GoalSetParams,
-) => {
-  let objective: GoalTextOption = `None ();
+) => do
+  let objective: GoalTextOption = #None;
   let invalid = "";
 
-  if let `Some value = params.objective {
+  if let #Some value = params.objective then
     let normalized = text_trim_whitespace value;
-    if normalized == "" {
+    if normalized == "" then
       invalid = "goal objective must not be empty"
-    } else if text_utf8_length normalized > 4000 {
+    else text_utf8_length normalized > 4000 then
       invalid = "goal objective must be at most 4000 characters"
-    } else {
-      objective = `Some normalized
-    }
-  }
+    else
+      objective = #Some normalized
+    end;
+  end;
 
-  if invalid == "" {
-    if let `Set value = params.token_budget {
-      if value <= 0i64 { invalid = "goal budgets must be positive when provided" }
-    }
-  }
+  if invalid == "" then
+    if let #Set value = params.token_budget then
+      if value <= 0i64 then
+        invalid = "goal budgets must be positive when provided"
+      end;
+    end;
+  end;
 
-  if invalid != "" {
-    `GoalSetInvalid invalid
-  } else if let `Some _ = current {
+  if invalid != "" then
+    #GoalSetInvalid invalid
+  else let #Some _ = current then
     let update: GoalUpdatePlan = [params.thread_id, objective, params.status, params.token_budget];
-    let plan: GoalSetPlan = `UpdateThreadGoal update;
-    `GoalSetPlanned plan;
-  } else if let `Some value = objective {
-    let status: GoalStatus = if let `Some selected = params.status { selected } else { `GoalActive () };
-    let token_budget: GoalI64Option = if let `Set budget = params.token_budget { `Some budget
-    } else { `None () };
+    let plan: GoalSetPlan = #UpdateThreadGoal update;
+    #GoalSetPlanned plan;
+  else let #Some value = objective then
+    let status: GoalStatus =
+      if let #Some selected = params.status then selected else #GoalActive end;
+    let token_budget: GoalI64Option = if let #Set budget = params.token_budget then #Some budget
+    else #None end;
     let create: GoalCreatePlan = [params.thread_id, value, status, token_budget];
-    let plan: GoalSetPlan = `CreateThreadGoal create;
-    `GoalSetPlanned plan;
-  } else {
-    `GoalSetMissing params.thread_id
-  }
-};
+    let plan: GoalSetPlan = #CreateThreadGoal create;
+    #GoalSetPlanned plan;
+  else
+    #GoalSetMissing params.thread_id
+  end;
+end;
 
 return {
   .thread_goal_availability,

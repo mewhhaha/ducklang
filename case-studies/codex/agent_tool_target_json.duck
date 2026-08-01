@@ -1,37 +1,39 @@
 module () where
 
-const { .json_object_get, .json_object_length, .parse_json_document } = import "duck:prelude/json" ();
+const { .json_object_get, .json_object_length, .parse_json_document } =
+  import "duck:prelude/json" ();
 const {} = import "duck:prelude/json/values" ();
 const { .format_i32, .text_append } = import "duck:prelude/runtime" ();
 const {} = import "./agent_tool_types.duck" ();
 
-const target_decode_failure: Text -> AgentToolTargetDecodeResult = reason => {
-  `AgentTargetDecodeFailed (text_append("failed to parse interrupt_agent arguments: ", reason))
-};
+const target_decode_failure: Text -> AgentToolTargetDecodeResult = reason => do
+  #AgentTargetDecodeFailed (text_append("failed to parse interrupt_agent arguments: ", reason))
+end;
 
-const parse_interrupt_agent_args: Text -> AgentToolTargetDecodeResult = document => {
+const parse_interrupt_agent_args: Text -> AgentToolTargetDecodeResult = document => do
   let parsed = parse_json_document document;
-  if let `Err error = parsed {
+  if let #Err error = parsed then
     let [position, message] = error;
     target_decode_failure(text_append(message, text_append(" at byte ", format_i32 position)))
-  } else if let `Ok value_and_position = parsed {
+  else let #Ok value_and_position = parsed then
     let [value, _] = value_and_position;
-    if let `Object object = value {
-      if json_object_length object != 1 { return target_decode_failure;
-        "expected exactly the target field" }
+    if let #Object object = value then
+      if json_object_length object != 1 then
+        return target_decode_failure;
+        "expected exactly the target field" end;
       let lookup = json_object_get("target", object);
-      if let `Found field = lookup {
-        if let `String target = field { `AgentTargetDecoded target } else { target_decode_failure
-          "target must be a string" }
-      } else {
+      if let #Found field = lookup then
+        if let #String target = field then #AgentTargetDecoded target else target_decode_failure
+          "target must be a string" end;
+      else
         target_decode_failure "target is required"
-      }
-    } else {
+      end;
+    else
       target_decode_failure "arguments must be an object"
-    }
-  } else {
+    end;
+  else
     target_decode_failure "JSON parsing produced no result"
-  }
-};
+  end;
+end;
 
 return { .parse_interrupt_agent_args };

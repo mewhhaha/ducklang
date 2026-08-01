@@ -9,19 +9,20 @@ type FixtureThreads = AppServerLoadedThreads
 type FixtureResult = AppServerThreadResumePlanResult
 type FixtureInput = AppServerThreadResumePlanInput
 
-let running: FixtureThread = ["thread-1", `Some "/rollouts/active.jsonl", `LegacyHistory ()];
-let loaded: FixtureThreads = `Cons ([running, `Nil ()]);
+let running: FixtureThread = ["thread-1", #Some "/rollouts/active.jsonl", #LegacyHistory];
+let loaded: FixtureThreads = #Cons ([running, #Nil]);
 let input: FixtureInput = [
   loaded,
   "thread-1",
-  `None (),
-  `Some "/rollouts/stale.jsonl",
-  `TurnsIncluded (),
-  `None (),
+  #None,
+  #Some "/rollouts/stale.jsonl",
+  #TurnsIncluded,
+  #None,
 ];
 let planned: FixtureResult = plan_thread_resume input;
-let score = if let `Err message = planned {
-  if message == "cannot resume running thread thread-1 with stale path: requested `/rollouts/stale.jsonl`, active `/rollouts/active.jsonl`" { 1 } else { 0 }
-} else { 0 };
+let score = if let #Err message = planned then
+  if message
+    == "cannot resume running thread thread-1 with stale path: requested `/rollouts/stale.jsonl`, active `/rollouts/active.jsonl`" then 1 else 0 end;
+else 0 end;
 
 return { .score = score };

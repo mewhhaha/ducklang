@@ -14,13 +14,16 @@ let [state, _] = submitted;
 let score = 0;
 
 let steer: FixtureSteerResult = plan_turn_steer(state, "turn-1");
-if let `Ok turn_id = steer {
-  if turn_id == "turn-1" { score = score + 1 }
-}
+if let #Ok turn_id = steer then
+  if turn_id == "turn-1" then
+    score = score + 1
+  end;
+end;
 
 let wrong_steer: FixtureSteerResult = plan_turn_steer(state, "turn-other");
-if let `Err message = wrong_steer {
-  if message == "expected active turn id `turn-other` but found `turn-1`" { score = score + 10 }
-}
+if let #Err message = wrong_steer then
+  if message == "expected active turn id `turn-other` but found `turn-1`" then
+    score = score + 10 end;
+end;
 
 return { .score = score };

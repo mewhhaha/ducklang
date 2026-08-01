@@ -6,23 +6,23 @@ const { .agent_status_fails } = agent_wait_module();
 
 type FixtureStatus = AgentStatus
 
-let errored: FixtureStatus = `Errored "boom";
-let not_found: FixtureStatus = `NotFound ();
-let completed: FixtureStatus = `Completed (`Some "done");
+let errored: FixtureStatus = #Errored "boom";
+let not_found: FixtureStatus = #NotFound;
+let completed: FixtureStatus = #Completed (#Some "done");
 let score: I32 = 0;
 
-if agent_status_fails errored {
+if agent_status_fails errored then
   score = 1
-}
+end;
 
-if agent_status_fails not_found {
+if agent_status_fails not_found then
   score = score * 10 + 1
-}
+end;
 
-if agent_status_fails completed {
+if agent_status_fails completed then
   score = 0
-} else {
+else
   score = score * 10 + 1
-}
+end;
 
 return { .score = score };

@@ -10,45 +10,54 @@ type FixtureStartedCell = CodeModeStartedCell
 
 let request: FixtureRequest = [
   .tool_call_id = "call-exec",
-  .enabled_tools = `ExecuteToolsNil (),
+  .enabled_tools = #ExecuteToolsNil,
   .source = "text('ok')",
-  .yield_time_ms = `CodeModeExecLimitMissing (),
-  .max_output_tokens = `CodeModeExecLimitMissing ()];
+  .yield_time_ms = #CodeModeExecLimitMissing,
+  .max_output_tokens = #CodeModeExecLimitMissing];
 let started: FixtureStartedCell = [.cell_id = "cell-7"];
 let score = 0;
 
 let started_plan = plan_code_mode_execute_started("turn-sub", request, started);
-if started_plan.trace.turn_sub_id == "turn-sub" && started_plan.trace.cell_id == "cell-7" && started_plan.trace.tool_call_id == "call-exec" && started_plan.trace.source == "text('ok')" {
-  if started_plan.mark_ready_cell_id == "cell-7" && started_plan.await_initial_response_cell_id == "cell-7" {
-    score = score + 1
-  }
-}
+if started_plan.trace.turn_sub_id == "turn-sub" && started_plan.trace.cell_id == "cell-7"
+  && started_plan.trace.tool_call_id == "call-exec" && started_plan.trace.source
+  == "text('ok')" then
+    if started_plan.mark_ready_cell_id == "cell-7" && started_plan.await_initial_response_cell_id
+      == "cell-7" then
+        score = score + 1
+      end;
+  end;
 
-let empty_items: FixtureRuntimeItems = `RuntimeItemsNil ();
+let empty_items: FixtureRuntimeItems = #RuntimeItemsNil;
 let yielded = plan_code_mode_execute_initial_response(
   "cell-7",
-  `RuntimeYielded (["cell-7", empty_items]),
+  #RuntimeYielded (["cell-7", empty_items]),
 );
-if let `ExecuteInitialCellYielded cell_id = yielded.lifecycle {
-  if cell_id == "cell-7" {
-    if let `WaitUntilCodeModeElicitationsClear () = yielded.barrier { score = score + 10 }
-  }
-}
+if let #ExecuteInitialCellYielded cell_id = yielded.lifecycle then
+  if cell_id == "cell-7" then
+    if let #WaitUntilCodeModeElicitationsClear = yielded.barrier then
+      score = score + 10
+    end;
+  end;
+end;
 
 let terminated = plan_code_mode_execute_initial_response(
   "cell-8",
-  `RuntimeTerminated (["cell-8", empty_items]),
+  #RuntimeTerminated (["cell-8", empty_items]),
 );
-if let `ExecuteInitialCellEnded cell_id = terminated.lifecycle {
-  if cell_id == "cell-8" { score = score + 100 }
-}
+if let #ExecuteInitialCellEnded cell_id = terminated.lifecycle then
+  if cell_id == "cell-8" then
+    score = score + 100
+  end;
+end;
 
 let result = plan_code_mode_execute_initial_response(
   "cell-9",
-  `RuntimeResult (["cell-9", empty_items, `RuntimeErrorMissing ()]),
+  #RuntimeResult (["cell-9", empty_items, #RuntimeErrorMissing]),
 );
-if let `ExecuteInitialCellEnded cell_id = result.lifecycle {
-  if cell_id == "cell-9" { score = score + 1000 }
-}
+if let #ExecuteInitialCellEnded cell_id = result.lifecycle then
+  if cell_id == "cell-9" then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

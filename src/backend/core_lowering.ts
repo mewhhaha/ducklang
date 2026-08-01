@@ -2,6 +2,7 @@ import {
   BinaryOperator,
   BYTES_TYPE_NAME,
   createModuleArtifact,
+  effectSet,
   type EncodedModule,
   EvaluationProfile,
   type HostCapabilityDeclaration,
@@ -48,14 +49,21 @@ import { source_with_expanded_attributes } from "../../src/frontend/attribute_ex
 import { infer_default_effect_handlers } from "../../src/frontend/default_handler.ts";
 import { specialize_front_effects } from "../../src/frontend/effect_specialize.ts";
 import { source_with_host_callable_exports } from "../../src/frontend/host_exports.ts";
+import { clone_source_tree } from "../../src/frontend/syntax.ts";
 import { tokenize } from "../../src/frontend/tokenize.ts";
 import {
   format_type_expr,
   parse_type_expr,
 } from "../../src/frontend/type_expr.ts";
+import { fixed_array_length } from "../../src/frontend/fixed_array_type.ts";
 import type { TypeExpr } from "../../src/type_syntax.ts";
 import type { Prim } from "../../src/op.ts";
 import { expect } from "../../src/expect.ts";
+import { normalize_integer } from "../../src/integer.ts";
+import {
+  type DuckSemanticProgram,
+  is_checked_duck_semantic_program_for_source,
+} from "../../src/semantic_program.ts";
 
 const duck_runtime_capability = "$DuckRuntime";
 const unit_type: TypeSchema = { kind: "unit" };
@@ -105,6 +113,46 @@ export function lower_duck_source_to_gpufuck(
   source: Source,
   source_byte_length: number,
 ): LoweredDuckGpufuckModule {
+  const lowering = prepare_duck_core_lowering(source);
+  let core: CoreProgram;
+  try {
+    core = core_from_source(lowering.compiled_source);
+  } catch (error) {
+    try {
+      core = core_from_source(lowering.source);
+    } catch {
+      throw error;
+    }
+  }
+  return lower_prepared_duck_core(lowering, core, source_byte_length);
+}
+
+export function lower_duck_semantic_program_to_gpufuck(
+  source: Source,
+  program: DuckSemanticProgram,
+  source_byte_length: number,
+): LoweredDuckGpufuckModule {
+  expect(
+    is_checked_duck_semantic_program_for_source(program, source),
+    "Gpufuck lowering requires a checked semantic program for its source.",
+  );
+  const lowering = prepare_duck_core_lowering(clone_source_tree(source));
+  return lower_prepared_duck_core(
+    lowering,
+    core_from_source(lowering.compiled_source),
+    source_byte_length,
+  );
+}
+
+type PreparedDuckCoreLowering = {
+  source: Source;
+  compiled_source: Source;
+  abi: AbiManifest;
+};
+
+function prepare_duck_core_lowering(
+  source: Source,
+): PreparedDuckCoreLowering {
   source = source_with_expanded_attributes(source);
   source = source_with_host_callable_exports(source);
   const abi_source = infer_default_effect_handlers(
@@ -126,22 +174,24 @@ export function lower_duck_source_to_gpufuck(
       };
     }),
   };
-  let core: CoreProgram;
-  try {
-    core = core_from_source(compiled_source);
-  } catch (error) {
-    try {
-      core = core_from_source(source);
-    } catch {
-      throw error;
-    }
-  }
+  return {
+    source,
+    compiled_source,
+    abi: build_abi_manifest(abi_source, compiled_source),
+  };
+}
+
+function lower_prepared_duck_core(
+  lowering: PreparedDuckCoreLowering,
+  core: CoreProgram,
+  source_byte_length: number,
+): LoweredDuckGpufuckModule {
+  const type_statements = core.statements;
   core = analyze_core_demand(core);
-  const abi = build_abi_manifest(abi_source, compiled_source);
   const type_aliases = new Map<string, string>();
   const declared_types = new Set<string>();
-  if (source.declarations !== undefined) {
-    for (const declaration of source.declarations) {
+  if (lowering.source.declarations !== undefined) {
+    for (const declaration of lowering.source.declarations) {
       if (declaration.tag === "type") {
         declared_types.add(declaration.name);
       }
@@ -158,10 +208,11 @@ export function lower_duck_source_to_gpufuck(
   }
   return new DuckCoreLowering(
     core,
-    abi,
+    lowering.abi,
     source_byte_length,
     type_aliases,
     declared_types,
+    type_statements,
   ).lower();
 }
 
@@ -170,10 +221,12 @@ class DuckCoreLowering {
   readonly #abi: AbiManifest;
   readonly #source_byte_length: number;
   readonly #declared_types: ReadonlySet<string>;
+  readonly #type_statements: readonly CoreStmt[];
   readonly #types = new Map<string, DuckTypeDefinition>();
   readonly #type_aliases = new Map<string, string>();
   readonly #type_constructors = new Map<string, DuckTypeConstructor>();
   readonly #materializing_types = new Set<string>();
+  readonly #singleton_product_bindings = new Set<string>();
   readonly #function_parameter_types = new Map<
     string,
     readonly (TypeSchema | undefined)[]
@@ -224,11 +277,13 @@ class DuckCoreLowering {
     source_byte_length: number,
     type_aliases: ReadonlyMap<string, string>,
     declared_types: ReadonlySet<string>,
+    type_statements: readonly CoreStmt[],
   ) {
     this.#core = core;
     this.#abi = abi;
     this.#source_byte_length = source_byte_length;
     this.#declared_types = declared_types;
+    this.#type_statements = type_statements;
     this.#recursive_function_names = Object.keys(this.#core.recFunctions || {});
     for (const [name, target] of type_aliases) {
       this.#type_aliases.set(name, target);
@@ -330,7 +385,7 @@ class DuckCoreLowering {
       this.#types.set(type.name, this.type_definition_from_abi(type));
     }
 
-    for (const statement of this.#core.statements) {
+    for (const statement of this.#type_statements) {
       if (
         statement.tag !== "bind" || statement.kind !== "const" ||
         statement.value.tag !== "lam"
@@ -362,7 +417,7 @@ class DuckCoreLowering {
       });
     }
 
-    for (const statement of this.#core.statements) {
+    for (const statement of this.#type_statements) {
       if (statement.tag !== "bind" || statement.kind !== "const") {
         continue;
       }
@@ -557,15 +612,10 @@ class DuckCoreLowering {
           if (statement.tag !== "bind") {
             continue;
           }
-          let binding_type = this.schema_from_optional_type_name(
-            statement.annotation,
+          const binding_type = this.collected_binding_type(
+            statement,
+            block_scope,
           );
-          if (binding_type === undefined) {
-            binding_type = this.simple_expression_type(
-              statement.value,
-              block_scope,
-            );
-          }
           if (binding_type !== undefined) {
             block_scope.set(statement.name, binding_type);
           }
@@ -603,16 +653,7 @@ class DuckCoreLowering {
       if (statement.tag !== "bind") {
         continue;
       }
-      let type = this.schema_from_optional_type_name(statement.annotation);
-      if (
-        type?.kind === "named" && !this.#types.has(type.name) &&
-        this.simple_expression_type(statement.value, environment) !== undefined
-      ) {
-        type = this.simple_expression_type(statement.value, environment);
-      }
-      if (type === undefined) {
-        type = this.simple_expression_type(statement.value, environment);
-      }
+      const type = this.collected_binding_type(statement, environment);
       if (type !== undefined) {
         environment.set(statement.name, type);
       }
@@ -953,15 +994,10 @@ class DuckCoreLowering {
         if (statement.tag !== "bind") {
           continue;
         }
-        let binding_type = this.schema_from_optional_type_name(
-          statement.annotation,
+        const binding_type = this.collected_binding_type(
+          statement,
+          block_environment,
         );
-        if (binding_type === undefined) {
-          binding_type = this.simple_expression_type(
-            statement.value,
-            block_environment,
-          );
-        }
         if (binding_type !== undefined) {
           block_environment.set(statement.name, binding_type);
         }
@@ -1213,7 +1249,7 @@ class DuckCoreLowering {
         fields.push({
           kind: "operation",
           name: operation.name,
-          purity: "effectful",
+          effects: effectSet(effect.name),
           execution: operation.execution,
           parameter: this.operation_parameter_type(
             operation.params.map((param) => param.type),
@@ -1254,7 +1290,7 @@ class DuckCoreLowering {
         mutable_fields.push({
           kind: "operation",
           name: imported.field,
-          purity: "effectful",
+          effects: effectSet(imported.module),
           parameter: this.operation_parameter_type(
             imported.params.map((param) => param.type),
           ),
@@ -1424,22 +1460,23 @@ class DuckCoreLowering {
                 ),
               );
               let function_body = lowered.expression;
-              const parameters: string[] = [];
-              const parameter_count = Math.max(1, definition.params.length);
-              for (
-                let parameter_index = 0;
-                parameter_index < parameter_count;
-                parameter_index += 1
-              ) {
-                if (function_body.kind !== "lambda") {
-                  throw new Error(
-                    "Duck gpufuck recursive function is not a lambda: " +
-                      recursive_name,
-                  );
-                }
-                parameters.push(function_body.parameter);
-                function_body = function_body.body;
+              if (function_body.kind !== "lambda") {
+                throw new Error(
+                  "Duck gpufuck recursive function is not a lambda: " +
+                    recursive_name,
+                );
               }
+              const parameter_count = Math.max(1, definition.params.length);
+              if (function_body.parameters.length !== parameter_count) {
+                throw new Error(
+                  "Duck gpufuck recursive function lambda has " +
+                    function_body.parameters.length.toString() +
+                    " parameters, expected " + parameter_count.toString() +
+                    ": " + recursive_name,
+                );
+              }
+              const parameters = [...function_body.parameters];
+              function_body = function_body.body;
               bindings.push({
                 name: recursive_name,
                 parameters,
@@ -1544,6 +1581,29 @@ class DuckCoreLowering {
         }
         recursive = true;
       } else if (statement.value.tag === "lam") {
+        const annotated_signature = this.function_annotation_signature(
+          statement.annotation,
+          statement.value.params.length,
+        );
+        const collected_parameter_types = this.#function_parameter_types.get(
+          statement.name,
+        );
+        const known_parameter_types = statement.value.params.map(
+          (parameter, parameter_index) => {
+            const parameter_type = this.schema_from_optional_type_name(
+              parameter.annotation,
+            );
+            if (parameter_type !== undefined) {
+              return parameter_type;
+            }
+            const annotated_type = annotated_signature
+              ?.parameters[parameter_index];
+            if (annotated_type !== undefined) {
+              return annotated_type;
+            }
+            return collected_parameter_types?.[parameter_index];
+          },
+        );
         if (
           this.function_requires_specialization(statement.name) &&
           references_are_saturated_calls(
@@ -1559,15 +1619,17 @@ class DuckCoreLowering {
             expected_result,
           );
         }
-
-        let function_expected_result = this.schema_from_optional_type_name(
-          statement.annotation,
-        );
-        for (const _param of statement.value.params) {
-          if (function_expected_result?.kind === "function") {
-            function_expected_result = function_expected_result.result;
-          } else {
-            function_expected_result = undefined;
+        let function_expected_result = annotated_signature?.result;
+        if (function_expected_result === undefined) {
+          function_expected_result = this.schema_from_optional_type_name(
+            statement.annotation,
+          );
+          for (const _param of statement.value.params) {
+            if (function_expected_result?.kind === "function") {
+              function_expected_result = function_expected_result.result;
+            } else {
+              function_expected_result = undefined;
+            }
           }
         }
         try {
@@ -1575,13 +1637,14 @@ class DuckCoreLowering {
             statement.value.params,
             statement.value.body,
             environment,
-            this.#function_parameter_types.get(statement.name),
+            known_parameter_types,
             function_expected_result,
           );
         } catch (error) {
           if (error instanceof Error) {
             throw new Error(
               "Duck gpufuck lowering failed for function " + statement.name +
+                " annotated " + (statement.annotation || "unannotated") +
                 ": " + error.message,
               { cause: error },
             );
@@ -1599,6 +1662,12 @@ class DuckCoreLowering {
       );
       let next_type: TypeSchema | undefined;
       if (
+        (statement.value.tag === "lam" || statement.value.tag === "rec" ||
+          statement.value.tag === "rec_ref") &&
+        value.type !== undefined
+      ) {
+        next_type = value.type;
+      } else if (
         binding_type?.kind === "named" && !this.#types.has(binding_type.name) &&
         value.type !== undefined
       ) {
@@ -1942,7 +2011,10 @@ class DuckCoreLowering {
       }
       if (expression.type === "i64" && typeof expression.value === "bigint") {
         return {
-          expression: surface.signedInteger64(expression.value),
+          expression: surface.signedInteger64(normalize_integer(
+            { signed: true, width: 64 },
+            expression.value,
+          )),
           type: { kind: "signed-integer-64" },
         };
       }
@@ -2120,7 +2192,12 @@ class DuckCoreLowering {
     }
 
     if (expression.tag === "index") {
-      return this.lower_index(expression.object, expression.index, environment);
+      return this.lower_index(
+        expression.object,
+        expression.index,
+        environment,
+        expected,
+      );
     }
 
     if (expression.tag === "struct_update") {
@@ -2183,10 +2260,13 @@ class DuckCoreLowering {
       fields: state_fields,
       cases: [],
     });
-    const state_value = surface.apply(
-      surface.name(this.struct_constructor(state_name)),
-      ...carried.map((name) => surface.name(name)),
-    );
+    let state_value = surface.name(this.struct_constructor(state_name));
+    if (carried.length > 0) {
+      state_value = surface.apply(
+        state_value,
+        ...carried.map((name) => surface.name(name)),
+      );
+    }
     const next_index = surface.binary(
       BinaryOperator.Add,
       surface.name(index_name),
@@ -2365,10 +2445,13 @@ class DuckCoreLowering {
         })),
         cases: [],
       });
-      break_result = surface.apply(
-        surface.name(this.struct_constructor(state_name)),
-        ...carried_names.map((name) => surface.name(name)),
-      );
+      break_result = surface.name(this.struct_constructor(state_name));
+      if (carried_names.length > 0) {
+        break_result = surface.apply(
+          break_result,
+          ...carried_names.map((name) => surface.name(name)),
+        );
+      }
     }
     this.#loop_controls.push({ break_result, continue_result: continue_call });
     let body: SurfaceExpression;
@@ -3166,8 +3249,21 @@ class DuckCoreLowering {
             body_environment,
           ),
           "function parameter " + param.name + " in (" +
-            params.map((candidate) => candidate.name).join(", ") + ")",
+            params.map((candidate) =>
+              candidate.name + ": " + (candidate.annotation || "unannotated")
+            ).join(", ") + ")",
         );
+      }
+      if (param.annotation !== undefined) {
+        const annotation = this.resolve_type_expr_aliases(
+          parse_type_expr(tokenize(param.annotation)),
+          new Set(),
+        );
+        if (
+          annotation.tag === "product" && annotation.entries.length === 1
+        ) {
+          this.#singleton_product_bindings.add(param.name);
+        }
       }
       body_environment.set(param.name, param_type);
       param_types.push(param_type);
@@ -3183,7 +3279,10 @@ class DuckCoreLowering {
     } finally {
       this.#function_expected_results.pop();
     }
-    let lowered = lowered_body.expression;
+    const lowered = surface.lambda(
+      params.map((param) => param.name),
+      lowered_body.expression,
+    );
     let inferred_result = lowered_body.type;
     if (inferred_result === undefined) {
       inferred_result = expected_result;
@@ -3201,7 +3300,6 @@ class DuckCoreLowering {
           "Duck gpufuck lowering lost function parameter " + index.toString(),
         );
       }
-      lowered = surface.lambda(param.name, lowered);
       function_type = {
         kind: "function",
         parameter: param_type,
@@ -3243,6 +3341,95 @@ class DuckCoreLowering {
     return type;
   }
 
+  private function_annotation_signature(
+    annotation: string | undefined,
+    parameter_count: number,
+  ): { parameters: TypeSchema[]; result: TypeSchema } | undefined {
+    if (annotation === undefined) {
+      return undefined;
+    }
+
+    let type = parse_type_expr(tokenize(annotation));
+    while (type.tag === "forall") {
+      type = type.body;
+    }
+    if (type.tag !== "arrow") {
+      return undefined;
+    }
+
+    if (
+      type.param.tag === "product" &&
+      type.param.value_pack === true &&
+      type.param.entries.length === parameter_count
+    ) {
+      return {
+        parameters: type.param.entries.map((entry) =>
+          this.schema_from_type_name(format_type_expr(entry.type_expr))
+        ),
+        result: this.schema_from_type_name(format_type_expr(type.result)),
+      };
+    }
+
+    const parameters: TypeSchema[] = [];
+    let current: TypeExpr = type;
+    for (let index = 0; index < parameter_count; index += 1) {
+      if (current.tag !== "arrow") {
+        return undefined;
+      }
+      parameters.push(
+        this.schema_from_type_name(format_type_expr(current.param)),
+      );
+      current = current.result;
+    }
+    return {
+      parameters,
+      result: this.schema_from_type_name(format_type_expr(current)),
+    };
+  }
+
+  private collected_binding_type(
+    statement: Extract<CoreStmt, { tag: "bind" }>,
+    environment: ReadonlyMap<string, TypeSchema>,
+  ): TypeSchema | undefined {
+    if (statement.value.tag === "lam" || statement.value.tag === "rec") {
+      const signature = this.function_annotation_signature(
+        statement.annotation,
+        statement.value.params.length,
+      );
+      if (signature !== undefined) {
+        let type = signature.result;
+        for (
+          let index = signature.parameters.length - 1;
+          index >= 0;
+          index -= 1
+        ) {
+          const parameter = signature.parameters[index];
+          expect(parameter, "Missing collected function parameter " + index);
+          type = { kind: "function", parameter, result: type };
+        }
+        return type;
+      }
+    }
+
+    const inferred = this.simple_expression_type(
+      statement.value,
+      environment,
+    );
+    const annotated = this.schema_from_optional_type_name(
+      statement.annotation,
+    );
+    if (
+      annotated?.kind === "named" && !this.#types.has(annotated.name) &&
+      inferred !== undefined
+    ) {
+      return inferred;
+    }
+    if (annotated !== undefined) {
+      return annotated;
+    }
+    return inferred;
+  }
+
   private callable_definitions(): SurfaceDefinition[] {
     const callables = this.#abi.callables;
     if (callables === undefined) {
@@ -3253,6 +3440,12 @@ class DuckCoreLowering {
       callable_types.set(callable.name, this.callable_type(callable));
     }
     const dependency_names = new Set<string>();
+    const dependency_function_names = new Set<string>(
+      this.#source_functions.keys(),
+    );
+    for (const name of this.#imported_recursive_dependencies) {
+      dependency_function_names.add(name);
+    }
     const pending_dependencies: string[] = [];
     for (const callable of Object.values(callables)) {
       const recursive = this.#core.recFunctions?.[callable.name];
@@ -3262,7 +3455,7 @@ class DuckCoreLowering {
             callable.name,
         );
       }
-      for (const candidate of this.#source_functions.keys()) {
+      for (const candidate of dependency_function_names) {
         if (this.#type_constructors.has(candidate)) {
           continue;
         }
@@ -3277,14 +3470,14 @@ class DuckCoreLowering {
       if (dependency_name === undefined) {
         throw new Error("Duck host callable dependency scan lost a name");
       }
-      const dependency = this.#source_functions.get(dependency_name);
+      const dependency = this.source_function_definition(dependency_name);
       if (dependency === undefined) {
         throw new Error(
           "Duck host callable dependency scan cannot find " +
             dependency_name,
         );
       }
-      for (const candidate of this.#source_functions.keys()) {
+      for (const candidate of dependency_function_names) {
         if (
           !this.#type_constructors.has(candidate) &&
           !dependency_names.has(candidate) &&
@@ -3299,45 +3492,61 @@ class DuckCoreLowering {
     const dependency_environment = new Map(callable_types);
     for (const statement of this.#core.statements) {
       if (
-        statement.tag !== "bind" || !dependency_names.has(statement.name) ||
-        (statement.value.tag !== "lam" && statement.value.tag !== "rec")
+        statement.tag !== "bind" || !dependency_names.has(statement.name)
       ) {
+        continue;
+      }
+      const dependency = this.source_function_definition(statement.name);
+      if (dependency === undefined) {
         continue;
       }
       let expected_result = this.schema_from_optional_type_name(
         statement.annotation,
       );
-      for (const _parameter of statement.value.params) {
+      for (const _parameter of dependency.params) {
         if (expected_result?.kind === "function") {
           expected_result = expected_result.result;
         } else {
           expected_result = undefined;
         }
       }
-      const lowered = this.lower_function(
-        statement.value.params,
-        statement.value.body,
-        dependency_environment,
-        this.#function_parameter_types.get(statement.name),
-        expected_result,
-      );
-      let function_body = lowered.expression;
-      const parameters: string[] = [];
-      const parameter_count = Math.max(1, statement.value.params.length);
-      for (
-        let parameter_index = 0;
-        parameter_index < parameter_count;
-        parameter_index += 1
-      ) {
-        if (function_body.kind !== "lambda") {
+      let lowered: LoweredExpression;
+      try {
+        lowered = this.lower_function(
+          dependency.params,
+          dependency.body,
+          dependency_environment,
+          this.#function_parameter_types.get(statement.name),
+          expected_result,
+        );
+      } catch (error) {
+        if (error instanceof Error) {
           throw new Error(
-            "Duck host callable dependency is not a function: " +
-              statement.name,
+            "Duck gpufuck lowering failed for host callable dependency " +
+              statement.name + ": " + error.message,
+            { cause: error },
           );
         }
-        parameters.push(function_body.parameter);
-        function_body = function_body.body;
+        throw error;
       }
+      let function_body = lowered.expression;
+      const parameter_count = Math.max(1, dependency.params.length);
+      if (function_body.kind !== "lambda") {
+        throw new Error(
+          "Duck host callable dependency is not a function: " +
+            statement.name,
+        );
+      }
+      if (function_body.parameters.length !== parameter_count) {
+        throw new Error(
+          "Duck host callable dependency lambda has " +
+            function_body.parameters.length.toString() +
+            " parameters, expected " + parameter_count.toString() +
+            ": " + statement.name,
+        );
+      }
+      const parameters = [...function_body.parameters];
+      function_body = function_body.body;
       definitions.push({
         name: statement.name,
         parameters,
@@ -3474,6 +3683,23 @@ class DuckCoreLowering {
     return type;
   }
 
+  private source_function_definition(
+    name: string,
+  ): { params: readonly CoreParam[]; body: CoreExpr } | undefined {
+    const source_function = this.#source_functions.get(name);
+    if (source_function !== undefined) {
+      return source_function;
+    }
+    if (!this.#imported_recursive_dependencies.has(name)) {
+      return undefined;
+    }
+    const recursive = this.#core.recFunctions?.[name];
+    if (recursive === undefined) {
+      return undefined;
+    }
+    return recursive;
+  }
+
   private callable_exports(): { name: string; definition: string }[] {
     const callables = this.#abi.callables;
     if (callables === undefined) {
@@ -3531,6 +3757,27 @@ class DuckCoreLowering {
       } else if (expression.tag === "app") {
         const app = expression as Extract<CoreExpr, { tag: "app" }>;
         if (app.func.tag === "var") {
+          for (let index = 0; index < app.args.length; index += 1) {
+            const arg = app.args[index];
+            if (
+              arg === undefined || arg.tag !== "var" ||
+              arg.name !== parameter_name
+            ) {
+              continue;
+            }
+            if (app.func.name === "@Utf8.encode") {
+              record(HostTypes.text);
+            } else if (app.func.name === "@Utf8.decode") {
+              record(HostTypes.bytes);
+            } else if (app.func.name === "@panic") {
+              record(HostTypes.text);
+            } else if (
+              (app.func.name === "@get" || app.func.name === "@slice") &&
+              index > 0
+            ) {
+              record(integer_type);
+            }
+          }
           let function_type = environment.get(app.func.name);
           for (const arg of app.args) {
             if (function_type?.kind !== "function") {
@@ -4204,6 +4451,10 @@ class DuckCoreLowering {
     }
 
     if (name === "@panic") {
+      const message = args[0];
+      if (message?.tag === "text") {
+        return this.runtime_trap(expected, message.value);
+      }
       return this.runtime_trap(expected, "Duck program called @panic");
     }
 
@@ -4556,6 +4807,26 @@ class DuckCoreLowering {
         type: conversion.result,
       };
     }
+    if (
+      expression.prim === "i32.div_u" ||
+      expression.prim === "i32.rem_u" ||
+      expression.prim === "i64.div_u" ||
+      expression.prim === "i64.rem_u"
+    ) {
+      const left = this.lower_expression(
+        this.required_arg(expression.args, 0, expression.prim),
+        environment,
+      );
+      const right = this.lower_expression(
+        this.required_arg(expression.args, 1, expression.prim),
+        environment,
+      );
+      return this.lower_unsigned_integer_primitive(
+        expression.prim,
+        left,
+        right,
+      );
+    }
     const binary = lower_binary_primitive(expression.prim);
     if (binary !== undefined) {
       const left = this.lower_expression(
@@ -4619,11 +4890,152 @@ class DuckCoreLowering {
     );
   }
 
+  private lower_unsigned_integer_primitive(
+    primitive:
+      | "i32.div_u"
+      | "i32.rem_u"
+      | "i64.div_u"
+      | "i64.rem_u",
+    left: LoweredExpression,
+    right: LoweredExpression,
+  ): LoweredExpression {
+    // Gpufuck exposes signed division only. Flipping the sign bit gives
+    // unsigned order, and halving a negative dividend keeps signed division
+    // in range before reconstructing the exact quotient.
+    let result_type = integer_type;
+    let zero = surface.integer(0);
+    let one = surface.integer(1);
+    let sign_bit = surface.integer(-2147483648);
+    let less: BinaryOperator = BinaryOperator.Less;
+    let greater_equal: BinaryOperator = BinaryOperator.GreaterEqual;
+    let add: BinaryOperator = BinaryOperator.Add;
+    let subtract: BinaryOperator = BinaryOperator.Subtract;
+    let multiply: BinaryOperator = BinaryOperator.Multiply;
+    let divide: BinaryOperator = BinaryOperator.Divide;
+    let bitwise_xor: BinaryOperator = BinaryOperator.BitwiseXor;
+    let shift_right_unsigned: BinaryOperator =
+      BinaryOperator.ShiftRightUnsigned;
+    if (primitive.startsWith("i64.")) {
+      result_type = { kind: "signed-integer-64" };
+      zero = surface.signedInteger64(0n);
+      one = surface.signedInteger64(1n);
+      sign_bit = surface.signedInteger64(-9223372036854775808n);
+      less = BinaryOperator.LessSignedInteger64;
+      greater_equal = BinaryOperator.GreaterEqualSignedInteger64;
+      add = BinaryOperator.AddSignedInteger64;
+      subtract = BinaryOperator.SubtractSignedInteger64;
+      multiply = BinaryOperator.MultiplySignedInteger64;
+      divide = BinaryOperator.DivideSignedInteger64;
+      bitwise_xor = BinaryOperator.BitwiseXorSignedInteger64;
+      shift_right_unsigned = BinaryOperator.ShiftRightUnsignedSignedInteger64;
+    }
+    const left_name = this.temporary("unsigned_dividend");
+    const right_name = this.temporary("unsigned_divisor");
+    const half_quotient_name = this.temporary("unsigned_half_quotient");
+    const quotient_name = this.temporary("unsigned_quotient");
+    const left_value = surface.name(left_name);
+    const right_value = surface.name(right_name);
+    const unsigned_greater_equal = (
+      first: SurfaceExpression,
+      second: SurfaceExpression,
+    ): SurfaceExpression =>
+      surface.binary(
+        greater_equal,
+        surface.binary(bitwise_xor, first, sign_bit),
+        surface.binary(bitwise_xor, second, sign_bit),
+      );
+    const half_quotient = surface.binary(
+      divide,
+      surface.binary(shift_right_unsigned, left_value, one),
+      right_value,
+    );
+    const doubled_quotient = surface.binary(
+      add,
+      surface.name(half_quotient_name),
+      surface.name(half_quotient_name),
+    );
+    const remainder_after_doubling = surface.binary(
+      subtract,
+      left_value,
+      surface.binary(multiply, doubled_quotient, right_value),
+    );
+    const negative_dividend_quotient = surface.let(
+      half_quotient_name,
+      half_quotient,
+      surface.binary(
+        add,
+        doubled_quotient,
+        surface.if(
+          unsigned_greater_equal(
+            remainder_after_doubling,
+            right_value,
+          ),
+          one,
+          zero,
+        ),
+      ),
+    );
+    const quotient = surface.if(
+      surface.binary(less, right_value, zero),
+      surface.if(
+        unsigned_greater_equal(left_value, right_value),
+        one,
+        zero,
+      ),
+      surface.if(
+        surface.binary(less, left_value, zero),
+        negative_dividend_quotient,
+        surface.binary(divide, left_value, right_value),
+      ),
+    );
+    let result = surface.name(quotient_name);
+    if (primitive.endsWith(".rem_u")) {
+      result = surface.binary(
+        subtract,
+        left_value,
+        surface.binary(multiply, result, right_value),
+      );
+    }
+    return {
+      expression: surface.let(
+        left_name,
+        left.expression,
+        surface.let(
+          right_name,
+          right.expression,
+          surface.let(quotient_name, quotient, result),
+        ),
+      ),
+      type: result_type,
+    };
+  }
+
   private lower_struct_value(
     expression: Extract<CoreExpr, { tag: "struct_value" }>,
     environment: ReadonlyMap<string, TypeSchema>,
     expected: TypeSchema | undefined,
   ): LoweredExpression {
+    let expected_is_named_struct = false;
+    if (expected !== undefined) {
+      const resolved_expected = this.resolve_type_alias(expected);
+      if (resolved_expected.kind === "named") {
+        const expected_name = source_type_name_from_schema(resolved_expected);
+        this.materialize_type_definition(expected_name);
+        expected_is_named_struct = this.#types.get(expected_name)?.shape ===
+          "struct";
+      }
+    }
+    if (
+      expression.fields.length === 1 && expected !== undefined &&
+      !expected_is_named_struct &&
+      expression.type_expr.tag === "var" &&
+      expression.type_expr.name === "object_type"
+    ) {
+      const field = expression.fields[0];
+      expect(field, "Missing Duck singleton product field");
+      return this.lower_expression(field.value, environment, expected);
+    }
+
     if (expected !== undefined) {
       const resolved_expected = this.resolve_type_alias(expected);
       const field_types: TypeSchema[] = [];
@@ -4723,6 +5135,34 @@ class DuckCoreLowering {
         this.#types.set(name, definition);
       }
     }
+    if (name.startsWith("$DuckObject:")) {
+      const lowered_fields = expression.fields.map((field) =>
+        this.lower_expression(field.value, environment)
+      );
+      if (
+        lowered_fields.every((field) =>
+          field.type !== undefined && !contains_type_parameter(field.type)
+        )
+      ) {
+        definition = {
+          name,
+          shape: "struct",
+          fields: expression.fields.map((field, index) => {
+            const lowered = lowered_fields[index];
+            expect(lowered, "Missing lowered anonymous field " + field.name);
+            return {
+              name: field.name,
+              type: this.require_type(
+                lowered.type,
+                "anonymous field " + field.name,
+              ),
+            };
+          }),
+          cases: [],
+        };
+        this.#types.set(name, definition);
+      }
+    }
     if (definition.shape !== "struct") {
       throw new Error(
         "Duck gpufuck lowering cannot use non-struct type " + name,
@@ -4740,11 +5180,12 @@ class DuckCoreLowering {
       return this.lower_expression(field.value, environment, declared.type)
         .expression;
     });
+    let constructed = surface.name(this.struct_constructor(name));
+    if (values.length > 0) {
+      constructed = surface.apply(constructed, ...values);
+    }
     return {
-      expression: surface.apply(
-        surface.name(this.struct_constructor(name)),
-        ...values,
-      ),
+      expression: constructed,
       type: this.named_type(name),
     };
   }
@@ -4782,11 +5223,15 @@ class DuckCoreLowering {
       };
       this.#types.set(name, definition);
     }
-    return {
-      expression: surface.apply(
-        surface.name(this.struct_constructor(name)),
+    let constructed = surface.name(this.struct_constructor(name));
+    if (lowered_fields.length > 0) {
+      constructed = surface.apply(
+        constructed,
         ...lowered_fields.map((field) => field.expression),
-      ),
+      );
+    }
+    return {
+      expression: constructed,
       type: this.named_type(name),
     };
   }
@@ -4867,7 +5312,10 @@ class DuckCoreLowering {
       lowered_object.type,
       "field " + field_name,
     );
-    const definition = this.require_definition(name);
+    const definition = this.require_definition(
+      name,
+      "field " + field_name,
+    );
     const field_index = definition.fields.findIndex((field) =>
       field.name === field_name
     );
@@ -4904,6 +5352,7 @@ class DuckCoreLowering {
     object: CoreExpr,
     index: CoreExpr,
     environment: ReadonlyMap<string, TypeSchema>,
+    expected: TypeSchema | undefined,
   ): LoweredExpression {
     const lowered_object = this.lower_expression(object, environment);
     if (
@@ -4937,57 +5386,163 @@ class DuckCoreLowering {
         type: integer_type,
       };
     }
+    if (
+      (object.tag === "var" || object.tag === "linear") &&
+      this.#singleton_product_bindings.has(object.name)
+    ) {
+      if (
+        index.tag === "num" && index.type === "i32" &&
+        index.value === 0
+      ) {
+        return lowered_object;
+      }
+      throw new Error("Duck gpufuck singleton product index must be zero");
+    }
     if (lowered_object.type?.kind === "tuple") {
       if (
-        index.tag !== "num" || index.type !== "i32" ||
-        typeof index.value !== "number" || !Number.isInteger(index.value) ||
-        index.value < 0
+        index.tag === "num" && index.type === "i32" &&
+        typeof index.value === "number" && Number.isInteger(index.value) &&
+        index.value >= 0
       ) {
-        throw new Error("Duck gpufuck tuple index must be a nonnegative I32");
+        let selected = lowered_object.expression;
+        let selected_type: TypeSchema = lowered_object.type;
+        let remaining_index = index.value;
+
+        while (selected_type.kind === "tuple") {
+          const first = this.temporary("tuple_first");
+          const rest = this.temporary("tuple_rest");
+          if (remaining_index === 0) {
+            return {
+              expression: {
+                kind: "case",
+                value: selected,
+                arms: [{
+                  constructor: "$Tuple",
+                  binders: [first, rest],
+                  body: surface.name(first),
+                }],
+              },
+              type: selected_type.values[0],
+            };
+          }
+
+          selected = {
+            kind: "case",
+            value: selected,
+            arms: [{
+              constructor: "$Tuple",
+              binders: [first, rest],
+              body: surface.name(rest),
+            }],
+          };
+          selected_type = selected_type.values[1];
+          remaining_index -= 1;
+        }
+
+        if (remaining_index === 0 && selected_type.kind !== "unit") {
+          return { expression: selected, type: selected_type };
+        }
+        let trap_type = expected;
+        if (trap_type === undefined) {
+          let candidate_type: TypeSchema = lowered_object.type;
+          while (candidate_type.kind === "tuple") {
+            if (trap_type === undefined) {
+              trap_type = candidate_type.values[0];
+            } else if (!this.same_type(trap_type, candidate_type.values[0])) {
+              trap_type = undefined;
+              break;
+            }
+            candidate_type = candidate_type.values[1];
+          }
+          if (
+            candidate_type.kind !== "unit" &&
+            trap_type !== undefined &&
+            !this.same_type(trap_type, candidate_type)
+          ) {
+            trap_type = undefined;
+          }
+        }
+        expect(
+          trap_type !== undefined,
+          "Duck gpufuck unreachable tuple index " +
+            index.value.toString() + " has no contextual result type.",
+        );
+        return this.runtime_trap(
+          trap_type,
+          "Duck index is outside its tuple",
+        );
       }
 
-      let selected = lowered_object.expression;
+      const lowered_index = this.lower_expression(
+        index,
+        environment,
+        integer_type,
+      );
+      const layers: {
+        value: SurfaceExpression;
+        first: string;
+        rest: string;
+      }[] = [];
+      const binders: string[] = [];
+      const field_types: TypeSchema[] = [];
       let selected_type: TypeSchema = lowered_object.type;
-      let remaining_index = index.value;
-
+      let selected_value = lowered_object.expression;
       while (selected_type.kind === "tuple") {
         const first = this.temporary("tuple_first");
         const rest = this.temporary("tuple_rest");
-        if (remaining_index === 0) {
-          return {
-            expression: {
-              kind: "case",
-              value: selected,
-              arms: [{
-                constructor: "$Tuple",
-                binders: [first, rest],
-                body: surface.name(first),
-              }],
-            },
-            type: selected_type.values[0],
-          };
+        layers.push({ value: selected_value, first, rest });
+        binders.push(first);
+        field_types.push(selected_type.values[0]);
+        selected_value = surface.name(rest);
+        selected_type = selected_type.values[1];
+      }
+      if (selected_type.kind !== "unit") {
+        const final_layer = layers.at(-1);
+        if (final_layer === undefined) {
+          throw new Error("Duck gpufuck dynamic tuple index lost its fields");
         }
-
+        binders.push(final_layer.rest);
+        field_types.push(selected_type);
+      }
+      const field_type = field_types[0];
+      if (field_type === undefined) {
+        throw new Error("Duck gpufuck dynamic tuple index has no fields");
+      }
+      for (const candidate of field_types.slice(1)) {
+        if (!this.same_type(field_type, candidate)) {
+          throw new Error(
+            "Duck gpufuck dynamic tuple index requires uniform fields",
+          );
+        }
+      }
+      let selected = this.index_selection(
+        binders,
+        lowered_index.expression,
+        field_type,
+      );
+      for (
+        let layer_index = layers.length - 1;
+        layer_index >= 0;
+        layer_index--
+      ) {
+        const layer = layers[layer_index];
+        if (layer === undefined) {
+          throw new Error(
+            "Duck gpufuck dynamic tuple index lost layer " +
+              layer_index.toString(),
+          );
+        }
         selected = {
           kind: "case",
-          value: selected,
+          value: layer.value,
           arms: [{
             constructor: "$Tuple",
-            binders: [first, rest],
-            body: surface.name(rest),
+            binders: [layer.first, layer.rest],
+            body: selected,
           }],
         };
-        selected_type = selected_type.values[1];
-        remaining_index -= 1;
       }
-
-      if (remaining_index === 0) {
-        return { expression: selected, type: selected_type };
-      }
-      throw new Error(
-        "Duck gpufuck tuple index " + index.value.toString() +
-          " is outside its product",
-      );
+      return { expression: selected, type: field_type };
     }
     const name = this.named_type_name(
       lowered_object.type,
@@ -4995,7 +5550,22 @@ class DuckCoreLowering {
     );
     const definition = this.require_definition(name);
     if (definition.fields.length === 0) {
-      throw new Error("Duck gpufuck indexed type has no fields: " + name);
+      const resolved_type = this.resolve_type_expr_aliases(
+        parse_type_expr(tokenize(name)),
+        new Set(),
+      );
+      expect(
+        resolved_type.tag === "array" &&
+          fixed_array_length(resolved_type.length) === 0,
+        "Duck gpufuck indexed empty aggregate is not a fixed array: " + name,
+      );
+      const element_type = this.schema_from_type_name(
+        format_type_expr(resolved_type.element),
+      );
+      return this.runtime_trap(
+        element_type,
+        "Duck index is outside its empty aggregate",
+      );
     }
     if (
       index.tag === "num" && index.type === "i32" &&
@@ -5003,10 +5573,18 @@ class DuckCoreLowering {
     ) {
       const field = definition.fields[index.value];
       if (field === undefined) {
-        throw new Error(
-          "Duck gpufuck index " + index.value.toString() + " is outside " +
-            name + " with " + definition.fields.length.toString() +
-            " fields",
+        let trap_type = expected;
+        if (trap_type === undefined) {
+          trap_type = definition.fields[0]?.type;
+        }
+        expect(
+          trap_type !== undefined,
+          "Duck gpufuck unreachable index " + index.value.toString() +
+            " has no contextual result type in " + name + ".",
+        );
+        return this.runtime_trap(
+          trap_type,
+          "Duck index is outside " + name,
         );
       }
       const binders = definition.fields.map((candidate) =>
@@ -5147,6 +5725,185 @@ class DuckCoreLowering {
         type: HostTypes.bytes,
       };
     }
+    if (object_type.kind === "tuple") {
+      const lowered_index = this.lower_expression(
+        index,
+        environment,
+        integer_type,
+      );
+      const layers: {
+        value: SurfaceExpression;
+        first: string;
+        rest: string;
+      }[] = [];
+      const binders: string[] = [];
+      const field_types: TypeSchema[] = [];
+      let selected_type: TypeSchema = object_type;
+      let selected_value = object;
+      while (selected_type.kind === "tuple") {
+        const first = this.temporary("tuple_first");
+        const rest = this.temporary("tuple_rest");
+        layers.push({ value: selected_value, first, rest });
+        binders.push(first);
+        field_types.push(selected_type.values[0]);
+        selected_value = surface.name(rest);
+        selected_type = selected_type.values[1];
+      }
+      if (selected_type.kind !== "unit") {
+        const final_layer = layers.at(-1);
+        if (final_layer === undefined) {
+          throw new Error(
+            "Duck gpufuck tuple index update lost its fields",
+          );
+        }
+        binders.push(final_layer.rest);
+        field_types.push(selected_type);
+      }
+      const field_type = field_types[0];
+      if (field_type === undefined) {
+        throw new Error("Duck gpufuck tuple index update has no fields");
+      }
+      if (
+        index.tag === "num" && index.type === "i32" &&
+        typeof index.value === "number" && Number.isInteger(index.value)
+      ) {
+        const replacement_type = field_types[index.value];
+        if (replacement_type === undefined) {
+          return {
+            expression: this.index_update_selection(
+              0,
+              lowered_index.expression,
+              object,
+              object,
+            ),
+            type: object_type,
+          };
+        }
+        const lowered_value = this.lower_expression(
+          value,
+          environment,
+          replacement_type,
+        );
+        const fields = binders.map((binder, field_index) => {
+          if (field_index === index.value) {
+            return lowered_value.expression;
+          }
+          return surface.name(binder);
+        });
+        const final_field = fields.at(-1);
+        expect(
+          final_field !== undefined,
+          "Tuple index update lost its final field.",
+        );
+        let rebuilt: SurfaceExpression = final_field;
+        for (
+          let field_index = fields.length - 2;
+          field_index >= 0;
+          field_index--
+        ) {
+          const field = fields[field_index];
+          expect(
+            field !== undefined,
+            "Tuple index update lost field " + field_index.toString() + ".",
+          );
+          rebuilt = this.tuple_expression(field, rebuilt);
+        }
+        let selected = this.index_update_selection(
+          fields.length,
+          lowered_index.expression,
+          rebuilt,
+          object,
+        );
+        for (
+          let layer_index = layers.length - 1;
+          layer_index >= 0;
+          layer_index--
+        ) {
+          const layer = layers[layer_index];
+          expect(
+            layer !== undefined,
+            "Tuple index update lost layer " + layer_index.toString() + ".",
+          );
+          selected = {
+            kind: "case",
+            value: layer.value,
+            arms: [{
+              constructor: "$Tuple",
+              binders: [layer.first, layer.rest],
+              body: selected,
+            }],
+          };
+        }
+        return { expression: selected, type: object_type };
+      }
+      for (const candidate of field_types.slice(1)) {
+        if (!this.same_type(field_type, candidate)) {
+          throw new Error(
+            "Duck gpufuck tuple index update requires uniform fields",
+          );
+        }
+      }
+      const lowered_value = this.lower_expression(
+        value,
+        environment,
+        field_type,
+      );
+      const fields = binders.map((binder, field_index) => ({
+        kind: "if" as const,
+        condition: surface.binary(
+          BinaryOperator.Equal,
+          lowered_index.expression,
+          surface.integer(field_index),
+        ),
+        consequent: lowered_value.expression,
+        alternate: surface.name(binder),
+      }));
+      const final_field = fields.at(-1);
+      expect(
+        final_field !== undefined,
+        "Tuple index update lost its final field.",
+      );
+      let rebuilt: SurfaceExpression = final_field;
+      for (
+        let field_index = fields.length - 2;
+        field_index >= 0;
+        field_index--
+      ) {
+        const field = fields[field_index];
+        expect(
+          field !== undefined,
+          "Tuple index update lost field " + field_index.toString() + ".",
+        );
+        rebuilt = this.tuple_expression(field, rebuilt);
+      }
+      let selected = this.index_update_selection(
+        fields.length,
+        lowered_index.expression,
+        rebuilt,
+        object,
+      );
+      for (
+        let layer_index = layers.length - 1;
+        layer_index >= 0;
+        layer_index--
+      ) {
+        const layer = layers[layer_index];
+        expect(
+          layer !== undefined,
+          "Tuple index update lost layer " + layer_index.toString() + ".",
+        );
+        selected = {
+          kind: "case",
+          value: layer.value,
+          arms: [{
+            constructor: "$Tuple",
+            binders: [layer.first, layer.rest],
+            body: selected,
+          }],
+        };
+      }
+      return { expression: selected, type: object_type };
+    }
     const name = this.named_type_name(object_type, "indexed assignment");
     const definition = this.require_definition(name);
     const lowered_index = this.lower_expression(
@@ -5154,23 +5911,37 @@ class DuckCoreLowering {
       environment,
       integer_type,
     );
-    const field_type = definition.fields[0]?.type;
-    const lowered_value = this.lower_expression(value, environment, field_type);
     const binders = definition.fields.map((field) =>
       this.temporary(field.name)
     );
-    const fields = binders.map((binder, field_index) => ({
-      kind: "if" as const,
-      condition: surface.binary(
-        BinaryOperator.Equal,
-        lowered_index.expression,
-        surface.integer(field_index),
-      ),
-      consequent: lowered_value.expression,
-      alternate: surface.name(binder),
-    }));
-    return {
-      expression: {
+    if (
+      index.tag === "num" && index.type === "i32" &&
+      typeof index.value === "number" && Number.isInteger(index.value)
+    ) {
+      const replacement_type = definition.fields[index.value]?.type;
+      if (replacement_type === undefined) {
+        return {
+          expression: this.index_update_selection(
+            0,
+            lowered_index.expression,
+            object,
+            object,
+          ),
+          type: object_type,
+        };
+      }
+      const lowered_value = this.lower_expression(
+        value,
+        environment,
+        replacement_type,
+      );
+      const fields = binders.map((binder, field_index) => {
+        if (field_index === index.value) {
+          return lowered_value.expression;
+        }
+        return surface.name(binder);
+      });
+      const rebuilt: SurfaceExpression = {
         kind: "case",
         value: object,
         arms: [{
@@ -5181,7 +5952,59 @@ class DuckCoreLowering {
             ...fields,
           ),
         }],
-      },
+      };
+      return {
+        expression: this.index_update_selection(
+          fields.length,
+          lowered_index.expression,
+          rebuilt,
+          object,
+        ),
+        type: object_type,
+      };
+    }
+    const field_type = definition.fields[0]?.type;
+    expect(
+      field_type !== undefined,
+      "Duck gpufuck dynamic index update has no fields in " + name + ".",
+    );
+    for (const field of definition.fields.slice(1)) {
+      expect(
+        this.same_type(field_type, field.type),
+        "Duck gpufuck dynamic index update requires uniform fields in " +
+          name + ".",
+      );
+    }
+    const lowered_value = this.lower_expression(value, environment, field_type);
+    const fields = binders.map((binder, field_index) => ({
+      kind: "if" as const,
+      condition: surface.binary(
+        BinaryOperator.Equal,
+        lowered_index.expression,
+        surface.integer(field_index),
+      ),
+      consequent: lowered_value.expression,
+      alternate: surface.name(binder),
+    }));
+    const rebuilt: SurfaceExpression = {
+      kind: "case",
+      value: object,
+      arms: [{
+        constructor: this.struct_constructor(name),
+        binders,
+        body: surface.apply(
+          surface.name(this.struct_constructor(name)),
+          ...fields,
+        ),
+      }],
+    };
+    return {
+      expression: this.index_update_selection(
+        fields.length,
+        lowered_index.expression,
+        rebuilt,
+        object,
+      ),
       type: object_type,
     };
   }
@@ -5377,6 +6200,27 @@ class DuckCoreLowering {
     return tail.func.tag === "var" && tail.func.name === recursive_name;
   }
 
+  private ends_in_runtime_trap(expression: CoreExpr): boolean {
+    let tail = expression;
+    while (tail.tag === "block") {
+      const final_statement = tail.statements.at(-1);
+      if (final_statement === undefined) {
+        return false;
+      }
+      if (final_statement.tag === "expr") {
+        tail = final_statement.expr;
+        continue;
+      }
+      if (final_statement.tag === "return") {
+        tail = final_statement.value;
+        continue;
+      }
+      return false;
+    }
+    return tail.tag === "app" && tail.func.tag === "var" &&
+      tail.func.name === "@panic";
+  }
+
   private lower_if_let(
     expression: Extract<CoreExpr, { tag: "if_let" }>,
     environment: ReadonlyMap<string, TypeSchema>,
@@ -5402,10 +6246,24 @@ class DuckCoreLowering {
       selected_environment.set(expression.value_name, selected.type);
       selected_binder = expression.value_name;
     }
+    let branch_expected = expected;
+    if (branch_expected === undefined) {
+      if (this.ends_in_runtime_trap(expression.then_branch)) {
+        branch_expected = this.simple_expression_type(
+          expression.else_branch,
+          environment,
+        );
+      } else if (this.ends_in_runtime_trap(expression.else_branch)) {
+        branch_expected = this.simple_expression_type(
+          expression.then_branch,
+          selected_environment,
+        );
+      }
+    }
     const selected_branch = this.lower_expression(
       expression.then_branch,
       selected_environment,
-      expected,
+      branch_expected,
     );
     const other_branch = this.lower_expression(
       expression.else_branch,
@@ -5563,7 +6421,7 @@ class DuckCoreLowering {
     const declaration: HostCapabilityDeclaration["fields"][number] = {
       kind: "operation",
       name: key,
-      purity: "pure",
+      effects: effectSet(),
       parameter,
       result,
       ...ownership,
@@ -5600,7 +6458,7 @@ class DuckCoreLowering {
     const declaration: HostCapabilityDeclaration["fields"][number] = {
       kind: "operation",
       name: key,
-      purity: "pure",
+      effects: effectSet(),
       parameter,
       result,
       wasmIntrinsic: wasm_intrinsic,
@@ -5615,7 +6473,12 @@ class DuckCoreLowering {
     expected: TypeSchema | undefined,
     message: string,
   ): LoweredExpression {
-    const result = this.require_type(expected, "trap result");
+    if (expected === undefined) {
+      throw new Error(
+        "Duck gpufuck lowering cannot infer trap result for " + message,
+      );
+    }
+    const result = expected;
     const field = this.runtime_operation(
       "trap:" + this.type_key(result) + ":" +
         this.#runtime_fields.size.toString(),
@@ -5692,6 +6555,59 @@ class DuckCoreLowering {
   }
 
   private functional_type_declarations(): SurfaceTypeDeclaration[] {
+    const pending_definitions = [...this.#types.values()];
+    const seen_definitions = new Set<string>();
+    for (
+      let definition_index = 0;
+      definition_index < pending_definitions.length;
+      definition_index += 1
+    ) {
+      const definition = pending_definitions[definition_index];
+      expect(definition, "Missing pending type definition " + definition_index);
+      if (seen_definitions.has(definition.name)) {
+        continue;
+      }
+      seen_definitions.add(definition.name);
+      const pending_types = [
+        ...definition.fields.map((field) => field.type),
+        ...definition.cases.map((union_case) => union_case.type),
+      ];
+      for (
+        let type_index = 0;
+        type_index < pending_types.length;
+        type_index += 1
+      ) {
+        const type = pending_types[type_index];
+        expect(type, "Missing pending type schema " + type_index);
+        if (type.kind === "function") {
+          pending_types.push(type.parameter, type.result);
+          continue;
+        }
+        if (type.kind === "tuple") {
+          pending_types.push(type.values[0], type.values[1]);
+          continue;
+        }
+        if (type.kind === "forall") {
+          pending_types.push(type.body);
+          continue;
+        }
+        if (type.kind !== "named") {
+          continue;
+        }
+        if (!type.name.startsWith("$")) {
+          this.materialize_type_definition(type.name);
+        }
+        pending_types.push(...type.arguments);
+        const referenced = this.#types.get(type.name);
+        if (
+          referenced !== undefined &&
+          !seen_definitions.has(referenced.name)
+        ) {
+          pending_definitions.push(referenced);
+        }
+      }
+    }
+
     return [...this.#types.values()].flatMap((definition) => {
       const member_types = [
         ...definition.fields.map((field) => field.type),
@@ -5787,6 +6703,9 @@ class DuckCoreLowering {
         ),
       };
     }
+    if (resolved_type.tag === "frozen" || resolved_type.tag === "borrow") {
+      return this.schema_from_type_name(format_type_expr(resolved_type.value));
+    }
     if (resolved_type.tag === "literal") {
       if (resolved_type.value.tag === "bool") {
         return integer_type;
@@ -5831,6 +6750,25 @@ class DuckCoreLowering {
 
       return result;
     }
+    if (resolved_type.tag === "array") {
+      const length = fixed_array_length(resolved_type.length);
+      const element = this.schema_from_type_name(
+        format_type_expr(resolved_type.element),
+      );
+      if (!this.#types.has(canonical_name)) {
+        const fields: { name: string; type: TypeSchema }[] = [];
+        for (let index = 0; index < length; index += 1) {
+          fields.push({ name: "item_" + index.toString(), type: element });
+        }
+        this.#types.set(canonical_name, {
+          name: canonical_name,
+          shape: "struct",
+          fields,
+          cases: [],
+        });
+      }
+      return this.named_type(canonical_name);
+    }
     if (resolved_type.tag === "apply") {
       const application = source_type_application(canonical_name);
       expect(
@@ -5856,7 +6794,10 @@ class DuckCoreLowering {
       this.materialize_type_definition(specialized_name);
       return this.named_type(specialized_name);
     }
-    if (name === "Char" || name === "Int" || name === "I32") {
+    if (
+      name === "Char" || name === "Int" || name === "I32" ||
+      name === "U32"
+    ) {
       return integer_type;
     }
     if (name === "Bool") {
@@ -6347,6 +7288,37 @@ class DuckCoreLowering {
     return selected;
   }
 
+  private index_update_selection(
+    length: number,
+    index: SurfaceExpression,
+    updated: SurfaceExpression,
+    fallback: SurfaceExpression,
+  ): SurfaceExpression {
+    const trap_result = this.temporary("index_trap");
+    let selected: SurfaceExpression = {
+      kind: "let",
+      name: trap_result,
+      value: this.runtime_trap(
+        unit_type,
+        "Duck index is outside its aggregate",
+      ).expression,
+      body: fallback,
+    };
+    for (let field_index = length - 1; field_index >= 0; field_index -= 1) {
+      selected = {
+        kind: "if",
+        condition: surface.binary(
+          BinaryOperator.Equal,
+          index,
+          surface.integer(field_index),
+        ),
+        consequent: updated,
+        alternate: selected,
+      };
+    }
+    return selected;
+  }
+
   private unary_primitive(
     prim: Prim,
   ):
@@ -6480,11 +7452,18 @@ class DuckCoreLowering {
     return source_type_name_from_schema(type);
   }
 
-  private require_definition(name: string): DuckTypeDefinition {
+  private require_definition(
+    name: string,
+    context?: string,
+  ): DuckTypeDefinition {
     this.materialize_type_definition(name);
     const definition = this.#types.get(name);
     if (definition === undefined) {
-      throw new Error("Duck gpufuck lowering cannot find type " + name);
+      let message = "Duck gpufuck lowering cannot find type " + name;
+      if (context !== undefined) {
+        message += " for " + context;
+      }
+      throw new Error(message);
     }
     return definition;
   }

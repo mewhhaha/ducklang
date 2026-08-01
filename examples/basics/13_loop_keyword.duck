@@ -1,5 +1,5 @@
-let value = loop {
+let value = loop do
   break 42;
-};
+end;
 
 value

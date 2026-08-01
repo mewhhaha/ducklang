@@ -2,8 +2,8 @@ const values = [10, 20, 12];
 
 let total = 0;
 
-for index, value in values {
-  total = total + values[index]
-}
+for index, value in values do
+  total = total + value
+end
 
 total

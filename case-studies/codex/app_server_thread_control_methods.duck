@@ -9,61 +9,61 @@ type ThreadControlMethodKind = AppServerThreadControlKind
 type ThreadControlMethodDecodeResult = AppServerMethodDecodeResult
 type ThreadControlMethodSetNameParams = AppServerThreadSetNameParams
 
-const decode_thread_control_method: [ThreadControlMethodKind, ThreadControlMethodJson] ->
+const decode_thread_control_method: (ThreadControlMethodKind, ThreadControlMethodJson) ->
   ThreadControlMethodDecodeResult = (
     kind: ThreadControlMethodKind,
     params: ThreadControlMethodJson,
-  ) => {
-    if let `Object object = params {
+  ) => do
+    if let #Object object = params then
       let thread_id_lookup: ThreadControlMethodJsonLookup = json_object_get("threadId", object);
 
-      if let `Found thread_id_json = thread_id_lookup {
-        if let `String thread_id = thread_id_json {
-          if let `SetThreadName () = kind {
+      if let #Found thread_id_json = thread_id_lookup then
+        if let #String thread_id = thread_id_json then
+          if let #SetThreadName = kind then
             let name_lookup: ThreadControlMethodJsonLookup = json_object_get("name", object);
-            if let `Found name_json = name_lookup {
-              if let `String name = name_json {
+            if let #Found name_json = name_lookup then
+              if let #String name = name_json then
                 let decoded: ThreadControlMethodSetNameParams = [thread_id, name];
-                `MethodOk (`ThreadControl (`ThreadSetName decoded))
-              } else {
-                `MethodError "thread/name/set.params.name must be a string"
-              }
-            } else {
-              `MethodError "thread/name/set.params.name is required"
-            }
-          } else if let `IncrementThreadElicitation () = kind {
-            `MethodOk (`ThreadControl (`ThreadIncrementElicitation thread_id))
-          } else {
-            `MethodOk (`ThreadControl (`ThreadDecrementElicitation thread_id))
-          }
-        } else {
-          if let `SetThreadName () = kind {
-            `MethodError "thread/name/set.params.threadId must be a string"
-          } else if let `IncrementThreadElicitation () = kind {
-            `MethodError "thread/increment_elicitation.params.threadId must be a string"
-          } else {
-            `MethodError "thread/decrement_elicitation.params.threadId must be a string"
-          }
-        }
-      } else {
-        if let `SetThreadName () = kind {
-          `MethodError "thread/name/set.params.threadId is required"
-        } else if let `IncrementThreadElicitation () = kind {
-          `MethodError "thread/increment_elicitation.params.threadId is required"
-        } else {
-          `MethodError "thread/decrement_elicitation.params.threadId is required"
-        }
-      }
-    } else {
-      if let `SetThreadName () = kind {
-        `MethodError "thread/name/set.params must be an object"
-      } else if let `IncrementThreadElicitation () = kind {
-        `MethodError "thread/increment_elicitation.params must be an object"
-      } else {
-        `MethodError "thread/decrement_elicitation.params must be an object"
-      }
-    }
-  };
+                #MethodOk (#ThreadControl (#ThreadSetName decoded))
+              else
+                #MethodError "thread/name/set.params.name must be a string"
+              end;
+            else
+              #MethodError "thread/name/set.params.name is required"
+            end;
+          else let #IncrementThreadElicitation = kind then
+            #MethodOk (#ThreadControl (#ThreadIncrementElicitation thread_id))
+          else
+            #MethodOk (#ThreadControl (#ThreadDecrementElicitation thread_id))
+          end;
+        else
+          if let #SetThreadName = kind then
+            #MethodError "thread/name/set.params.threadId must be a string"
+          else let #IncrementThreadElicitation = kind then
+            #MethodError "thread/increment_elicitation.params.threadId must be a string"
+          else
+            #MethodError "thread/decrement_elicitation.params.threadId must be a string"
+          end;
+        end;
+      else
+        if let #SetThreadName = kind then
+          #MethodError "thread/name/set.params.threadId is required"
+        else let #IncrementThreadElicitation = kind then
+          #MethodError "thread/increment_elicitation.params.threadId is required"
+        else
+          #MethodError "thread/decrement_elicitation.params.threadId is required"
+        end;
+      end;
+    else
+      if let #SetThreadName = kind then
+        #MethodError "thread/name/set.params must be an object"
+      else let #IncrementThreadElicitation = kind then
+        #MethodError "thread/increment_elicitation.params must be an object"
+      else
+        #MethodError "thread/decrement_elicitation.params must be an object"
+      end;
+    end;
+  end;
 
 return {
   .decode_thread_control_method,

@@ -10,21 +10,29 @@ type FixtureTextOption = AgentTextOption
 let score = 0;
 let send_request: FixtureSendRequest = ["/root/reviewer", "report status"];
 let sent = run_send_message("call-send", send_request);
-if sent == "" { score = score + 1 }
+if sent == "" then
+  score = score + 1
+end;
 
 let followup_request: FixtureSendRequest = ["/root/reviewer", "check tests"];
 let followed_up = run_followup_task("call-followup", followup_request);
-if followed_up == "" { score = score + 10 }
+if followed_up == "" then
+  score = score + 10
+end;
 
 let interrupted = run_interrupt_agent("call-interrupt", "/root/reviewer");
-if interrupted == "{\"previous_status\":\"interrupted\"}" { score = score + 100 }
+if interrupted == "{\"previous_status\":\"interrupted\"}" then
+  score = score + 100
+end;
 
 let mailbox = run_wait_agent("call-wait", 30000i64);
-if mailbox == "{\"message\":\"Wait completed.\",\"timed_out\":false}" { score = score + 1000 }
+if mailbox == "{\"message\":\"Wait completed.\",\"timed_out\":false}" then
+  score = score + 1000 end;
 
-let prefix: FixtureTextOption = `Some "/root";
+let prefix: FixtureTextOption = #Some "/root";
 let statuses = run_list_agents prefix;
-if statuses == "{\"agents\":[{\"agent_name\":\"/root/reviewer\",\"agent_status\":\"running\"}]}" {
-  score = score + 10000 }
+if statuses
+  == "{\"agents\":[{\"agent_name\":\"/root/reviewer\",\"agent_status\":\"running\"}]}" then
+    score = score + 10000 end;
 
 return { .score = score };

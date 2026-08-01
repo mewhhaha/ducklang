@@ -3,13 +3,13 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type UpdatePlanTextOption =
-  | `None Unit
-  | `Some Text
+  | #None
+  | #Some Text
 
 type UpdatePlanStepStatus =
-  | `Pending Unit
-  | `InProgress Unit
-  | `Completed Unit
+  | #Pending
+  | #InProgress
+  | #Completed
 
 type UpdatePlanStep = struct {
   .step = Text,
@@ -18,8 +18,8 @@ type UpdatePlanStep = struct {
 
 type UpdatePlanStepNode = [UpdatePlanStep, UpdatePlanSteps]
 type UpdatePlanSteps =
-  | `Nil Unit
-  | `Cons UpdatePlanStepNode
+  | #Nil
+  | #Cons UpdatePlanStepNode
 
 type UpdatePlanArgs = struct {
   .explanation = UpdatePlanTextOption,
@@ -27,24 +27,24 @@ type UpdatePlanArgs = struct {
 }
 
 type UpdatePlanMode =
-  | `Plan Unit
-  | `Default Unit
+  | #Plan
+  | #Default
 
 type UpdatePlanPayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type UpdatePlanParseResult =
-  | `Parsed UpdatePlanArgs
-  | `ParseFailed Text
+  | #Parsed UpdatePlanArgs
+  | #ParseFailed Text
 
 type UpdatePlanPayloadPlan =
-  | `ParseArguments Text
-  | `RejectPayload Text
+  | #ParseArguments Text
+  | #RejectPayload Text
 
 type UpdatePlanCallPlan =
-  | `Publish UpdatePlanArgs
-  | `RejectRequest Text
+  | #Publish UpdatePlanArgs
+  | #RejectRequest Text
 
 type UpdatePlanCompletion = struct {
   .text = Text,

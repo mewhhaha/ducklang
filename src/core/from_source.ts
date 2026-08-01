@@ -33,14 +33,18 @@ export function core_from_source(source: SourceNode): Core {
       if (
         stmt.tag === "bind" && stmt.kind === "const" &&
         (ctx.type_set_aliases.has(stmt.name) ||
-          ctx.scalar_annotation_aliases.has(stmt.name))
+          ctx.scalar_annotation_aliases.has(stmt.name) ||
+          stmt.duck_member_alias === true)
       ) {
         continue;
       }
 
       if (
         stmt.tag === "bind" && stmt.kind === "const" &&
-        source_type_namespace_binding(stmt.value)
+        source_type_namespace_binding(
+          stmt.value,
+          ctx.runtime_aggregate_type_names,
+        )
       ) {
         continue;
       }
@@ -130,7 +134,15 @@ function wide_integer_type_statements(
 
 function source_type_namespace_binding(
   value: import("../frontend/ast.ts").FrontExpr,
+  runtime_aggregate_type_names: ReadonlySet<string>,
 ): boolean {
+  if (
+    value.tag === "struct_update" && value.base.tag === "var" &&
+    runtime_aggregate_type_names.has(value.base.name)
+  ) {
+    return true;
+  }
+
   if (value.tag !== "with") {
     return false;
   }
@@ -142,5 +154,6 @@ function source_type_namespace_binding(
   }
 
   return (base.tag === "var" || base.tag === "type_name") &&
-    is_builtin_type_name(base.name);
+    (is_builtin_type_name(base.name) ||
+      runtime_aggregate_type_names.has(base.name));
 }

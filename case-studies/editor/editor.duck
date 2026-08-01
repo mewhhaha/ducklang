@@ -1,768 +1,238 @@
 module (!init: Init) where
 
 const { .cast, .struct } = import "duck:prelude/types" ();
+const { .not, .slice } = import "duck:prelude" ();
+const { .max } = import "duck:prelude/functional" ();
 
-type Key =
-  | `Character Char
-  | `ArrowLeft Unit
-  | `ArrowRight Unit
-  | `Escape Unit
-  | `Backspace Unit
-  | `Enter Unit
-  | `Tab Unit
-  | `ControlC Unit
-
-type KeyDecoder =
-  | `Ground Unit
-  | `EscapePrefix Unit
-  | `ControlSequence Unit
-
-type KeySequence =
-  | `NoKeys Unit
-  | `MoreKeys KeySequenceNode
-
-type KeySequenceNode = [Key, KeySequence]
-
-type EditorCommand =
-  | `Save Unit
-  | `Quit Unit
-
-type EditorCommands =
-  | `NoCommands Unit
-  | `MoreCommands EditorCommandNode
-
-type EditorCommandNode = [EditorCommand, EditorCommands]
-
-type PieceTree = | `Empty Unit | `Leaf PieceLeaf | `Branch PieceBranch
-type PieceLeaf = struct { .piece = Bytes }
-type PieceBranch = struct {
-  .left = PieceTree,
-  .right = PieceTree,
-  .length = I32,
-  .height = I32,
-}
-type PieceTable = struct { .root = PieceTree, .length = I32 }
-type Selection = struct { .anchor = I32, .head = I32 }
-type Mode = | `Normal Unit | `Extend Unit | `Insert Unit
-type Status = | `Ready Unit | `SaveFailed Unit
-type Highlight = struct { .start = I32, .end = I32 }
+type Status = | #Ready | #SaveFailed Text
 type TerminalSize = struct { .columns = I32, .rows = I32 }
 type OutputBuilder = struct { .buffer = Bytes, .length = I32 }
-type KeyDecodeStep = struct {
-  .decoder = KeyDecoder,
-  .keys = KeySequence,
-}
-type EditorStep = struct {
-  .editor = Editor,
-  .commands = EditorCommands,
-}
-type EditorInputStep = struct {
-  .editor = Editor,
-  .decoder = KeyDecoder,
-  .commands = EditorCommands,
-}
 type RenderView = struct {
-  .document = Bytes,
-  .highlight = Highlight,
-  .mode = Mode,
+  .editor = Editor,
   .status = Status,
   .size = TerminalSize,
 }
-type Editor = struct {
-  .document = PieceTable,
-  .selection = Selection,
-  .mode = Mode,
-  .status = Status,
-}
+type SaveSequence =
+  | #NoSaves
+  | #SavedDocument SavedDocument
+type SavedDocument = [PieceTable, SaveSequence]
 
-effect RenderOutput {
-  append: (I32) => Unit
-}
+const {
+  .piece_byte_traversal,
+  .materialize,
+} = import "./piece_tree.duck" ();
+const {
+  .editor_from_bytes,
+  .editor_highlight,
+  .apply_keys,
+  .ground_key_decoder,
+} = import "./editor_core.duck" ();
 
-const { .not, .slice } = import "duck:prelude" ();
-
-const escape_character = cast(27, Char);
-const control_c_character = cast(3, Char);
-const backspace_character = cast(8, Char);
-const delete_character = cast(127, Char);
-const control_sequence_introducer: Char = '[';
-const cursor_home_command: Char = 'H';
-const erase_display_command: Char = 'J';
-const inverse_video_parameter: Char = '7';
-const reset_style_parameter: Char = '0';
-const select_graphic_rendition_command: Char = 'm';
+const escape_character = cast (27, Char);
+const control_sequence_introducer = '[';
+const cursor_home_command = 'H';
+const erase_display_command = 'J';
+const inverse_video_parameter = '7';
+const reset_style_parameter = '0';
+const select_graphic_rendition_command = 'm';
 const utf8_continuation_lower_bound = 0x80;
 const utf8_continuation_upper_bound = 0xc0;
 const minimum_document_rows = 1;
 const terminal_status_row_count = 1;
 const minimum_render_columns = 8;
+const maximum_utf8_bytes_per_character = 4;
 const terminal_line_break_byte_count = 2;
 // The frame emits two 3-byte cursor/display sequences and at most four 4-byte style sequences.
 const terminal_frame_control_capacity = 22;
 
-const empty_piece_tree = () => {
-  let tree: PieceTree = `Empty ();
-  tree
-};
-
-let piece_tree_length = (tree: PieceTree) => match tree {
-  | `Empty () => 0
-  | `Leaf leaf => leaf.piece.length()
-  | `Branch branch => branch.length
-};
-
-let piece_tree_height = (tree: PieceTree) => match tree {
-  | `Empty () => 0
-  | `Leaf _ => 1
-  | `Branch branch => branch.height
-};
-
-let piece_tree_leaf = (bytes: Bytes) => {
-  if bytes.length() == 0 {
-    empty_piece_tree()
-  } else {
-    let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes });
-    leaf
-  }
-};
-
-let piece_tree_branch = (left: PieceTree, right: PieceTree) => {
-  if let `Empty () = left {
-    right
-  } else if let `Empty () = right {
-    left
-  } else {
-    let left_height = piece_tree_height left;
-    let right_height = piece_tree_height right;
-    let height = if left_height > right_height { left_height + 1 } else { right_height + 1 };
-    let branch: PieceTree = `Branch (PieceBranch.new {
-      .left = left,
-      .right = right,
-      .length = piece_tree_length left + piece_tree_length right,
-      .height = height,
-    });
-    branch
-  }
-};
-
-let rec join_piece_trees = (left: PieceTree, right: PieceTree) => {
-  let left_height = piece_tree_height left;
-  let right_height = piece_tree_height right;
-
-  if left_height > right_height + 1 {
-    let `Branch branch = left else { return piece_tree_branch(left, right); };
-    piece_tree_branch(branch.left, join_piece_trees(branch.right, right))
-  } else if right_height > left_height + 1 {
-    let `Branch branch = right else { return piece_tree_branch(left, right); };
-    piece_tree_branch(join_piece_trees(left, branch.left), branch.right)
-  } else {
-    piece_tree_branch(left, right)
-  }
-};
-
-let piece_table = (bytes: Bytes) => {
-  let root = piece_tree_leaf bytes;
-  PieceTable.new { .root = root, .length = piece_tree_length root }
-};
-
-let rec piece_tree_byte_at = (tree: PieceTree, wanted: I32) => match tree {
-  | `Empty () => 0
-  | `Leaf leaf => {
-    let piece: Bytes = leaf.piece;
-    piece[wanted]
-  }
-  | `Branch branch => {
-    let left_length = piece_tree_length(branch.left);
-
-    if wanted < left_length {
-      piece_tree_byte_at(branch.left, wanted)
-    } else {
-      piece_tree_byte_at(branch.right, wanted - left_length)
-    }
-  }
-};
-
-let byte_at = (table: PieceTable, wanted: I32) => piece_tree_byte_at(table.root, wanted);
-
-let rec split_piece_tree = (tree: PieceTree, position: I32) => {
-  let length = piece_tree_length tree;
-
-  if position <= 0 {
-    (empty_piece_tree(), tree)
-  } else if position >= length {
-    (tree, empty_piece_tree())
-  } else {
-    match tree {
-      | `Empty () => (empty_piece_tree(), empty_piece_tree())
-      | `Leaf leaf => {
-        let piece = leaf.piece;
-        let left = piece_tree_leaf(slice(&piece, 0, position));
-        let right = piece_tree_leaf(slice(&piece, position, piece.length()));
-        (left, right)
-      }
-      | `Branch branch => {
-        let left = branch.left;
-        let right = branch.right;
-        let left_length = piece_tree_length left;
-
-        if position < left_length {
-          let (prefix, suffix) = split_piece_tree(left, position);
-          (prefix, join_piece_trees(suffix, right))
-        } else {
-          let (prefix, suffix) = split_piece_tree(right, position - left_length);
-          (join_piece_trees(left, prefix), suffix)
-        }
-      }
-    }
-  }
-};
-
-let insert_bytes = (table, position, bytes) => {
-  let inserted_length = bytes.length();
-
-  if inserted_length == 0 {
-    table
-  } else {
-    let (left, right) = split_piece_tree(table.root, position);
-    let inserted = piece_tree_leaf bytes;
-    let root = join_piece_trees(join_piece_trees(left, inserted), right);
-    PieceTable.new { .root = root, .length = piece_tree_length root }
-  }
-};
-
-let delete_bytes = (table, start, end) => {
-  if start >= end {
-    table
-  } else {
-    let (prefix, suffix) = split_piece_tree(table.root, end);
-    let (left, _) = split_piece_tree(prefix, start);
-    let root = join_piece_trees(left, suffix);
-    PieceTable.new { .root = root, .length = piece_tree_length root }
-  }
-};
-
-let materialize = (table: PieceTable) => {
-  let output = Bytes.generate(table.length, _ => 0);
-  let output_offset = 0;
-  let empty_stack: List PieceTree = `Nil ();
-  let pending: List PieceTree = `Cons [table.root, empty_stack];
-
-  loop {
-    let `Cons node = pending else { break; };
-    let [tree, tail] = node;
-
-    match tree {
-      | `Empty () => {
-        pending = tail
-      }
-      | `Leaf leaf => {
-        pending = tail
-        let piece: Bytes = leaf.piece;
-
-        for byte in piece {
-          output[output_offset] = byte
-          output_offset = output_offset + 1
-        }
-      }
-      | `Branch branch => {
-        let right_node: List PieceTree = `Cons [branch.right, tail];
-        pending = `Cons [branch.left, right_node]
-      }
-    }
-  }
-
-  output
-};
-
-let selection_start = selection => {
-  if selection.anchor < selection.head { selection.anchor } else { selection.head }
-};
-
-let is_utf8_continuation = byte => {
+let is_utf8_continuation = byte => do
   byte >= utf8_continuation_lower_bound && byte < utf8_continuation_upper_bound
-};
+end;
 
-let next_character = (table, position) => {
-  let next = position + 1;
-
-  for candidate in next..table.length {
-    let byte = byte_at(table, candidate);
-    if not(is_utf8_continuation byte) { break; }
-    next = candidate + 1
-  }
-
-  next
-};
-
-let previous_character = (table, position) => {
-  let previous = position - 1;
-
-  for candidate in previous..0 by -1 {
-    let byte = byte_at(table, candidate);
-    if not(is_utf8_continuation byte) { break; }
-    previous = candidate - 1
-  }
-
-  previous
-};
-
-let clamp_character = (table, position) => {
-  if table.length == 0 {
-    0
-  } else if position < 0 {
-    0
-  } else if position >= table.length {
-    previous_character(table, table.length)
-  } else {
-    position
-  }
-};
-
-let selection_head_end = (table, selection) => {
-  if table.length == 0 {
-    0
-  } else {
-    let furthest =
-      if selection.anchor > selection.head { selection.anchor } else { selection.head };
-    next_character(table, furthest)
-  }
-};
-
-let move_head = (editor, position) => {
-  let head = clamp_character(&editor.document, position);
-  let anchor = if let `Extend () = editor.mode { editor.selection.anchor } else { head };
-  editor <& { .selection = Selection.new { .anchor = anchor, .head = head } }
-};
-
-let move_left = editor => {
-  move_head(editor, previous_character(&editor.document, editor.selection.head))
-};
-
-let move_right = editor => {
-  move_head(editor, next_character(&editor.document, editor.selection.head))
-};
-
-let collapse = (editor, position) => {
-  let cursor = clamp_character(&editor.document, position);
-  let mode = if let `Extend () = editor.mode { `Normal () } else { editor.mode };
-  let updated = editor <& { .selection = Selection.new { .anchor = cursor, .head = cursor } };
-  updated <& { .mode = mode }
-};
-
-let delete_selection = editor => {
-  let start = selection_start(&editor.selection);
-  let end = selection_head_end(&editor.document, &editor.selection);
-  let document = delete_bytes(editor.document, start, end);
-  let updated = editor <& { .document = document };
-  collapse(updated, start)
-};
-
-let insert_byte = (editor, byte) => {
-  let bytes = Bytes.generate(1, _ => byte);
-  let position = editor.selection.head;
-  let document = insert_bytes(editor.document, position, bytes);
-  let updated = editor <& { .document = document };
-  collapse(updated, position + 1)
-};
-
-let continue_editing = editor => {
-  EditorStep.new {
-    .editor = editor,
-    .commands = `NoCommands (),
-  }
-};
-
-let request_editor_command = (editor, command: EditorCommand) => {
-  let no_commands: EditorCommands = `NoCommands ();
-  let commands: EditorCommands = `MoreCommands [command, no_commands];
-  EditorStep.new {
-    .editor = editor,
-    .commands = commands,
-  }
-};
-
-let apply_normal_character = (editor, character) => {
-  match character {
-    | 'h' => continue_editing(move_left editor)
-    | 'l' => continue_editing(move_right editor)
-    | 'v' => {
-      let mode = if let `Extend () = editor.mode { `Normal () } else { `Extend () };
-      continue_editing(editor <& { .mode = mode })
-    }
-    | 'd' => continue_editing(delete_selection editor)
-    | 'c' => {
-      let updated = delete_selection editor;
-      continue_editing(updated <& { .mode = `Insert () })
-    }
-    | 'i' => {
-      let updated = collapse(editor, selection_start(&editor.selection));
-      continue_editing(updated <& { .mode = `Insert () })
-    }
-    | 'a' => {
-      let position = selection_head_end(&editor.document, &editor.selection);
-      let updated = collapse(editor, position);
-      continue_editing(updated <& { .mode = `Insert () })
-    }
-    | 'w' => request_editor_command(editor, `Save ())
-    | 'q' => request_editor_command(editor, `Quit ())
-    | _ => continue_editing editor
-  }
-};
-
-let apply_backspace = editor => {
-  if editor.selection.head == 0 {
-    continue_editing editor
-  } else {
-    let start = previous_character(&editor.document, editor.selection.head);
-    let document = delete_bytes(editor.document, start, editor.selection.head);
-    let updated = editor <& { .document = document };
-    continue_editing(collapse(updated, start))
-  }
-};
-
-let apply_insert_key = (editor, key: Key) => match key {
-  | `Escape () => continue_editing(editor <& { .mode = `Normal () })
-  | `Backspace () => apply_backspace editor
-  | `Enter () => continue_editing(insert_byte(editor, cast('\n', I32)))
-  | `Tab () => continue_editing(insert_byte(editor, cast('\t', I32)))
-  | `Character character => {
-    let byte: I32 = cast(character, I32);
-
-    if byte >= cast(' ', I32) {
-      continue_editing(insert_byte(editor, byte))
-    } else {
-      continue_editing editor
-    }
-  }
-  | _ => continue_editing editor
-};
-
-let apply_key = (editor, key) => match key {
-  | `ArrowLeft () => continue_editing(move_left editor)
-  | `ArrowRight () => continue_editing(move_right editor)
-  | `ControlC () => {
-    if let `Insert () = editor.mode {
-      continue_editing editor
-    } else {
-      request_editor_command(editor, `Quit ())
-    }
-  }
-  | `Character character => {
-    if let `Insert () = editor.mode {
-      apply_insert_key(editor, key)
-    } else {
-      apply_normal_character(editor, character)
-    }
-  }
-  | _ => {
-    if let `Insert () = editor.mode {
-      apply_insert_key(editor, key)
-    } else {
-      continue_editing editor
-    }
-  }
-};
-
-let decoded_without_key = decoder => {
-  KeyDecodeStep.new {
-    .decoder = decoder,
-    .keys = `NoKeys (),
-  }
-};
-
-let decoded_key = (decoder, key: Key) => {
-  let no_keys: KeySequence = `NoKeys ();
-  let keys: KeySequence = `MoreKeys [key, no_keys];
-  KeyDecodeStep.new {
-    .decoder = decoder,
-    .keys = keys,
-  }
-};
-
-let decode_ground_character = character => match character {
-  | #(escape_character) => decoded_without_key(`EscapePrefix ())
-  | #(control_c_character) => decoded_key(`Ground (), `ControlC ())
-  | #(backspace_character) | #(delete_character) => {
-    decoded_key(`Ground (), `Backspace ())
-  }
-  | '\r' => decoded_key(`Ground (), `Enter ())
-  | '\t' => decoded_key(`Ground (), `Tab ())
-  | _ => decoded_key(`Ground (), `Character character)
-};
-
-let decode_key_character = (decoder, character) => {
-  match decoder {
-    | `Ground () => decode_ground_character character
-    | `EscapePrefix () => {
-      if character == control_sequence_introducer {
-        decoded_without_key(`ControlSequence ())
-      } else {
-        let decoded = decode_ground_character character;
-        let escape_key: Key = `Escape ();
-        let keys: KeySequence = `MoreKeys [escape_key, decoded.keys];
-        KeyDecodeStep.new {
-          .decoder = decoded.decoder,
-          .keys = keys,
-        }
-      }
-    }
-    | `ControlSequence () => {
-      match character {
-        | 'D' => decoded_key(`Ground (), `ArrowLeft ())
-        | 'C' => decoded_key(`Ground (), `ArrowRight ())
-        | _ => decoded_without_key(`Ground ())
-      }
-    }
-  }
-};
-
-let rec prepend_commands = (
-  pending: EditorCommands,
-  reversed: EditorCommands,
-) => match pending {
-  | `MoreCommands node => {
-    prepend_commands(node[1], `MoreCommands [node[0], reversed])
-  }
-  | `NoCommands () => reversed
-};
-
-let rec apply_decoded_keys = (
-  editor: Editor,
-  keys: KeySequence,
-  reversed_commands: EditorCommands,
-) => match keys {
-  | `MoreKeys node => {
-    let step = apply_key(editor, node[0]);
-    let commands = prepend_commands(step.commands, reversed_commands);
-    apply_decoded_keys(step.editor, node[1], commands)
-  }
-  | `NoKeys () => EditorStep.new {
-    .editor = editor,
-    .commands = reversed_commands,
-  }
-};
-
-let apply_keys = (editor, decoder, bytes) => {
-  let updated = editor;
-  let current_decoder = decoder;
-  let reversed_commands: EditorCommands = `NoCommands ();
-
-  for byte in bytes {
-    let character = cast(byte, Char);
-    let decoded = decode_key_character(current_decoder, character);
-    current_decoder = decoded.decoder
-    let applied = apply_decoded_keys(
-      updated,
-      decoded.keys,
-      reversed_commands,
-    );
-    updated = applied.editor
-    reversed_commands = applied.commands
-  }
-
-  if let `EscapePrefix () = current_decoder {
-    let step = apply_key(updated, `Escape ());
-    updated = step.editor
-    current_decoder = `Ground ()
-  }
-
-  let no_commands: EditorCommands = `NoCommands ();
-  EditorInputStep.new {
-    .editor = updated,
-    .decoder = current_decoder,
-    .commands = prepend_commands(reversed_commands, no_commands),
-  }
-};
-
-let output_builder = capacity => {
+let output_builder = capacity => do
   OutputBuilder.new {
-    .buffer = Bytes.generate(capacity, _ => 0),
+    .buffer = Bytes.generate (capacity, _ => 0),
     .length = 0,
   }
-};
+end;
 
-let append_output_byte = (output, byte) => {
+let append_output_byte = (output, byte) => do
   let buffer = output.buffer;
   buffer[output.length] = byte
   OutputBuilder.new { .buffer = buffer, .length = output.length + 1 }
-};
+end;
 
-let render_output = capacity => {
-  let output = output_builder capacity;
-  handler RenderOutput {
-    append: (byte, !resume) => {
-      output = append_output_byte(output, byte)
-      !resume(())
-    },
-    return: _ => slice(&output.buffer, 0, output.length),
-  }
-};
+let append_output_character = (output, character: Char) => do
+  append_output_byte (output, cast (character, I32))
+end;
 
-let emit_output_byte = byte => {
-  _ <- RenderOutput.append(byte)
-  ()
-};
+let append_control_sequence = (output, command) => do
+  let output = append_output_character (output, escape_character);
+  output = append_output_character (output, control_sequence_introducer)
+  append_output_character (output, command)
+end;
 
-let emit_output_character = (character: Char) => {
-  _ <- emit_output_byte(cast(character, I32))
-  ()
-};
+let append_sgr = (output, parameter) => do
+  let output = append_control_sequence (output, parameter);
+  append_output_character (output, select_graphic_rendition_command)
+end;
 
-let emit_control_sequence = (command: Char) => {
-  _ <- emit_output_character escape_character
-  _ <- emit_output_character control_sequence_introducer
-  _ <- emit_output_character command
-  ()
-};
+const display_byte = (byte: I32) => do
+  let character = cast (byte, Char);
+  if character == '\t' then cast (' ', I32) else byte end;
+end;
 
-let emit_sgr = (parameter: Char) => {
-  _ <- emit_control_sequence parameter
-  _ <- emit_output_character select_graphic_rendition_command
-  ()
-};
-
-const display_byte = (byte: I32) => {
-  let character = cast(byte, Char);
-  if character == '\t' { cast(' ', I32) } else { byte }
-};
-
-let render = view => {
-  let document = view.document;
-  let selected_start = view.highlight.start;
-  let selected_end = view.highlight.end;
-  let mode = view.mode;
+let render: RenderView -> Bytes = view => do
+  let editor = view.editor;
+  let document = editor.document;
+  let highlight = editor_highlight editor;
+  let selected_start = highlight.start;
+  let selected_end = highlight.end;
+  let mode = editor.mode;
   let status = view.status;
   let columns = view.size.columns;
   let rows = view.size.rows;
   let document_rows = rows - terminal_status_row_count;
-  let visible_rows =
-    if document_rows > minimum_document_rows { document_rows } else { minimum_document_rows };
-  let visible_columns =
-    if columns > minimum_render_columns { columns } else { minimum_render_columns };
+  let visible_rows = max (document_rows, minimum_document_rows);
+  let visible_columns = max (columns, minimum_render_columns);
   let line_break_capacity = visible_rows * terminal_line_break_byte_count;
+  let document_capacity =
+    visible_rows * visible_columns * maximum_utf8_bytes_per_character;
   let output_capacity =
-    document.length() + line_break_capacity + visible_columns + terminal_frame_control_capacity;
+    document_capacity + line_break_capacity + visible_columns
+    + terminal_frame_control_capacity;
 
-  try {
-    _ <- emit_control_sequence cursor_home_command
-    _ <- emit_control_sequence erase_display_command
-    let highlighted = false;
-    let row = 0;
-    let column = 0;
+  let output = output_builder output_capacity;
+  output = append_control_sequence (output, cursor_home_command)
+  output = append_control_sequence (output, erase_display_command)
+  let highlighted = false;
+  let row = 0;
+  let column = 0;
+  let position = 0;
+  let bytes = piece_byte_traversal document;
 
-    for position in 0..document.length() {
-      let byte = display_byte document[position];
-      let character = cast(byte, Char);
+  for byte in bytes do
+    if row >= visible_rows then
+      break;
+    end;
 
-      if row < visible_rows {
-        if position == selected_start {
-          _ <- emit_sgr inverse_video_parameter
-          highlighted = true
-        }
+    let byte = display_byte byte;
 
-        if position == selected_end && highlighted {
-          _ <- emit_sgr reset_style_parameter
-          highlighted = false
-        }
+    if position == selected_start then
+      output = append_sgr (output, inverse_video_parameter)
+      highlighted = true
+    end;
 
-        if character == '\n' {
-          _ <- emit_output_character '\r'
-          _ <- emit_output_character '\n'
-          row = row + 1
-          column = 0
-        } else if column < visible_columns {
-          _ <- emit_output_byte byte
+    if position == selected_end && highlighted then
+      output = append_sgr (output, reset_style_parameter)
+      highlighted = false
+    end;
 
-          if not(is_utf8_continuation byte) {
-            column = column + 1
-          }
-        }
-      }
-    }
+    if byte == cast ('\n', I32) then
+      output = append_output_character (output, '\r')
+      output = append_output_character (output, '\n')
+      row = row + 1
+      column = 0
+    else column < visible_columns then
+      output = append_output_byte (output, byte)
 
-    if highlighted {
-      _ <- emit_sgr reset_style_parameter
-    }
+      if not (is_utf8_continuation byte) then
+        column = column + 1
+      end;
+    end;
 
-    for _ in row..visible_rows {
-      _ <- emit_output_character '\r'
-      _ <- emit_output_character '\n'
-    }
+    position = position + 1
+  end
 
-    _ <- emit_sgr inverse_video_parameter
-    let label = if let `SaveFailed () = status {
-      " SAVE FAILED  w retry  q quit "
-    } else if let `Insert () = mode {
-      " INSERT  esc normal "
-    } else if let `Extend () = mode {
-      " EXTEND  h/l move  d delete  i/a insert  w save  q quit "
-    } else {
-      " NORMAL  h/l move  v extend  d delete  i/a insert  w save  q quit "
-    };
+  if highlighted then
+    output = append_sgr (output, reset_style_parameter)
+  end;
 
-    for label_index in 0..label.length() {
-      if label_index < visible_columns {
-        _ <- emit_output_byte label[label_index]
-      }
-    }
+  for _ in row..visible_rows do
+    output = append_output_character (output, '\r')
+    output = append_output_character (output, '\n')
+  end
 
-    _ <- emit_sgr reset_style_parameter
-    ()
-  } with render_output output_capacity
-};
+  output = append_sgr (output, inverse_video_parameter)
+  let label = case status of
+    #SaveFailed message => " SAVE FAILED: " ++ message ++ "  w retry  q quit ",
+    #Ready => do
+      case mode of
+        #Insert _ => " INSERT  esc normal ",
+        #Extend _ => " EXTEND  h/l move  d delete  i/a insert  w save  q quit ",
+        #Normal _ => " NORMAL  h/l move  v extend  d delete  i/a insert  w save  q quit ";
+    end;
 
-document <- Terminal.load()
-let initial_document = piece_table document;
-let editor = Editor.new {
-  .document = initial_document,
-  .selection = Selection.new { .anchor = 0, .head = 0 },
-  .mode = `Normal (),
-  .status = `Ready (),
-};
-let key_decoder: KeyDecoder = `Ground ();
+  for label_index in 0..label.length () do
+    if label_index < visible_columns then
+      output = append_output_byte (output, label[label_index])
+    end;
+  end
 
-loop {
-  columns <- Terminal.columns()
-  rows <- Terminal.rows()
-  let rendered_document = materialize(&editor.document);
-  let rendered_start = selection_start(&editor.selection);
-  let rendered_end = selection_head_end(&editor.document, &editor.selection);
+  output = append_sgr (output, reset_style_parameter)
+  slice (&output.buffer, 0, output.length)
+end;
+
+let save_documents: (SaveSequence, Status) -> <Terminal> Status = (
+  documents,
+  initial_status,
+) => do
+  let latest_status = initial_status;
+  let pending = documents;
+
+  loop do
+    if let #SavedDocument saved = pending then
+      let contents = materialize (&saved[0]);
+      save_result <- Terminal.save (&contents)
+      latest_status = case save_result of
+        #Ok => #Ready,
+        #Err message => #SaveFailed message;
+      pending = saved[1]
+    else
+      break;
+    end;
+  end;
+
+  latest_status
+end;
+
+document <- Terminal.load ()
+let editor = editor_from_bytes document;
+let key_decoder = ground_key_decoder;
+let editor_status = #Ready;
+
+loop do
+  columns <- Terminal.columns ()
+  rows <- Terminal.rows ()
   let view = RenderView.new {
-    .document = rendered_document,
-    .highlight = Highlight.new { .start = rendered_start, .end = rendered_end },
-    .mode = editor.mode,
-    .status = editor.status,
+    .editor = editor,
+    .status = editor_status,
     .size = TerminalSize.new { .columns = columns, .rows = rows },
   };
   let frame = render view;
-  _ <- Terminal.write(&frame)
-  read_result <- Terminal.read()
-  let `Keys keys = read_result else { break; };
-  let input_step: EditorInputStep = apply_keys(editor, key_decoder, keys);
-  editor = input_step.editor
-  key_decoder = input_step.decoder
-  let quit_requested = false;
-  let pending_commands = input_step.commands;
+  _ <- Terminal.write (&frame)
+  read_result <- Terminal.read ()
 
-  loop {
-    let `MoreCommands command_node = pending_commands else { break; };
-    let [command, remaining_commands] = command_node;
-    pending_commands = remaining_commands
+  case read_result of
+    #End => do
+      break;
+    end,
+    #Keys keys => do
+      let input_result = apply_keys (editor, key_decoder, keys);
 
-    match command {
-      | `Save () => {
-        let contents = materialize(&editor.document);
-        save_result <- Terminal.save(&contents)
-        let status = if let `Ok () = save_result { `Ready () } else { `SaveFailed () };
-        editor = editor <& { .status = status }
-      }
-      | `Quit () => {
-        quit_requested = true
-      }
-    }
-  }
-
-  if quit_requested { break; }
-}
+      case input_result of
+        #ContinueInput continued => do
+          editor = continued.editor
+          key_decoder = continued.decoder
+          saved_status <- save_documents (continued.saves, editor_status)
+          editor_status = saved_status
+        end,
+        #QuitInput quit => do
+          editor = quit.editor
+          _ <- save_documents (quit.saves, editor_status)
+          break;
+        end;
+    end;
+end;
 
 return { .code = 0 };

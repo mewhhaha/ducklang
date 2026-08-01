@@ -1,0 +1,104 @@
+module () where
+
+const { .cast, .struct } = import "duck:prelude/types" ();
+
+type Key =
+  | #Character Char
+  | #ArrowLeft
+  | #ArrowRight
+  | #Escape
+  | #Backspace
+  | #Enter
+  | #Tab
+  | #ControlC
+type KeyDecoder =
+  | #Ground
+  | #EscapePrefix
+  | #ControlSequence
+type KeyPair = [Key, Key]
+type DecodedKeys =
+  | #NoDecodedKeys
+  | #OneDecodedKey Key
+  | #TwoDecodedKeys KeyPair
+type KeyDecodeStep = struct {
+  .decoder = KeyDecoder,
+  .keys = DecodedKeys,
+}
+
+const escape_byte: I32 = 27;
+const control_c_byte: I32 = 3;
+const backspace_byte: I32 = 8;
+const delete_byte: I32 = 127;
+const control_sequence_introducer_byte: I32 = 91;
+
+const ground_key_decoder: KeyDecoder = #Ground;
+
+let decoded_without_key: KeyDecoder -> KeyDecodeStep = decoder => do
+  KeyDecodeStep.new {
+    .decoder = decoder,
+    .keys = #NoDecodedKeys,
+  }
+end;
+
+let decoded_key: (KeyDecoder, Key) -> KeyDecodeStep = (decoder, key) => do
+  KeyDecodeStep.new {
+    .decoder = decoder,
+    .keys = #OneDecodedKey key,
+  }
+end;
+
+let decode_ground_byte: I32 -> KeyDecodeStep = (byte: I32) => do
+  if byte == escape_byte then
+    decoded_without_key(#EscapePrefix)
+  else byte == control_c_byte then
+    decoded_key(#Ground, #ControlC)
+  else byte == backspace_byte || byte == delete_byte then
+    decoded_key(#Ground, #Backspace)
+  else byte == 13 then
+    decoded_key(#Ground, #Enter)
+  else byte == 9 then
+    decoded_key(#Ground, #Tab)
+  else
+    decoded_key(#Ground, #Character (cast(byte, Char)))
+  end;
+end;
+
+let decode_key_byte: (KeyDecoder, I32) -> KeyDecodeStep = (
+  decoder,
+  byte: I32,
+) => case decoder of
+  #Ground => decode_ground_byte byte,
+  #EscapePrefix => do
+    if byte == control_sequence_introducer_byte then
+      decoded_without_key(#ControlSequence)
+    else
+      let decoded = decode_ground_byte byte;
+      let ground_keys: DecodedKeys = decoded.keys;
+      let keys = case ground_keys of
+        #NoDecodedKeys => #OneDecodedKey #Escape,
+        #OneDecodedKey key => #TwoDecodedKeys [#Escape, key],
+        #TwoDecodedKeys _ => @panic "Ground key decoding unexpectedly produced two keys";
+      KeyDecodeStep.new {
+        .decoder = decoded.decoder,
+        .keys = keys,
+      }
+    end;
+  end,
+  #ControlSequence => if byte == 68 then
+    decoded_key(#Ground, #ArrowLeft)
+  else byte == 67 then
+    decoded_key(#Ground, #ArrowRight)
+  else
+    decoded_without_key(#Ground)
+  end;
+
+let finish_key_decoder: KeyDecoder -> KeyDecodeStep = decoder => case decoder of
+  #EscapePrefix => decoded_key(#Ground, #Escape),
+  #Ground => decoded_without_key(#Ground),
+  #ControlSequence => decoded_without_key(#ControlSequence);
+
+return {
+  .ground_key_decoder,
+  .decode_key_byte,
+  .finish_key_decoder,
+};

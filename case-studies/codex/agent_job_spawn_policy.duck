@@ -9,21 +9,21 @@ type AgentJobSpawnPolicyDecoded = AgentJobSpawnDecodedArgs
 type AgentJobSpawnPolicyOption = AgentJobTextOption
 type AgentJobSpawnPolicyPlan = AgentJobSpawnPlan
 
-const prepare_agent_job_spawn: [
+const prepare_agent_job_spawn: (
   AgentJobSpawnPolicyDecoded,
   Text,
   I32,
   Bool,
   I32,
   AgentJobSpawnPolicyOption,
-] -> AgentJobSpawnPolicyPlan = (
+) -> AgentJobSpawnPolicyPlan = (
   decoded: AgentJobSpawnPolicyDecoded,
   cwd: Text,
   environment_count: I32,
   remote_environment: Bool,
   maximum_threads: I32,
   configured_runtime_seconds: AgentJobSpawnPolicyOption,
-) => {
+) => do
   let prepared = prepare_agent_job_spawn_environment(
     decoded,
     cwd,
@@ -31,14 +31,14 @@ const prepare_agent_job_spawn: [
     remote_environment,
     maximum_threads,
   );
-  if let `SpawnDecoded environment_args = prepared {
+  if let #SpawnDecoded environment_args = prepared then
     prepare_agent_job_spawn_limits(environment_args, maximum_threads, configured_runtime_seconds)
-  } else if let `SpawnDecodeFailed reason = prepared {
-    `RejectSpawn reason
-  } else {
-    `RejectSpawn "agent job environment policy returned no result"
-  }
-};
+  else let #SpawnDecodeFailed reason = prepared then
+    #RejectSpawn reason
+  else
+    #RejectSpawn "agent job environment policy returned no result"
+  end;
+end;
 
 return {
   .agent_job_path_is_absolute,

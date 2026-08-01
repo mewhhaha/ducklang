@@ -13,26 +13,26 @@ effect Counter {
   add: (I32) => Unit
 }
 
-let run: Ints -> <Counter> Unit = (values: Ints) => {
-  for value in values {
+let run: Ints -> <Counter> Unit = (values: Ints) => do
+  for value in values do
     _ <- Counter.add(value)
-  }
+  end
   ()
-};
+end;
 
-let counter = {
+let counter = do
   let sum = 0;
   handler Counter {
-    add: (value, !resume) => {
+    add: (value, !resume) => do
       sum = sum + value
       !resume(())
-    },
+    end,
     return: _ => sum,
   }
-};
+end;
 
-let only: IntNode = [42, \`Nil ()];
-let values: Ints = \`Cons only;
+let only: IntNode = [42, #Nil];
+let values: Ints = #Cons only;
 
 try run(values) with counter
 `;
@@ -46,7 +46,7 @@ Deno.test("effects inside a cursor loop reach CPS elaboration", () => {
   // `expr` statement. The effect scan used to miss that shape, classify the
   // loop as pure, and fail with "Effect operation requires CPS elaboration".
   assert_includes(elaborated, "let rec __duck_effect_loop_0");
-  assert_includes(elaborated, "if let `Cons @duck_payload#0 = @duck_cursor#0");
+  assert_includes(elaborated, "if let #Cons @duck_payload#0 = @duck_cursor#0");
 });
 
 Deno.test("breaking out of an effectful loop does not re-enter it", () => {

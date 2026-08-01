@@ -5,10 +5,10 @@ type McpBoolOption = Option Bool
 type McpTexts = List Text
 
 type McpToolVisibility =
-  | `Model Unit
-  | `App Unit
-  | `ModelAndApp Unit
-  | `Hidden Unit
+  | #Model
+  | #App
+  | #ModelAndApp
+  | #Hidden
 
 type McpToolAnnotations = [McpBoolOption, McpBoolOption, McpBoolOption]
 type McpTool = [
@@ -20,22 +20,22 @@ type McpTool = [
   McpTextOption,
   McpToolVisibility,
   Bool,
-  McpToolAnnotations ]
+  McpToolAnnotations]
 type McpTools = List McpTool
 
 type McpToolRuntime = [McpTool, ToolExposure]
 type McpToolRuntimes = List McpToolRuntime
 
 type McpApprovalMode =
-  | `Auto Unit
-  | `Prompt Unit
-  | `Writes Unit
-  | `Never Unit
+  | #Auto
+  | #Prompt
+  | #Writes
+  | #Never
 
 type McpApprovalDecision =
-  | `Accept Unit
-  | `AcceptForSession Unit
-  | `AcceptAndRemember Unit
-  | `Decline McpTextOption
+  | #Accept
+  | #AcceptForSession
+  | #AcceptAndRemember
+  | #Decline McpTextOption
 
 return {};

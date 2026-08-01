@@ -22,6 +22,11 @@ import {
   has_source_span,
   source_span,
 } from "./syntax.ts";
+import {
+  integer_literal_fits,
+  integer_type_from_name,
+  integer_val_type,
+} from "../integer.ts";
 
 type DuckMemberTarget = {
   declaration: DuckDeclaration;
@@ -141,6 +146,21 @@ export function elaborate_front_ducks(source: Source): Source {
 
   const surface_facts = source_facts(source);
 
+  for (const statement of surface_facts.statements) {
+    if (
+      statement.tag === "bind" && statement.kind === "const" &&
+      surface_facts.editor_type_of.get(statement.value)?.duck_member !==
+        undefined
+    ) {
+      statement.duck_member_alias = true;
+    }
+  }
+
+  if (elaborate_from_conversions(surface_facts, ducks)) {
+    invalidate_source_facts(source);
+    return elaborate_front_ducks(source);
+  }
+
   if (
     elaborate_collection_syntax(
       surface_facts,
@@ -230,6 +250,170 @@ export function elaborate_front_ducks(source: Source): Source {
     ...elaborated,
     statements: [...specialized_statements, ...elaborated.statements],
   };
+}
+
+function elaborate_from_conversions(
+  facts: SourceFacts,
+  ducks: Map<string, DuckDeclaration>,
+): boolean {
+  let changed = false;
+
+  for (const expr of facts.expressions) {
+    if (expr.tag !== "app") {
+      continue;
+    }
+
+    const target = duck_member_target(expr.func, ducks, facts);
+
+    if (
+      target?.declaration.name === "Into" &&
+      target.member.name === "into"
+    ) {
+      expr.func = {
+        tag: "field",
+        object: { tag: "var", name: "From" },
+        name: "from",
+      };
+      changed = true;
+      continue;
+    }
+
+    if (
+      target?.declaration.name !== "From" ||
+      target.member.name !== "from"
+    ) {
+      continue;
+    }
+
+    if (expr.args.length !== 1) {
+      const value_pack: FrontExpr = {
+        tag: "product",
+        entries: expr.args.map((value) => ({ value })),
+        value_pack: true,
+      };
+      if (has_source_span(expr)) {
+        derive_missing_source_spans(value_pack, source_span(expr));
+      }
+      expr.arg = value_pack;
+      expr.args = [value_pack];
+      changed = true;
+      continue;
+    }
+
+    const expected = facts.expected_type_of.get(expr);
+
+    if (
+      expected === undefined || expected.inference_variable ||
+      expected.resolved_name === "" || expected.resolved_name === "unknown"
+    ) {
+      throw new Error(
+        "`from` requires a result type from an annotation or call context",
+      );
+    }
+
+    const value = expr.args[0];
+    expect(value, "`from` requires a value");
+
+    if (value.tag === "product" && value.value_pack === true) {
+      const target = from_product_target(expected, value.entries.length);
+
+      if (target) {
+        const replacement: FrontExpr = {
+          tag: "product",
+          entries: value.entries,
+        };
+        if (has_source_span(expr)) {
+          derive_missing_source_spans(replacement, source_span(expr));
+        }
+        replace_node(expr, replacement);
+        changed = true;
+        continue;
+      }
+    }
+
+    const target_integer = integer_type_from_name(expected.resolved_name);
+
+    if (value.tag === "num" && target_integer !== undefined) {
+      let literal: bigint;
+
+      if (typeof value.value === "bigint") {
+        literal = value.value;
+      } else {
+        literal = BigInt(value.value);
+      }
+
+      if (!integer_literal_fits(target_integer, literal)) {
+        throw new Error(
+          "Integer literal " + literal.toString() +
+            " is out of range for " + expected.resolved_name,
+        );
+      }
+
+      const carrier = integer_val_type(target_integer);
+      let type: "i32" | "i64" = "i64";
+      let runtime_value: number | bigint = literal;
+
+      if (carrier === "i32") {
+        type = "i32";
+        runtime_value = Number(literal);
+      }
+
+      const replacement: Extract<FrontExpr, { tag: "num" }> = {
+        tag: "num",
+        type,
+        value: runtime_value,
+      };
+
+      if (
+        expected.resolved_name !== "I32" &&
+        expected.resolved_name !== "I64"
+      ) {
+        replacement.integer = target_integer;
+      }
+      if (has_source_span(expr)) {
+        derive_missing_source_spans(replacement, source_span(expr));
+      }
+      replace_node(expr, replacement);
+      changed = true;
+      continue;
+    }
+
+    const source = facts.editor_type_of.get(value);
+
+    if (
+      source !== undefined &&
+      source.resolved_name === expected.resolved_name &&
+      source.nominal === expected.nominal
+    ) {
+      replace_node(expr, value);
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function from_product_target(
+  expected: SourceTypeFact,
+  value_count: number,
+): boolean {
+  if (
+    expected.positional_fields && expected.fields !== undefined
+  ) {
+    return expected.fields.length === value_count;
+  }
+
+  let target: TypeExpr;
+
+  try {
+    target = parse_type_expr(tokenize(expected.name));
+  } catch {
+    return false;
+  }
+
+  return target.tag === "array" &&
+    target.length.tag === "number" &&
+    target.length.value === value_count;
 }
 
 function resolve_comptime_duck_check(
@@ -349,7 +533,7 @@ function resolve_duck_member_call(
   extension_value_types: Map<FrontExpr, TypeExpr>,
   specialized_extension_bindings: Map<string, SpecializedExtensionBinding>,
 ): boolean {
-  const target = duck_member_target(expr.func, ducks);
+  const target = duck_member_target(expr.func, ducks, facts);
 
   if (target === undefined) {
     return false;
@@ -362,7 +546,7 @@ function resolve_duck_member_call(
 
   if (
     expr.args.length === 1 && packed_args !== undefined &&
-    packed_args.tag === "product"
+    packed_args.tag === "product" && param_types.length !== 1
   ) {
     member_args = packed_args.entries.map((entry) => entry.value);
   }
@@ -940,6 +1124,7 @@ function resolve_extension_receiver_call(
       expr.arg = {
         tag: "product",
         entries: expr.args.map((value) => ({ value })),
+        value_pack: true,
       };
       const implementation_type = facts.editor_type_of.get(
         associated_implementation.value,
@@ -1014,6 +1199,7 @@ function resolve_extension_receiver_call(
   expr.arg = {
     tag: "product",
     entries: expr.args.map((value) => ({ value })),
+    value_pack: true,
   };
   const implementation_type = facts.editor_type_of.get(implementation.value);
 
@@ -1550,24 +1736,37 @@ function replace_node(
 function duck_member_target(
   func: FrontExpr,
   ducks: Map<string, DuckDeclaration>,
+  facts: SourceFacts,
 ): DuckMemberTarget | undefined {
-  if (func.tag !== "field" || func.object.tag !== "var") {
+  let declaration_name: string | undefined;
+  let member_name: string | undefined;
+
+  if (func.tag === "field" && func.object.tag === "var") {
+    declaration_name = func.object.name;
+    member_name = func.name;
+  } else {
+    const callable = facts.editor_type_of.get(func);
+    declaration_name = callable?.duck_member?.declaration;
+    member_name = callable?.duck_member?.member;
+  }
+
+  if (declaration_name === undefined || member_name === undefined) {
     return undefined;
   }
 
-  const declaration = ducks.get(func.object.name);
+  const declaration = ducks.get(declaration_name);
 
   if (declaration === undefined) {
     return undefined;
   }
 
   const member = declaration.members.find((candidate) => {
-    return candidate.name === func.name;
+    return candidate.name === member_name;
   });
 
   if (member === undefined) {
     throw new Error(
-      "Duck " + declaration.name + " has no member " + func.name,
+      "Duck " + declaration.name + " has no member " + member_name,
     );
   }
 
@@ -1581,11 +1780,11 @@ function duck_member_param_types(member: DuckMember): TypeExpr[] {
 
   const param = member.type_expr.param;
 
-  if (param.tag !== "product") {
-    return [param];
+  if (param.tag === "product" && param.value_pack === true) {
+    return param.entries.map((entry) => entry.type_expr);
   }
 
-  return param.entries.map((entry) => entry.type_expr);
+  return [param];
 }
 
 function duck_member_result_type(member: DuckMember): TypeExpr {

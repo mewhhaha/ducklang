@@ -5,16 +5,16 @@ const {} = import "./history_types.duck" ();
 
 type AudioPreparationResultNode = [AudioPreparationResult, AudioPreparationResults]
 type AudioPreparationResults =
-  | `AudioResultsNil Unit
-  | `AudioResultsCons AudioPreparationResultNode
+  | #AudioResultsNil
+  | #AudioResultsCons AudioPreparationResultNode
 
 type AudioRewriteFailure =
-  | `MissingAudioPreparation I32
-  | `ExtraAudioPreparations I32
-  | `InvalidAudioPreparationStatus I32
+  | #MissingAudioPreparation I32
+  | #ExtraAudioPreparations I32
+  | #InvalidAudioPreparationStatus I32
 
 type AudioRewriteResult =
-  | `PreparedAudioResponses HistoryItems
-  | `RejectedAudioRewrite AudioRewriteFailure
+  | #PreparedAudioResponses HistoryItems
+  | #RejectedAudioRewrite AudioRewriteFailure
 
 return {};

@@ -15,12 +15,14 @@ let input: FixtureArgs = args.prepend(
 let plan: FixturePlan = parse_cli input;
 let score = 0;
 
-if let `ManageApplication command = plan {
-  if let `RunRemoteControl options = command {
-    if let `RemoteControlStop () = options.operation {
-      if options.json { score = 1 }
-    }
-  }
-}
+if let #ManageApplication command = plan then
+  if let #RunRemoteControl options = command then
+    if let #RemoteControlStop = options.operation then
+      if options.json then
+        score = 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

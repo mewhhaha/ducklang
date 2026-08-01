@@ -11,6 +11,33 @@ function binding_value(statement: Stmt | undefined): FrontExpr {
   return statement.value;
 }
 
+Deno.test("end is reserved for control flow but remains a field name", () => {
+  const source = parse_source(`
+let finish = 2;
+let boundary = { .end = finish };
+boundary.end
+`);
+
+  assert_equals(
+    format_source(source),
+    "let finish = 2;\n" +
+      "let boundary = { .end = finish };\n" +
+      "boundary.end",
+  );
+  assert_throws(
+    () => parse_source("let end = 2;\n"),
+    "`end` is reserved and cannot be used as a variable",
+  );
+  assert_throws(
+    () => parse_source("let identity = end => end;\n"),
+    "`end` is reserved and cannot be used as a variable",
+  );
+  assert_throws(
+    () => parse_source("let value = end;\n"),
+    "`end` is reserved and cannot be used as a variable",
+  );
+});
+
 Deno.test("source calls are unary, left associative, and tighter than infix", () => {
   const source = parse_source(`
 let chained = f x y + g(z);
@@ -52,8 +79,76 @@ let separate = x;
   );
   assert_equals(parse_source(formatted), source);
   assert_throws(
-    () => parse_source("type X = | `X I32\n"),
+    () => parse_source("type X = | #X I32\n"),
     "Single-case sums omit the leading `|`",
+  );
+});
+
+Deno.test("template literals pass typed chunks and interpolations to their consumer", () => {
+  const source = parse_source(`
+let name = "world";
+let template = \`stored {name}\`;
+render \`hello {name}; answer {40 + 2}\`
+`);
+  const template = binding_value(source.statements[1]);
+  const rendered = source.statements[2];
+
+  if (
+    template.tag !== "product" || template.template_literal !== true ||
+    rendered?.tag !== "expr" || rendered.expr.tag !== "app"
+  ) {
+    throw new Error("Expected template literal value and consumer call");
+  }
+
+  assert_equals(template.value_pack, true);
+  assert_equals(template.entries.map((entry) => entry.value.tag), [
+    "product",
+    "product",
+  ]);
+  assert_equals(rendered.expr.args.map((arg) => arg.tag), [
+    "product",
+    "product",
+  ]);
+  assert_equals(
+    format_source(source),
+    'let name = "world";\n' +
+      "let template = `stored {name}`;\n" +
+      "render `hello {name}; answer {40 + 2}`",
+  );
+});
+
+Deno.test("from preserves target-directed conversion syntax", () => {
+  const source = parse_source(
+    "let exact: [1, 2] = from (1, 2);\n" +
+      "let array: [I32; 2] = from (1, 2);\n" +
+      "let byte: U8 = from 1;",
+  );
+  const exact = binding_value(source.statements[0]);
+
+  if (exact.tag !== "app" || exact.func.tag !== "var") {
+    throw new Error("Expected from to remain an ordinary function call");
+  }
+
+  assert_equals(exact.func.name, "from");
+  assert_equals(exact.args.map((arg) => arg.tag), ["num", "num"]);
+  assert_equals(
+    format_source(source),
+    "let exact: [1, 2] = from (1, 2);\n" +
+      "let array: [I32; 2] = from (1, 2);\n" +
+      "let byte: U8 = from 1;",
+  );
+});
+
+Deno.test("from can be renamed and shadowed like any other function", () => {
+  assert_equals(
+    format_source(parse_source(`
+let from = value => value;
+let convert = from;
+let result = convert 1;
+`)),
+    "let from = value => value;\n" +
+      "let convert = from;\n" +
+      "let result = convert 1;",
   );
 });
 
@@ -90,7 +185,7 @@ Deno.test("bindings and unary functions share recursive patterns", () => {
 const { .add, .subtract = subtract_numbers } = import "./math.duck";
 let { .left = left, .right = right } = pair;
 let [head, ...tail] = values;
-let choose = rec \`Some value => value;
+let choose = rec #Some value => value;
 `);
   const record = source.statements[0];
   const product = source.statements[1];
@@ -119,8 +214,29 @@ let choose = rec \`Some value => value;
     'const { .add, .subtract = subtract_numbers } = import "./math.duck";\n' +
       "let { .left, .right } = pair;\n" +
       "let [head, ...tail] = values;\n" +
-      "let choose = rec `Some value => value;",
+      "let choose = rec #Some value => value;",
   );
+});
+
+Deno.test("product parameters remain distinct from argument packs", () => {
+  const source = parse_source(`
+let unpack = [left, right] => left;
+let select = (left, right) => right;
+`);
+  const unpack = binding_value(source.statements[0]);
+  const select = binding_value(source.statements[1]);
+
+  if (
+    unpack.tag !== "lam" || unpack.pattern?.tag !== "product" ||
+    select.tag !== "lam" || select.pattern?.tag !== "product"
+  ) {
+    throw new Error("Expected function bindings");
+  }
+
+  assert_equals(unpack.params.length, 1);
+  assert_equals(unpack.pattern.value_pack, undefined);
+  assert_equals(select.params.length, 2);
+  assert_equals(select.pattern.value_pack, true);
 });
 
 Deno.test("const variadic parameters capture an argument pack", () => {
@@ -160,10 +276,9 @@ Deno.test("const variadic parameters capture an argument pack", () => {
 
 Deno.test("value-pack patterns retain a final rest binding", () => {
   const source = parse_source(`
-const first = (const ...values) => comptime match values {
-  | () => 0
-  | (value, ...remaining) => value
-};
+const first = (const ...values) => comptime case values of
+  () => 0,
+  (value, ...remaining) => value;
 `);
   const first = binding_value(source.statements[0]);
 
@@ -174,7 +289,7 @@ const first = (const ...values) => comptime match values {
   const matched = first.body.expr;
 
   if (matched.tag !== "match") {
-    throw new Error("Expected value-pack match");
+    throw new Error("Expected value-pack case");
   }
 
   const split = matched.arms[1]?.pattern;
@@ -192,8 +307,8 @@ const first = (const ...values) => comptime match values {
   });
   assert_equals(
     format_source(source),
-    "const first = const ...values => comptime " +
-      "(match values { | () => 0 | (value, ...remaining) => value });",
+    "const first = const ...values => comptime do " +
+      "case values of () => 0, (value, ...remaining) => value; end;",
   );
 });
 
@@ -244,18 +359,18 @@ return { .code, .status = renamed };
   assert_equals(parse_source(format_source(update)), update);
 });
 
-Deno.test("dotted braces are shapes and undotted braces are blocks", () => {
+Deno.test("braces are shapes and do end delimits blocks", () => {
   const source = parse_source(`
 let a = 1;
 let shape = { .a };
-let block = { a };
+let block = do a end;
 `);
 
   assert_equals(binding_value(source.statements[1]).tag, "shape");
   assert_equals(binding_value(source.statements[2]).tag, "block");
   assert_equals(
     format_source(source),
-    "let a = 1;\nlet shape = { .a };\nlet block = { a };",
+    "let a = 1;\nlet shape = { .a };\nlet block = do a end;",
   );
 });
 
@@ -296,9 +411,9 @@ let values = [1, 2, ...tail];
 
 Deno.test("single-case sums omit the leading pipe", () => {
   const source = parse_source(`
-type X = \`X I32
-let wrapped: X = \`X 42;
-match wrapped { | \`X value => value }
+type X = #X I32
+let wrapped: X = #X 42;
+case wrapped of #X value => value;
 `);
   const declaration = source.declarations?.[0];
 
@@ -313,9 +428,9 @@ match wrapped { | \`X value => value }
   const formatted = format_source(source);
   assert_equals(
     formatted,
-    "type X = `X I32\n" +
-      "let wrapped: X = `X 42;\n" +
-      "match wrapped { | `X value => value }",
+    "type X = #X I32\n" +
+      "let wrapped: X = #X 42;\n" +
+      "case wrapped of #X value => value;",
   );
   assert_equals(parse_source(formatted), source);
 });
@@ -365,7 +480,7 @@ Deno.test("include is a canonical text expression", () => {
 
 Deno.test("collection loop union patterns retain their surface form", () => {
   const source = parse_source(
-    "for index, `Some value in values { total = total + value }",
+    "for index, #Some value in values do total = total + value end",
   );
   const statement = source.statements[0];
 
@@ -385,13 +500,50 @@ Deno.test("collection loop union patterns retain their surface form", () => {
   });
   assert_equals(
     format_source(source),
-    "for index, `Some value in values { total = total + value; }",
+    "for index, #Some value in values do total = total + value; end",
   );
+});
+
+Deno.test("assignment distinguishes carried updates from lexical shadows", () => {
+  const source = parse_source(
+    'let value = 1;\nvalue = 2\nvalue := "two"\nvalue',
+  );
+  const same = source.statements[1];
+  const change = source.statements[2];
+
+  if (same === undefined || same.tag !== "assign") {
+    throw new Error("Expected same-type assignment");
+  }
+  if (change === undefined || change.tag !== "assign") {
+    throw new Error("Expected lexical shadow");
+  }
+
+  assert_equals(same.mode, "same");
+  assert_equals(change.mode, "change");
+  assert_equals(
+    format_source(source),
+    'let value = 1;\nvalue = 2;\nvalue := "two";\nvalue',
+  );
+  assert_equals(parse_source(format_source(source)), source);
+});
+
+Deno.test("assignment names do not become fixity declarations", () => {
+  const source = parse_source(
+    "let prefix = 1;\nprefix = 2\nprefix",
+  );
+  const assignment = source.statements[1];
+
+  if (assignment === undefined || assignment.tag !== "assign") {
+    throw new Error("Expected prefix assignment");
+  }
+
+  assert_equals(assignment.name, "prefix");
+  assert_equals(assignment.mode, "same");
 });
 
 Deno.test("let-else retains a terminating fallback and following scope", () => {
   const source = parse_source(
-    "let `Some value = result else { return 0; };\nvalue",
+    "let #Some value = result else do return 0; end;\nvalue",
   );
   const statement = source.statements[0];
 
@@ -401,11 +553,11 @@ Deno.test("let-else retains a terminating fallback and following scope", () => {
 
   assert_equals(
     format_source(source),
-    "let `Some value = result else { return 0; };\nvalue",
+    "let #Some value = result else do return 0; end;\nvalue",
   );
   assert_equals(parse_source(format_source(source)), source);
   assert_throws(
-    () => parse_source("let `Some value = result else { 0 };\nvalue"),
+    () => parse_source("let #Some value = result else do 0 end;\nvalue"),
     "Let-else branch must return, break, continue, or trap",
   );
 });
@@ -428,7 +580,7 @@ Deno.test("import invocation does not permit redundant parentheses", () => {
 
 Deno.test("compiler functions retain their intrinsic prefix", () => {
   const source = parse_source(
-    "let append = [left, right] => left;\n" +
+    "let append = (left, right) => left;\n" +
       'let compiler_value = @append("a", "b");\n' +
       'let user_value = append("a", "b");\n',
   );
@@ -447,7 +599,7 @@ Deno.test("compiler functions retain their intrinsic prefix", () => {
   assert_equals(user_value.func.name, "append");
   assert_equals(
     format_source(source),
-    "let append = [left, right] => left;\n" +
+    "let append = (left, right) => left;\n" +
       'let compiler_value = @append ("a", "b");\n' +
       'let user_value = append ("a", "b");',
   );
@@ -519,8 +671,20 @@ Deno.test("noncanonical aggregate spellings are rejected", () => {
     "Product types use `[...]`",
   );
   assert_throws(
-    () => parse_source("type Maybe = `Some I32 | `None Unit"),
+    () => parse_source("type Maybe = #Some I32 | #None"),
     "Multiple-case sums require a leading `|`",
+  );
+  assert_throws(
+    () => parse_source("type Maybe = | #Some I32 | #None Unit"),
+    "Nullary sum case #None omits `Unit`",
+  );
+  assert_throws(
+    () => parse_source("let none = #None ();"),
+    "Nullary union constructor #None omits `()`",
+  );
+  assert_throws(
+    () => parse_source("let #None () = option;"),
+    "Nullary union case pattern #None omits `()`",
   );
   assert_throws(
     () => parse_source("const maybe_type = union { .some = I32 };"),
@@ -539,17 +703,16 @@ Deno.test("noncanonical aggregate spellings are rejected", () => {
   );
 });
 
-Deno.test("match arms require leading pipes and preserve optional guards", () => {
+Deno.test("case arms use commas and preserve optional guards", () => {
   const source = parse_source(`
-let picked = match choice {
-  | \`Some value if value > 0 => value
-  | \`None () => 0
-};
+let picked = case choice of
+  #Some value if value > 0 => value,
+  #None => 0;
 `);
   const picked = binding_value(source.statements[0]);
 
   if (picked.tag !== "match") {
-    throw new Error("Expected match expression");
+    throw new Error("Expected case expression");
   }
 
   assert_equals(picked.arms.length, 2);
@@ -559,14 +722,46 @@ let picked = match choice {
   const formatted = format_source(source);
   assert_equals(
     formatted,
-    "let picked = match choice { | `Some value if value > 0 => value " +
-      "| `None () => 0 };",
+    "let picked = case choice of #Some value if value > 0 => value, " +
+      "#None => 0;",
   );
   assert_equals(parse_source(formatted), source);
 
   assert_throws(
-    () => parse_source("let picked = match choice { _ => 0 };\n"),
-    "Expected `|`",
+    () => parse_source("let picked = case choice of | #None => 0;\n"),
+    "Expected pattern",
+  );
+  assert_throws(
+    () =>
+      parse_source(
+        "let picked = match choice with | #None => 0 end;\n",
+      ),
+    "Expected `;` after binding",
+  );
+});
+
+Deno.test("case functions infer their argument pack from arm patterns", () => {
+  const source = parse_source(`
+let choose = case => of
+  (#None, value) => value,
+  (value, #None) => value,
+  (left, right) => left;
+`);
+  const value = binding_value(source.statements[0]);
+
+  if (
+    value.tag !== "lam" || value.case_function !== true ||
+    value.body.tag !== "match"
+  ) {
+    throw new Error("Expected a case function");
+  }
+
+  assert_equals(value.params.length, 2);
+  assert_equals(value.body.target.tag, "product");
+  assert_equals(
+    format_source(source),
+    "let choose = case => of (#None, value) => value, " +
+      "(value, #None) => value, (left, right) => left;",
   );
 });
 

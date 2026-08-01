@@ -16,38 +16,39 @@ type TurnCursorJsonLookup = JsonLookupResult
 type TurnCursor = AppServerThreadTurnsCursor
 type TurnCursorResult = AppServerThreadTurnsCursorResult
 
-let invalid_cursor: Text -> TurnCursorResult = (cursor: Text) => `Err ("invalid cursor: " <> cursor);
+let invalid_cursor: Text -> TurnCursorResult =
+  (cursor: Text) => #Err ("invalid cursor: " <> cursor);
 
-let parse_thread_turns_cursor: Text -> TurnCursorResult = (cursor: Text) => {
+let parse_thread_turns_cursor: Text -> TurnCursorResult = (cursor: Text) => do
   let parsed = parse_json_document cursor;
 
-  if let `Ok decoded = parsed {
+  if let #Ok decoded = parsed then
     let [value, _] = decoded;
-    if let `Object fields = value {
+    if let #Object fields = value then
       let turn_id: TurnCursorJsonLookup = json_object_get("turnId", fields);
       let include_anchor: TurnCursorJsonLookup = json_object_get("includeAnchor", fields);
-      if let `Found turn_id_value = turn_id {
-        if let `String id = turn_id_value {
-          if let `Found include_anchor_value = include_anchor {
-            if let `Bool included = include_anchor_value {
-              `Ok ([id, included])
-            } else { invalid_cursor cursor }
-          } else { invalid_cursor cursor }
-        } else { invalid_cursor cursor }
-      } else { invalid_cursor cursor }
-    } else { invalid_cursor cursor }
-  } else {
+      if let #Found turn_id_value = turn_id then
+        if let #String id = turn_id_value then
+          if let #Found include_anchor_value = include_anchor then
+            if let #Bool included = include_anchor_value then
+              #Ok ([id, included])
+            else invalid_cursor cursor end;
+          else invalid_cursor cursor end;
+        else invalid_cursor cursor end;
+      else invalid_cursor cursor end;
+    else invalid_cursor cursor end;
+  else
     invalid_cursor cursor
-  }
-};
+  end;
+end;
 
-const serialize_thread_turns_cursor: TurnCursor -> Text = (cursor: TurnCursor) => {
+const serialize_thread_turns_cursor: TurnCursor -> Text = (cursor: TurnCursor) => do
   let [turn_id, include_anchor] = cursor;
   let fields = json_object_empty();
   fields = json_object_prepend("includeAnchor", json_bool include_anchor, fields)
   fields = json_object_prepend("turnId", json_string turn_id, fields)
   encode_json(json_object fields)
-};
+end;
 
 return {
   .parse_thread_turns_cursor,

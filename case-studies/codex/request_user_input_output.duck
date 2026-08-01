@@ -8,36 +8,42 @@ type UserInputAnswerTexts = RequestUserInputAnswerTexts
 type UserInputAnswers = RequestUserInputAnswers
 type UserInputResponse = RequestUserInputResponse
 
-const encode_answer_texts: UserInputAnswerTexts -> Text = answers => {
+const encode_answer_texts: UserInputAnswerTexts -> Text = answers => do
   let current = answers;
   let encoded = "[";
   let first = true;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [answer, tail] = node;
-      if !(first) { encoded = text_append(encoded, ",") }
+      if !(first) then
+        encoded = text_append(encoded, ",")
+      end;
       let encoded_answer: Text = encode_json_string answer;
       encoded = text_append(encoded, encoded_answer)
       first = false
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   text_append(encoded, "]")
-};
+end;
 
-const encode_request_user_input_response: UserInputResponse -> Text = response => {
+const encode_request_user_input_response: UserInputResponse -> Text = response => do
   let current = response.answers;
   let encoded = "{\"answers\":{";
   let first = true;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [answer, tail] = node;
-      if !(first) { encoded = text_append(encoded, ",") }
+      if !(first) then
+        encoded = text_append(encoded, ",")
+      end;
       let encoded_question_id: Text = encode_json_string answer.question_id;
       let encoded_answers: Text = encode_answer_texts answer.answers;
       let encoded_question: Text = text_append(encoded_question_id, ":{\"answers\":");
@@ -46,12 +52,14 @@ const encode_request_user_input_response: UserInputResponse -> Text = response =
       encoded = text_append(encoded, encoded_question)
       first = false
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   text_append(encoded, "}}")
-};
+end;
 
 return { .encode_request_user_input_response };

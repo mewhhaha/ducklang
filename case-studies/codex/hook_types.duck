@@ -5,49 +5,49 @@ type HookI32Option = Option I32
 type HookTexts = List Text
 
 type HookEvent =
-  | `PreToolUse Unit
-  | `PermissionRequest Unit
-  | `PostToolUse Unit
-  | `PreCompact Unit
-  | `PostCompact Unit
-  | `SessionStart Unit
-  | `SessionEnd Unit
-  | `UserPromptSubmit Unit
-  | `SubagentStart Unit
-  | `SubagentStop Unit
-  | `Stop Unit
+  | #PreToolUse
+  | #PermissionRequest
+  | #PostToolUse
+  | #PreCompact
+  | #PostCompact
+  | #SessionStart
+  | #SessionEnd
+  | #UserPromptSubmit
+  | #SubagentStart
+  | #SubagentStop
+  | #Stop
 
 type HookScope =
-  | `Thread Unit
-  | `Turn Unit
+  | #Thread
+  | #Turn
 
 type HookSource =
-  | `System Unit
-  | `User Unit
-  | `Project Unit
-  | `Mdm Unit
-  | `SessionFlags Unit
-  | `Plugin Unit
-  | `CloudRequirements Unit
-  | `CloudManagedConfig Unit
-  | `LegacyManagedConfigFile Unit
-  | `LegacyManagedConfigMdm Unit
-  | `Unknown Unit
+  | #System
+  | #User
+  | #Project
+  | #Mdm
+  | #SessionFlags
+  | #Plugin
+  | #CloudRequirements
+  | #CloudManagedConfig
+  | #LegacyManagedConfigFile
+  | #LegacyManagedConfigMdm
+  | #Unknown
 
 type HookMatcher =
-  | `MatchAll Unit
-  | `Exact HookTexts
-  | `Regex Text
+  | #MatchAll
+  | #Exact HookTexts
+  | #Regex Text
 
 type HookMatcherParse =
-  | `Ok HookMatcher
-  | `Err Text
+  | #Ok HookMatcher
+  | #Err Text
 
 type HookCommandConfig = [Text, HookI32Option, Bool, HookTextOption]
 type HookHandlerConfig =
-  | `Command HookCommandConfig
-  | `Prompt Unit
-  | `Agent Unit
+  | #Command HookCommandConfig
+  | #Prompt
+  | #Agent
 
 type HookConfiguredHandler = [
   HookEvent,
@@ -57,65 +57,65 @@ type HookConfiguredHandler = [
   HookTextOption,
   Text,
   HookSource,
-  I32 ]
+  I32]
 type HookConfiguredHandlers = List HookConfiguredHandler
 type HookConfiguredHandlerWithWarnings = [HookConfiguredHandler, HookTexts]
 
 type HookHandlerNormalization =
-  | `Configured HookConfiguredHandlerWithWarnings
-  | `Skipped Text
+  | #Configured HookConfiguredHandlerWithWarnings
+  | #Skipped Text
 
 type HookTrustStatus =
-  | `Managed Unit
-  | `Trusted Unit
-  | `Modified Unit
-  | `Untrusted Unit
+  | #Managed
+  | #Trusted
+  | #Modified
+  | #Untrusted
 
 type HookEnabledState =
-  | `DefaultEnabled Unit
-  | `Enabled Unit
-  | `Disabled Unit
+  | #DefaultEnabled
+  | #Enabled
+  | #Disabled
 
 type HookTrustedHash =
-  | `NoTrustedHash Unit
-  | `TrustedHash Text
+  | #NoTrustedHash
+  | #TrustedHash Text
 
 type HookState = [HookEnabledState, HookTrustedHash]
 type HookStateOption =
-  | `MissingHookState Unit
-  | `PresentHookState HookState
+  | #MissingHookState
+  | #PresentHookState HookState
 
 type HookPermissionDecision =
-  | `Allow Unit
-  | `Deny Text
+  | #Allow
+  | #Deny Text
 
 type HookPermissionDecisions = List HookPermissionDecision
 type HookPermissionDecisionOption = Option HookPermissionDecision
 
 type HookRunStatus =
-  | `Completed Unit
-  | `Failed Unit
-  | `Blocked Unit
-  | `Stopped Unit
+  | #Completed
+  | #Failed
+  | #Blocked
+  | #Stopped
 
 type HookOutputEntryKind =
-  | `Warning Unit
-  | `Stop Unit
-  | `Feedback Unit
-  | `Context Unit
-  | `Error Unit
+  | #Warning
+  | #Stop
+  | #Feedback
+  | #Context
+  | #Error
 
 type HookOutputEntry = [HookOutputEntryKind, Text]
 type HookOutputEntries = List HookOutputEntry
 
 type HookUpdatedInput =
-  | `NoUpdatedInput Unit
-  | `UpdatedInput Text
+  | #NoUpdatedInput
+  | #UpdatedInput Text
 
 type HookLegacyResult =
-  | `Success Unit
-  | `FailedContinue Text
-  | `FailedAbort Text
+  | #Success
+  | #FailedContinue Text
+  | #FailedAbort Text
 
 type HookLegacyResults = List HookLegacyResult
 
@@ -124,9 +124,9 @@ type HookLegacyOutcome = [Bool, Text, I32]
 type HookCommandRequest = [Text, Text, Text, I32]
 type HookCommandResult = [HookTextOption, HookI32Option, Text, Text]
 type HookCommandCompletion =
-  | `Exited I32
-  | `ProcessFailed Text
-  | `MissingExit Unit
+  | #Exited I32
+  | #ProcessFailed Text
+  | #MissingExit
 type HookCommandOutcome = [HookCommandCompletion, HookTextOption]
 
 return {};

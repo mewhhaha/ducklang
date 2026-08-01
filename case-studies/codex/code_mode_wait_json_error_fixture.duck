@@ -9,41 +9,49 @@ type FixtureParseResult = CodeModeWaitParseResult
 let score = 0;
 
 let malformed: FixtureParseResult = parse_code_mode_wait_args "{";
-if let `ParseFailed message = malformed {
-  if text_starts_with(message, "failed to parse function arguments: ") { score = score + 1 }
-}
+if let #ParseFailed message = malformed then
+  if text_starts_with(message, "failed to parse function arguments: ") then
+    score = score + 1 end;
+end;
 
 let nonobject: FixtureParseResult = parse_code_mode_wait_args "[]";
-if let `ParseFailed message = nonobject {
-  if message == "failed to parse function arguments: wait arguments must be an object" { score = score + 10 }
-}
+if let #ParseFailed message = nonobject then
+  if message == "failed to parse function arguments: wait arguments must be an object" then
+    score = score + 10 end;
+end;
 
 let missing: FixtureParseResult = parse_code_mode_wait_args "{}";
-if let `ParseFailed message = missing {
-  if message == "failed to parse function arguments: missing field `cell_id`" { score = score + 100
-  }
-}
+if let #ParseFailed message = missing then
+  if message == "failed to parse function arguments: missing field `cell_id`" then
+    score = score + 100
+  end;
+end;
 
 let duplicate: FixtureParseResult =
   parse_code_mode_wait_args "{\"cell_id\":\"a\",\"cell_id\":\"b\"}";
-if let `ParseFailed message = duplicate {
-  if message == "failed to parse function arguments: duplicate field `cell_id`" { score = score + 1000 }
-}
+if let #ParseFailed message = duplicate then
+  if message == "failed to parse function arguments: duplicate field `cell_id`" then
+    score = score + 1000 end;
+end;
 
 let wrong_cell: FixtureParseResult = parse_code_mode_wait_args "{\"cell_id\":7}";
-if let `ParseFailed message = wrong_cell {
-  if message == "failed to parse function arguments: field `cell_id` must be a string" { score = score + 10000 }
-}
+if let #ParseFailed message = wrong_cell then
+  if message == "failed to parse function arguments: field `cell_id` must be a string" then
+    score = score + 10000 end;
+end;
 
 let field_before_missing: FixtureParseResult = parse_code_mode_wait_args "{\"terminate\":null}";
-if let `ParseFailed message = field_before_missing {
-  if message == "failed to parse function arguments: field `terminate` must be a boolean" { score = score + 100000 }
-}
+if let #ParseFailed message = field_before_missing then
+  if message == "failed to parse function arguments: field `terminate` must be a boolean" then
+    score = score + 100000
+  end;
+end;
 
 let ordered_duplicate: FixtureParseResult =
   parse_code_mode_wait_args "{\"yield_time_ms\":1,\"terminate\":true,\"yield_time_ms\":2,\"cell_id\":\"a\"}";
-if let `ParseFailed message = ordered_duplicate {
-  if message == "failed to parse function arguments: duplicate field `yield_time_ms`" { score = score + 1000000 }
-}
+if let #ParseFailed message = ordered_duplicate then
+  if message == "failed to parse function arguments: duplicate field `yield_time_ms`" then
+    score = score + 1000000 end;
+end;
 
 return { .score = score };

@@ -7,9 +7,22 @@ let newline = '\n';
 let quote = '\'';
 let ready = true;
 let precise = 42f64;
-if ready { 'λ' } else { false }
-if (let 'c' = newline) { true } else { false }
-if let "ready" = message { 1 } else { 0 }
+let greeting = text `hello {message}; answer {40 + 2}`;
+if ready then
+  'λ'
+else
+  false
+end;
+if (let 'c' = newline) then
+  true
+else
+  false
+end;
+if let "ready" = message then
+  1
+else
+  0
+end;
 
 ---
 
@@ -34,41 +47,98 @@ if let "ready" = message { 1 } else { 0 }
     name: (identifier)
     value: (postfix_expression
       (number)))
+  (binding_statement
+    name: (identifier)
+    value: (application_expression
+      function: (postfix_expression
+        (identifier))
+      argument: (postfix_expression
+        (template_literal
+          (template_start)
+          (template_text)
+          (template_interpolation
+            value: (postfix_expression
+              (identifier)))
+          (template_text)
+          (template_interpolation
+            value: (binary_expression
+              left: (postfix_expression
+                (number))
+              operator: (operator_symbol)
+              right: (postfix_expression
+                (number))))))))
   (expression_statement
     (if_expression
       condition: (condition_expression
-        (identifier))
-      consequence: (block
+        (condition_postfix_expression
+          (identifier)))
+      consequence: (conditional_branch
         (expression_statement
           (postfix_expression
             (character))))
-      alternative: (block
-        (expression_statement
-          (postfix_expression
-            (boolean))))))
+      (else_clause
+        alternative: (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (boolean)))))))
   (expression_statement
     (if_expression
       pattern: (character)
       value: (condition_expression
-        (identifier))
-      consequence: (block
+        (condition_postfix_expression
+          (identifier)))
+      consequence: (conditional_branch
         (expression_statement
           (postfix_expression
             (boolean))))
-      alternative: (block
-        (expression_statement
-          (postfix_expression
-            (boolean))))))
+      (else_clause
+        alternative: (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (boolean)))))))
   (expression_statement
     (if_expression
       pattern: (string)
       value: (condition_expression
-        (identifier))
-      consequence: (block
+        (condition_postfix_expression
+          (identifier)))
+      consequence: (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      alternative: (block
-        (expression_statement
-          (postfix_expression
-            (number)))))))
+      (else_clause
+        alternative: (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (number))))))))
+
+==================
+End is reserved outside field access
+==================
+
+let end = 1;
+let boundary = { .end = 2 };
+boundary.end
+
+---
+
+(source_file
+  (binding_statement
+    (ERROR
+      (identifier))
+    (identifier)
+    (postfix_expression
+      (number)))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (shape_value
+        (shape_field_block
+          (shape_field
+            (postfix_expression
+              (number)))))))
+  (expression_statement
+    (postfix_expression
+      (field_expression
+        (postfix_expression
+          (identifier))))))

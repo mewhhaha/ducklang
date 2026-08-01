@@ -3,7 +3,7 @@ import {
   type BindingIndex,
   build_binding_index,
 } from "../frontend/binding_index.ts";
-import { parse_source_with_diagnostics } from "../frontend/parser.ts";
+import { parse_baba_source_with_diagnostics } from "../frontend/source_parse.ts";
 import type { DocumentStore } from "./documents.ts";
 
 export const binding_index_cache_key = "binding_index";
@@ -18,7 +18,7 @@ export function document_binding_index(
   const parsed = documents.compute(
     uri,
     "source_parse",
-    parse_source_with_diagnostics,
+    parse_baba_source_with_diagnostics,
   );
 
   return documents.compute(

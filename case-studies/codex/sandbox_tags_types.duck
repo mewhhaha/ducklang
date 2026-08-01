@@ -3,13 +3,13 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type SandboxTagNetworkPolicy =
-  | `Enabled Unit
-  | `Restricted Unit
+  | #Enabled
+  | #Restricted
 
 type SandboxTagFileSystemKind =
-  | `RestrictedFileSystem Unit
-  | `UnrestrictedFileSystem Unit
-  | `ExternalFileSystem Unit
+  | #RestrictedFileSystem
+  | #UnrestrictedFileSystem
+  | #ExternalFileSystem
 
 type SandboxTagFileSystem = struct {
   .kind = SandboxTagFileSystemKind,
@@ -23,14 +23,14 @@ type SandboxTagManagedProfile = struct {
 }
 
 type SandboxTagPermissionProfile =
-  | `DisabledProfile Unit
-  | `ExternalProfile SandboxTagNetworkPolicy
-  | `ManagedProfile SandboxTagManagedProfile
+  | #DisabledProfile
+  | #ExternalProfile SandboxTagNetworkPolicy
+  | #ManagedProfile SandboxTagManagedProfile
 
 type SandboxTagWindowsLevel =
-  | `WindowsDisabled Unit
-  | `WindowsElevated Unit
-  | `WindowsStandard Unit
+  | #WindowsDisabled
+  | #WindowsElevated
+  | #WindowsStandard
 
 type SandboxTagPlatform = struct {
   .is_windows = Bool,

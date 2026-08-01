@@ -1,14 +1,14 @@
-type Result = | `Ok Int | `Err Text
+type Result = | #Ok Int | #Err Text
 
 let flag = true;
-let result: Result = if flag {
-  `Ok (40)
-} else {
-  `Err ("missing")
-};
+let result: Result = if flag then
+  #Ok (40)
+else
+  #Err ("missing")
+end;
 
-if let `Ok value = result {
+if let #Ok value = result then
   value + 2
-} else {
+else
   0
-}
+end;

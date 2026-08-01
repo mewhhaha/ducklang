@@ -21,76 +21,25 @@ export type FixtureCase = {
   expected: number;
 };
 
-export type BlockedFixture = {
-  name: string;
-  message: string;
-};
-
 export const fixture_cases: FixtureCase[] = [
+  { name: "agent_job_csv_fixture.duck", expected: 11111 },
   { name: "agent_job_csv_header_output_fixture.duck", expected: 1 },
+  { name: "agent_job_csv_output_fixture.duck", expected: 11 },
   { name: "agent_job_csv_row_output_fixture.duck", expected: 11 },
+  { name: "agent_job_prepare_fixture.duck", expected: 11111 },
   { name: "agent_job_registration_fixture.duck", expected: 1111 },
+  { name: "agent_job_report_fixture.duck", expected: 1111 },
+  { name: "agent_job_result_fixture.duck", expected: 11 },
   { name: "agent_job_runner_action_fixture.duck", expected: 111 },
   { name: "agent_job_runner_transition_fixture.duck", expected: 1111 },
   { name: "agent_job_spawn_environment_policy_fixture.duck", expected: 11 },
+  { name: "agent_job_spawn_json_numeric_fixture.duck", expected: 11 },
+  { name: "agent_job_spawn_json_required_fixture.duck", expected: 11 },
+  { name: "agent_job_spawn_json_schema_fixture.duck", expected: 11 },
+  { name: "agent_job_spawn_json_text_fixture.duck", expected: 11 },
   { name: "agent_job_spawn_limits_policy_fixture.duck", expected: 11 },
   { name: "agent_job_spawn_policy_fixture.duck", expected: 11111 },
   { name: "agent_job_worker_source_fixture.duck", expected: 11 },
-];
-
-// These fixtures are written against language features the toolchain cannot
-// compile yet. They are listed with the failure they currently hit so the
-// runner reports a fixture that silently stops failing: once a compiler gap
-// closes, move the entry into `fixture_cases` with its repunit.
-export const blocked_fixtures: BlockedFixture[] = [
-  {
-    name: "agent_job_csv_fixture.duck",
-    message: "type mismatch: expected $FunctionalText, received Int",
-  },
-  {
-    name: "agent_job_csv_output_fixture.duck",
-    message: "cannot find type Text",
-  },
-  {
-    name: "agent_job_prepare_fixture.duck",
-    message: "expected duck::Json, received $FunctionalText",
-  },
-  {
-    name: "agent_job_report_fixture.duck",
-    message: "expected duck::JsonArray, received duck::JsonObject",
-  },
-  {
-    name: "agent_job_result_fixture.duck",
-    message: "expected duck::JsonArray, received duck::JsonObject",
-  },
-  {
-    name: "agent_job_runner_fixture.duck",
-    message: "functional surface expression exceeds 65536 nodes",
-  },
-  {
-    name: "agent_job_spawn_fixture.duck",
-    message: "exceeds 65536 expression nodes",
-  },
-  {
-    name: "agent_job_spawn_json_fixture.duck",
-    message: "functional surface module exceeds 65536 expression nodes",
-  },
-  {
-    name: "agent_job_spawn_json_numeric_fixture.duck",
-    message: "expected duck::JsonArray, received duck::JsonObject",
-  },
-  {
-    name: "agent_job_spawn_json_required_fixture.duck",
-    message: "expected duck::JsonArray, received duck::JsonObject",
-  },
-  {
-    name: "agent_job_spawn_json_schema_fixture.duck",
-    message: "expected duck::JsonArray, received duck::JsonObject",
-  },
-  {
-    name: "agent_job_spawn_json_text_fixture.duck",
-    message: "expected duck::JsonArray, received duck::JsonObject",
-  },
 ];
 
 // Covered by agent_job_export.test.ts, agent_job_report.test.ts and

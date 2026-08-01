@@ -1,0 +1,171 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const {} = import "./tool_types.duck" ();
+const { .assess_patch_safety, .patch_is_constrained } =
+  import "./patch_safety.duck" ();
+
+type FixtureApproval = ToolApprovalPolicy
+type FixturePatchSafety = ToolPatchSafety
+type FixturePatchTarget = ToolPatchTarget
+type FixturePatchTargets = ToolPatchTargets
+type FixtureSandbox = ToolFileSystemSandbox
+
+const paths = comptime list Text;
+const patch_targets = comptime list FixturePatchTarget;
+
+let inside: FixturePatchTargets = patch_targets.singleton([
+  "/repo/inner.txt",
+  #None,
+]);
+let outside: FixturePatchTargets = patch_targets.singleton([
+  "/outside.txt",
+  #None,
+]);
+let workspace: FixtureSandbox = [
+  #Restricted,
+  paths.singleton("/repo"),
+  false,
+  false,
+  paths.empty(),
+];
+let parent_writable: FixtureSandbox = [
+  #Restricted,
+  paths.singleton("/"),
+  false,
+  false,
+  paths.empty(),
+];
+let external_inside: FixturePatchSafety = assess_patch_safety(
+  inside,
+  #OnRequest,
+  #External,
+  workspace,
+  false,
+);
+
+let granular_prompt: FixtureApproval = #Granular ([true, true, true, true, true]);
+let on_request_outside: FixturePatchSafety = assess_patch_safety(
+  outside,
+  #OnRequest,
+  #Managed,
+  workspace,
+  false,
+);
+let granular_prompt_outside: FixturePatchSafety = assess_patch_safety(
+  outside,
+  granular_prompt,
+  #Managed,
+  workspace,
+  false,
+);
+
+let granular_reject: FixtureApproval = #Granular ([false, true, true, true, true]);
+let granular_rejected: FixturePatchSafety = assess_patch_safety(
+  outside,
+  granular_reject,
+  #Managed,
+  workspace,
+  false,
+);
+
+let read_only: FixtureSandbox = [
+  #Restricted,
+  paths.empty(),
+  false,
+  false,
+  paths.empty(),
+];
+let read_only_rejected: FixturePatchSafety = assess_patch_safety(
+  inside,
+  #Never,
+  #Managed,
+  read_only,
+  false,
+);
+
+let blocked: FixtureSandbox = [
+  #Restricted,
+  paths.singleton("/"),
+  false,
+  false,
+  paths.singleton("/repo/blocked"),
+];
+let blocked_target: FixturePatchTargets = patch_targets.singleton([
+  "/repo/blocked/file.txt",
+  #None,
+]);
+let blocked_safety: FixturePatchSafety = assess_patch_safety(
+  blocked_target,
+  #OnRequest,
+  #External,
+  blocked,
+  false,
+);
+
+let read_only_subpath: FixtureSandbox = [
+  #Restricted,
+  paths.singleton("/repo"),
+  false,
+  false,
+  paths.singleton("/repo/docs"),
+];
+let docs_target: FixturePatchTargets = patch_targets.singleton([
+  "/repo/docs/blocked.txt",
+  #None,
+]);
+let read_only_subpath_safety: FixturePatchSafety = assess_patch_safety(
+  docs_target,
+  #OnRequest,
+  #External,
+  read_only_subpath,
+  false,
+);
+
+let project_config_policy: FixtureSandbox = [
+  #Restricted,
+  paths.singleton("/repo"),
+  false,
+  false,
+  paths.singleton("/repo/.codex"),
+];
+let config_target: FixturePatchTargets = patch_targets.singleton([
+  "/repo/.codex/config.toml",
+  #None,
+]);
+let project_config_safety: FixturePatchSafety = assess_patch_safety(
+  config_target,
+  #OnRequest,
+  #Managed,
+  project_config_policy,
+  false,
+);
+let inside_constrained: Bool = patch_is_constrained(inside, workspace);
+let outside_constrained: Bool = patch_is_constrained(outside, workspace);
+let parent_constrained: Bool = patch_is_constrained(outside, parent_writable);
+let blocked_constrained: Bool = patch_is_constrained(blocked_target, blocked);
+let read_only_subpath_constrained: Bool = patch_is_constrained(
+  docs_target,
+  read_only_subpath,
+);
+let project_config_constrained: Bool = patch_is_constrained(
+  config_target,
+  project_config_policy,
+);
+
+return {
+  .inside_constrained = inside_constrained,
+  .outside_constrained = outside_constrained,
+  .parent_constrained = parent_constrained,
+  .external_inside = external_inside,
+  .on_request_outside = on_request_outside,
+  .granular_prompt_outside = granular_prompt_outside,
+  .granular_rejected = granular_rejected,
+  .read_only_rejected = read_only_rejected,
+  .blocked_constrained = blocked_constrained,
+  .blocked_safety = blocked_safety,
+  .read_only_subpath_constrained = read_only_subpath_constrained,
+  .read_only_subpath_safety = read_only_subpath_safety,
+  .project_config_constrained = project_config_constrained,
+  .project_config_safety = project_config_safety,
+};

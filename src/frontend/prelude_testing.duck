@@ -2,12 +2,12 @@ module () where
 
 const fail: () -> Unit = () => @panic "Test failed";
 
-const assert: Bool -> Unit = condition => {
-  if condition { () } else { fail() }
-};
+const assert: Bool -> Unit = condition => do
+  if condition then () else fail() end;
+end;
 
-const assert_false: Bool -> Unit = condition => {
-  if condition { fail() } else { () }
-};
+const assert_false: Bool -> Unit = condition => do
+  if condition then fail() else () end;
+end;
 
 return { .assert, .assert_false, .fail };

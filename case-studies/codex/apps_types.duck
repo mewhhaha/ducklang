@@ -1,0 +1,14 @@
+module () where
+
+type AppsConnectorVisibilities = List I32
+type AppsSection =
+  | #OmitAppsSection
+  | #RenderAppsSection Text
+
+type AppsPreviousState =
+  | #Absent
+  | #KnownUnavailable
+  | #KnownAvailable
+  | #Unknown
+
+return {};

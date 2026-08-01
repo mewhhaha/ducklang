@@ -569,7 +569,7 @@ function param_ownership(
         return "borrow";
       }
 
-      if (param.annotation.startsWith("#")) {
+      if (param.annotation.startsWith("freeze ")) {
         return "share";
       }
     }

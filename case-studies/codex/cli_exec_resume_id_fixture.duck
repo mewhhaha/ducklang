@@ -6,17 +6,17 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-let input: FixtureArgs = `Cons (["resume", `Cons (["session-7", `Cons (["finish", `Nil ()])])]);
+let input: FixtureArgs = #Cons (["resume", #Cons (["session-7", #Cons (["finish", #Nil])])]);
 let parsed: FixtureResult = parse_exec_options input;
-let score = if let `Ok options = parsed {
-  if let `ExecResume resume = options.command {
-    if let `Some session_id = resume.session_id {
-      if let `Some prompt = resume.prompt {
-        if resume.last { 0 } else if session_id == "session-7" && prompt == "finish" { 1 } else { 0
-        }
-      } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+let score = if let #Ok options = parsed then
+  if let #ExecResume resume = options.command then
+    if let #Some session_id = resume.session_id then
+      if let #Some prompt = resume.prompt then
+        if resume.last then 0 else session_id == "session-7" && prompt == "finish" then 1 else 0
+        end;
+      else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

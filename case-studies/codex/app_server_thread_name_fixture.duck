@@ -1,14 +1,20 @@
 const { .normalize_thread_name } = import "./app_server_thread_controls.duck" ();
 
 let score = 0;
-if let `Ok name = normalize_thread_name "　  Work  " {
-  if name == "Work" { score = score + 1 }
-}
-if let `Err reason = normalize_thread_name "　 " {
-  if reason == "thread name must not be empty" { score = score + 10 }
-}
-if let `Ok name = normalize_thread_name "Work x" {
-  if name == "Work x" { score = score + 100 }
-}
+if let #Ok name = normalize_thread_name "　  Work  " then
+  if name == "Work" then
+    score = score + 1
+  end;
+end;
+if let #Err reason = normalize_thread_name "　 " then
+  if reason == "thread name must not be empty" then
+    score = score + 10
+  end;
+end;
+if let #Ok name = normalize_thread_name "Work x" then
+  if name == "Work x" then
+    score = score + 100
+  end;
+end;
 
 return { .score = score };

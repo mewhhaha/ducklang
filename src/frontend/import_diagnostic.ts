@@ -1,10 +1,13 @@
 import type { FrontExpr, Source, Stmt } from "./ast.ts";
-import { parse_source_with_diagnostics } from "./parser.ts";
+import { compiler_diagnostic, diagnostic_codes } from "../diagnostic.ts";
+import { expect } from "../expect.ts";
+import { parse_baba_source_with_diagnostics } from "./source_parse.ts";
 import {
   source_diagnostic,
   type SourceDiagnostic,
 } from "./semantic_diagnostic.ts";
 import { bundled_source_text } from "./prelude.ts";
+import { source_span } from "./syntax.ts";
 
 export type SourceImportResolver = (uri: string) => string | undefined;
 
@@ -14,7 +17,7 @@ type SourceIncludeExpression = {
 };
 
 type ImportValidation = {
-  cache: Map<string, ReturnType<typeof parse_source_with_diagnostics>>;
+  cache: Map<string, ReturnType<typeof parse_baba_source_with_diagnostics>>;
   visited: Set<string>;
   resolve_import: SourceImportResolver;
 };
@@ -249,16 +252,28 @@ function validate_source_import(
       );
     }
 
-    dependency = parse_source_with_diagnostics(text);
+    dependency = parse_baba_source_with_diagnostics(text);
     validation.cache.set(dependency_uri, dependency);
   }
 
   if (dependency.diagnostics.length > 0) {
-    return source_diagnostic(
-      "DUCK2503",
-      "Imported source contains syntax errors: " + imported.path,
-      root_subject,
+    const syntax_diagnostic = dependency.diagnostics[0];
+    expect(
+      syntax_diagnostic !== undefined,
+      "Import diagnostics disappeared for " + dependency_uri,
     );
+    const diagnostic = compiler_diagnostic(
+      diagnostic_codes.syntax_error,
+      syntax_diagnostic.message,
+      syntax_diagnostic.span,
+      [{
+        message: "Imported here.",
+        span: source_span(root_subject),
+        uri: stack[0],
+      }],
+    );
+    diagnostic.uri = dependency_uri;
+    return diagnostic;
   }
 
   if (dependency.source.module === undefined) {

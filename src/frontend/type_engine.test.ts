@@ -2,11 +2,13 @@ import { assert_equals, assert_throws } from "../assert.ts";
 import {
   format_type,
   monomorphic_type_binding,
-  type Type,
   type_key,
-  type TypeEffect,
   TypeEngine,
 } from "./type_engine.ts";
+import type {
+  RepresentationEffect as TypeEffect,
+  RepresentationType as Type,
+} from "./representation_type.ts";
 
 const int: Type = { tag: "scalar", name: "Int" };
 const i32: Type = { tag: "scalar", name: "I32" };

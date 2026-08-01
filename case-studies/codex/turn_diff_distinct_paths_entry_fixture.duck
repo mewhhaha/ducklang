@@ -13,33 +13,33 @@ type FixtureDelta = TurnDiffDelta
 type FixtureDeltas = List FixtureDelta
 type FixtureDeltaNode = ListNode FixtureDelta
 
-let none: FixtureTextOption = `None ();
+let none: FixtureTextOption = #None;
 let addition: FixtureAdd = [.content = "added\n", .overwritten_content = none];
-let addition_file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
+let addition_file_mutation: FixtureFileMutation = #TurnDiffAdd addition;
 let addition_mutation: FixtureMutation = [.path = "a.txt", .mutation = addition_file_mutation];
 
 let deletion: FixtureDelete = [.content = "deleted\n"];
-let deletion_file_mutation: FixtureFileMutation = `TurnDiffDelete deletion;
+let deletion_file_mutation: FixtureFileMutation = #TurnDiffDelete deletion;
 let deletion_mutation: FixtureMutation = [.path = "b.txt", .mutation = deletion_file_mutation];
 
-let deltas: FixtureDeltas = `Nil ();
+let deltas: FixtureDeltas = #Nil;
 let deletion_delta = turn_diff_fixture_exact_delta deletion_mutation;
 let deletion_node: FixtureDeltaNode = [deletion_delta, deltas];
-deltas = `Cons deletion_node
+deltas = #Cons deletion_node
 let addition_delta = turn_diff_fixture_exact_delta addition_mutation;
 let addition_node: FixtureDeltaNode = [addition_delta, deltas];
-deltas = `Cons addition_node
+deltas = #Cons addition_node
 
 let state = empty_turn_diff();
-loop {
-  if let `Cons node = deltas {
+loop do
+  if let #Cons node = deltas then
     let [delta, tail] = node;
     state = track_turn_diff_delta(state, "", delta)
     deltas = tail
-  } else {
+  else
     break;
-  }
-}
+  end;
+end;
 
 let score: I32 = state.next_revision;
 return { .score = score };

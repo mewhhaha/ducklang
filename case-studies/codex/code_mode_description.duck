@@ -12,12 +12,12 @@ type CodeModeDescriptionDefinition = struct {
   .output_type = Text,
 }
 
-const code_mode_function_definition: [Text, Text, Text, Text] -> CodeModeDescriptionDefinition = (
+const code_mode_function_definition: (Text, Text, Text, Text) -> CodeModeDescriptionDefinition = (
   name,
   description,
   input_type,
   output_type,
-) => {
+) => do
   [
     .name = name,
     .description = description,
@@ -25,13 +25,13 @@ const code_mode_function_definition: [Text, Text, Text, Text] -> CodeModeDescrip
     .input_type = input_type,
     .output_type = output_type,
   ]
-};
+end;
 
-const code_mode_freeform_definition: [Text, Text, Text] -> CodeModeDescriptionDefinition = (
+const code_mode_freeform_definition: (Text, Text, Text) -> CodeModeDescriptionDefinition = (
   name,
   description,
   output_type,
-) => {
+) => do
   [
     .name = name,
     .description = description,
@@ -39,32 +39,34 @@ const code_mode_freeform_definition: [Text, Text, Text] -> CodeModeDescriptionDe
     .input_type = "string",
     .output_type = output_type,
   ]
-};
+end;
 
-let materialize_code_mode_description: CodeModeDescriptionDefinition -> Text = definition => {
-  if definition.name == "exec" {
+let materialize_code_mode_description: CodeModeDescriptionDefinition -> Text = definition => do
+  if definition.name == "exec" then
     return definition.description;
-  }
+  end;
 
   let input_name = "args";
-  if definition.freeform { input_name = "input" }
+  if definition.freeform then
+    input_name = "input"
+  end;
 
   let tool_name = normalize_code_mode_identifier definition.name;
-  let declaration = text_append [
+  let declaration = text_append (
     tool_name,
-    text_append ["(", text_append [input_name, text_append [": ", definition.input_type]]],
-  ];
-  declaration = text_append [
+    text_append ("(", text_append (input_name, text_append (": ", definition.input_type))),
+  );
+  declaration = text_append (
     declaration,
-    text_append ["): Promise<", text_append [definition.output_type, ">;"]],
-  ]
-  let description = text_append [
+    text_append ("): Promise<", text_append (definition.output_type, ">;")),
+  )
+  let description = text_append (
     definition.description,
     "\n\nexec tool declaration:\n```ts\ndeclare const tools: { ",
-  ];
-  description = text_append [description, text_append [declaration, " };\n```"]]
+  );
+  description = text_append (description, text_append (declaration, " };\n```"))
   description
-};
+end;
 
 return {
   .code_mode_freeform_definition,

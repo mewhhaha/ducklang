@@ -15,15 +15,17 @@ let capability_input: FixtureArgs = args.prepend(
   args.prepend("capability-token", args.prepend("--ws-token-file", args.singleton("/tmp/token"))),
 );
 let capability: FixtureResult = parse_app_server_launch capability_input;
-if let `Ok command = capability {
-  if let `LaunchAppServer options = command {
-    if let `WebsocketCapabilityAuth source = options.websocket_auth {
-      if let `WebsocketTokenFile path = source {
-        if path == "/tmp/token" { score = score + 1 }
-      }
-    }
-  }
-}
+if let #Ok command = capability then
+  if let #LaunchAppServer options = command then
+    if let #WebsocketCapabilityAuth source = options.websocket_auth then
+      if let #WebsocketTokenFile path = source then
+        if path == "/tmp/token" then
+          score = score + 1
+        end;
+      end;
+    end;
+  end;
+end;
 
 let signed_input: FixtureArgs = args.prepend(
   "--listen",
@@ -57,22 +59,26 @@ let signed_input: FixtureArgs = args.prepend(
   ),
 );
 let signed: FixtureResult = parse_app_server_launch signed_input;
-if let `Ok command = signed {
-  if let `LaunchAppServer options = command {
-    if let `WebsocketSignedBearerAuth auth = options.websocket_auth {
-      if let `Some issuer = auth.issuer {
-        if issuer == "issuer" && auth.max_clock_skew_seconds == 9i64 {
-          if let `None () = auth.audience { score = score + 10 }
-        }
-      }
-    }
-  }
-}
+if let #Ok command = signed then
+  if let #LaunchAppServer options = command then
+    if let #WebsocketSignedBearerAuth auth = options.websocket_auth then
+      if let #Some issuer = auth.issuer then
+        if issuer == "issuer" && auth.max_clock_skew_seconds == 9i64 then
+          if let #None = auth.audience then
+            score = score + 10
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let missing_mode: FixtureResult = parse_app_server_launch(
   args.prepend("--ws-token-file", args.singleton("/tmp/token"))
 );
-if let `Err _ = missing_mode { score = score + 100 }
+if let #Err _ = missing_mode then
+  score = score + 100
+end;
 
 let invalid_digest: FixtureResult = parse_app_server_launch(
   args.prepend(
@@ -80,6 +86,8 @@ let invalid_digest: FixtureResult = parse_app_server_launch(
     args.prepend("capability-token", args.prepend("--ws-token-sha256", args.singleton("1234"))),
   )
 );
-if let `Err _ = invalid_digest { score = score + 1000 }
+if let #Err _ = invalid_digest then
+  score = score + 1000
+end;
 
 return { .score = score };

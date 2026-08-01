@@ -1,4 +1,9 @@
-import { generate, parseMetadata } from "@mewhhaha/baba";
+import {
+  generate,
+  parseGrammar,
+  parseMetadata,
+  validateGrammar,
+} from "@mewhhaha/baba";
 
 const repository = new URL("../", import.meta.url);
 const grammar_directory = new URL("tree-sitter-duck/", repository);
@@ -6,11 +11,16 @@ const generated_paths = [
   "src/grammar.json",
   "src/node-types.json",
   "src/parser.c",
+  "tree-sitter-duck.wasm",
 ];
 const scanner_tokens = [
   "_application_space",
   "_condition_application_space",
   "_type_application_space",
+  "_tactic_space",
+  "_fixity_identifier",
+  "prefix_proof_keyword",
+  "proof_prefixed_identifier",
 ];
 let check_only = false;
 for (const argument of Deno.args) {
@@ -28,6 +38,19 @@ const grammar_source = await Deno.readTextFile(
 const metadata = parseMetadata(
   await Deno.readTextFile(new URL("baba.json", grammar_directory)),
 );
+const parsed_grammar = parseGrammar(grammar_source);
+const validation_diagnostics = validateGrammar(parsed_grammar, {
+  targets: ["tree-sitter"],
+});
+const validation_errors = validation_diagnostics.filter((diagnostic) =>
+  diagnostic.severity === undefined || diagnostic.severity === "error"
+);
+if (validation_errors.length > 0) {
+  const rendered = validation_errors.map((diagnostic) =>
+    `${diagnostic.code}: ${diagnostic.message}`
+  ).join("\n");
+  throw new Error(`Baba grammar validation failed:\n${rendered}`);
+}
 const bundle = generate(grammar_source, {
   name: "duck",
   rootRule: "document",
@@ -93,6 +116,10 @@ try {
     generation_directory,
     temporary_directory + "/cache",
   );
+  await run_tree_sitter_wasm_build(
+    generation_directory,
+    temporary_directory + "/cache",
+  );
 
   if (check_only) {
     for (const generated_path of generated_paths) {
@@ -147,6 +174,18 @@ ${scanner_tokens.map((name) => `    $.${name},`).join("\n")}
     );
   }
 
+  const immediate_type_open =
+    "    _immediate_type_open: $ => token(prec(3, /\\(/)),";
+  if (!source.includes(immediate_type_open)) {
+    throw new Error(
+      "Baba's generated grammar.js no longer contains the immediate type opener.",
+    );
+  }
+  source = source.replace(
+    immediate_type_open,
+    '    _immediate_type_open: $ => token.immediate("("),',
+  );
+
   const generated_token_rules = new Set(scanner_tokens);
   return source.replace(baba_extras, tree_sitter_configuration)
     .split("\n")
@@ -182,6 +221,31 @@ async function run_tree_sitter_generate(
   const stderr = new TextDecoder().decode(generation.stderr).trim();
   throw new Error(
     "Tree-sitter grammar generation failed with exit code " +
+      generation.code.toString() + ": " + stderr,
+  );
+}
+
+async function run_tree_sitter_wasm_build(
+  directory: string | URL,
+  cache_directory: string,
+): Promise<void> {
+  const generation = await new Deno.Command("tree-sitter", {
+    args: ["build", "--wasm", "--output", "tree-sitter-duck.wasm", "."],
+    cwd: directory,
+    env: {
+      XDG_CACHE_HOME: cache_directory,
+    },
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+
+  if (generation.success) {
+    return;
+  }
+
+  const stderr = new TextDecoder().decode(generation.stderr).trim();
+  throw new Error(
+    "Tree-sitter Wasm build failed with exit code " +
       generation.code.toString() + ": " + stderr,
   );
 }

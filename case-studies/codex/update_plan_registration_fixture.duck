@@ -7,46 +7,52 @@ const { .update_plan_tool_definitions, .update_plan_tool_specs } =
 type FixtureDefinitions = ToolDefinitions
 type FixtureSpecs = ToolSpecs
 
-let definitions_score: I32 = scratch {
+let definitions_score: I32 = scratch do
   let score = 0;
   let definitions: FixtureDefinitions = update_plan_tool_definitions();
-  if let `Cons node = definitions {
+  if let #Cons node = definitions then
     let [definition, tail] = node;
     let [name, exposure, tool_handler, payload, parallel, waits] = definition;
     let [namespace, local_name] = name;
-    if namespace == "" && local_name == "update_plan" && !(parallel) && !(waits) {
-      if let `Direct () = exposure {
-        if let `UpdatePlan () = tool_handler {
-          if let `FunctionPayload () = payload {
-            if let `Nil () = tail { score = score + 11 }
-          }
-        }
-      }
-    }
-  }
+    if namespace == "" && local_name == "update_plan" && !(parallel) && !(waits) then
+      if let #Direct = exposure then
+        if let #UpdatePlan = tool_handler then
+          if let #FunctionPayload = payload then
+            if let #Nil = tail then
+              score = score + 11
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
 
   score
-};
+end;
 
-let specs_score: I32 = scratch {
+let specs_score: I32 = scratch do
   let score = 0;
   let specs: FixtureSpecs = update_plan_tool_specs();
-  if let `Cons node = specs {
+  if let #Cons node = specs then
     let [spec, tail] = node;
     let [_, kind, description, parameters, output, strict] = spec;
     let description_valid =
-      description == "Updates the task plan.\nProvide an optional explanation and a list of plan items, each with a step and status.\nAt most one step can be in_progress at a time.\n";
+      description
+      == "Updates the task plan.\nProvide an optional explanation and a list of plan items, each with a step and status.\nAt most one step can be in_progress at a time.\n";
     let schema_valid =
-      parameters == "{\"type\":\"object\",\"properties\":{\"explanation\":{\"type\":\"string\",\"description\":\"Optional explanation for this plan update.\"},\"plan\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"pending\",\"in_progress\",\"completed\"],\"description\":\"Step status.\"},\"step\":{\"type\":\"string\",\"description\":\"Task step text.\"}},\"required\":[\"step\",\"status\"],\"additionalProperties\":false},\"description\":\"The list of steps\"}},\"required\":[\"plan\"],\"additionalProperties\":false}";
-    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
-    if description_valid && schema_valid && output_valid && !(strict) {
-      if let `FunctionSpec () = kind {
-        if let `Nil () = tail { score = score + 100 }
-      }
-    }
-  }
+      parameters
+      == "{\"type\":\"object\",\"properties\":{\"explanation\":{\"type\":\"string\",\"description\":\"Optional explanation for this plan update.\"},\"plan\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"pending\",\"in_progress\",\"completed\"],\"description\":\"Step status.\"},\"step\":{\"type\":\"string\",\"description\":\"Task step text.\"}},\"required\":[\"step\",\"status\"],\"additionalProperties\":false},\"description\":\"The list of steps\"}},\"required\":[\"plan\"],\"additionalProperties\":false}";
+    let output_valid = if let #ToolOutputSchemaMissing = output then true else false end;
+    if description_valid && schema_valid && output_valid && !(strict) then
+      if let #FunctionSpec = kind then
+        if let #Nil = tail then
+          score = score + 100
+        end;
+      end;
+    end;
+  end;
 
   score
-};
+end;
 
 return { .score = definitions_score + specs_score };

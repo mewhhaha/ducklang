@@ -6,15 +6,15 @@ const {} = import "./apply_patch_types.duck" ();
 
 type ApplyPatchFacadeResult = ApplyPatchParseResult
 
-let parse_apply_patch: Text -> ApplyPatchFacadeResult = (patch: Text) => {
+let parse_apply_patch: Text -> ApplyPatchFacadeResult = (patch: Text) => do
   let normalized = normalize_apply_patch_lines patch;
-  if let `Ok lines = normalized {
+  if let #Ok lines = normalized then
     parse_apply_patch_lines lines
-  } else if let `Err reason = normalized {
-    `Err reason
-  } else {
-    `Err "apply_patch boundary returned no result"
-  }
-};
+  else let #Err reason = normalized then
+    #Err reason
+  else
+    #Err "apply_patch boundary returned no result"
+  end;
+end;
 
 return { .parse_apply_patch };

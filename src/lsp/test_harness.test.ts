@@ -13,7 +13,7 @@ import {
 import { PositionIndex } from "./position.ts";
 import { workspace_definition_location, WorkspaceModel } from "./workspace.ts";
 
-const entry = new URL("../../duck.ts", import.meta.url).pathname;
+const entry = new URL("../../duck.ts", import.meta.url).href;
 
 Deno.test("fixture parser removes marker lines and records spans and expectations", () => {
   const fixture = parse_fixture(
@@ -138,7 +138,7 @@ Deno.test("multi-file fixtures drive workspace navigation", async () => {
 
 Deno.test("headless client sends fragmented LSP frames and finishes orderly", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -165,9 +165,9 @@ Deno.test("headless client sends fragmented LSP frames and finishes orderly", as
   );
 });
 
-Deno.test("headless server reports a non-exhaustive match and stays alive", async () => {
+Deno.test("headless server reports a non-exhaustive case and stays alive", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -188,7 +188,7 @@ Deno.test("headless server reports a non-exhaustive match and stays alive", asyn
         uri,
         languageId: "duck",
         version: 1,
-        text: "match 1 { | 1 => 10 }\n",
+        text: "case 1 of 1 => 10;\n",
       },
     },
   });
@@ -235,7 +235,7 @@ Deno.test("headless server reports a non-exhaustive match and stays alive", asyn
 
 Deno.test("headless client can disconnect before LSP shutdown", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -253,7 +253,7 @@ Deno.test("headless client can disconnect before LSP shutdown", async () => {
 
 Deno.test("headless server exits nonzero when exit precedes shutdown", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -273,7 +273,7 @@ Deno.test("headless server exits nonzero when exit precedes shutdown", async () 
 
 Deno.test("headless server cancels a queued request over real framing", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -316,7 +316,7 @@ Deno.test("headless server cancels a queued request over real framing", async ()
 
 Deno.test("recorded rapid-edit session publishes only its latest version", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -347,7 +347,7 @@ Deno.test("recorded rapid-edit session publishes only its latest version", async
     });
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   await client.send({ jsonrpc: "2.0", id: 2, method: "shutdown" });
   await client.send({ jsonrpc: "2.0", method: "exit" });
   const session = await client.finish();

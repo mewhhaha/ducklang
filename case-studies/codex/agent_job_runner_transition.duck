@@ -11,14 +11,14 @@ type AgentJobTransitionOutcome = AgentJobSpawnOutcome
 type AgentJobTransitionState = AgentJobRunnerState
 type AgentJobTransitionValue = AgentJobRunnerTransition
 
-const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome] ->
+const apply_agent_job_spawn: (AgentJobTransitionState, AgentJobTransitionOutcome) ->
   AgentJobTransitionValue = (
     state: AgentJobTransitionState,
     outcome: AgentJobTransitionOutcome,
-  ) => {
-    if let `Cons pending_node = state.pending {
+  ) => do
+    if let #Cons pending_node = state.pending then
       let [item, remaining] = pending_node;
-      if let `WorkerSpawned thread_id = outcome {
+      if let #WorkerSpawned thread_id = outcome then
         let worker: AgentJobTransitionActiveWorker = [
           .item_id = item.item_id,
           .thread_id = thread_id,
@@ -26,15 +26,15 @@ const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome
         let active_node: AgentJobTransitionActiveNode = [worker, state.active];
         let next: AgentJobTransitionState = [
           .pending = remaining,
-          .active = `Cons active_node,
+          .active = #Cons active_node,
           .total_items = state.total_items,
           .completed_items = state.completed_items,
           .failed_items = state.failed_items,
           .spawn_blocked = false,
           .cancelled = state.cancelled,
         ];
-        `RunnerAdvanced next
-      } else if let `WorkerSpawnDeferred () = outcome {
+        #RunnerAdvanced next
+      else let #WorkerSpawnDeferred = outcome then
         let next: AgentJobTransitionState = [
           .pending = state.pending,
           .active = state.active,
@@ -44,8 +44,8 @@ const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome
           .spawn_blocked = true,
           .cancelled = state.cancelled,
         ];
-        `RunnerAdvanced next
-      } else if let `WorkerSpawnFailed _ = outcome {
+        #RunnerAdvanced next
+      else let #WorkerSpawnFailed _ = outcome then
         let next: AgentJobTransitionState = [
           .pending = remaining,
           .active = state.active,
@@ -55,58 +55,62 @@ const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome
           .spawn_blocked = false,
           .cancelled = state.cancelled,
         ];
-        `RunnerAdvanced next
-      } else {
-        `RunnerInvariantFailed "agent job spawn returned no outcome"
-      }
-    } else {
-      `RunnerInvariantFailed "agent job spawn completed without a pending item"
-    }
-  };
+        #RunnerAdvanced next
+      else
+        #RunnerInvariantFailed "agent job spawn returned no outcome"
+      end;
+    else
+      #RunnerInvariantFailed "agent job spawn completed without a pending item"
+    end;
+  end;
 
-const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCompletion] ->
+const apply_agent_job_completion: (AgentJobTransitionState, AgentJobTransitionCompletion) ->
   AgentJobTransitionValue = (
     state: AgentJobTransitionState,
     completion: AgentJobTransitionCompletion,
-  ) => {
+  ) => do
     let current = state.active;
-    let remaining_reversed: AgentJobTransitionActive = `Nil ();
+    let remaining_reversed: AgentJobTransitionActive = #Nil;
     let found = false;
     let done = false;
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [worker, tail] = node;
-        if worker.thread_id == completion.thread_id {
+        if worker.thread_id == completion.thread_id then
           found = true
-        } else {
+        else
           let kept_node: AgentJobTransitionActiveNode = [worker, remaining_reversed];
-          remaining_reversed = `Cons kept_node
-        }
+          remaining_reversed = #Cons kept_node
+        end;
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
-    if !(found) {
-      `RunnerInvariantFailed (
-        text_append ["agent job completion referenced inactive worker ", completion.thread_id]
+      end;
+      if done then
+        break;
+      end;
+    end;
+    if !(found) then
+      #RunnerInvariantFailed (
+        text_append ("agent job completion referenced inactive worker ", completion.thread_id)
       )
-    } else {
-      let remaining: AgentJobTransitionActive = `Nil ();
+    else
+      let remaining: AgentJobTransitionActive = #Nil;
       done = false
-      loop {
-        if let `Cons node = remaining_reversed {
+      loop do
+        if let #Cons node = remaining_reversed then
           let [worker, tail] = node;
           let kept_node: AgentJobTransitionActiveNode = [worker, remaining];
-          remaining = `Cons kept_node
+          remaining = #Cons kept_node
           remaining_reversed = tail
-        } else {
+        else
           done = true
-        }
-        if done { break; }
-      }
-      if completion.reported {
+        end;
+        if done then
+          break;
+        end;
+      end;
+      if completion.reported then
         let next: AgentJobTransitionState = [
           .pending = state.pending,
           .active = remaining,
@@ -116,8 +120,8 @@ const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCo
           .spawn_blocked = false,
           .cancelled = state.cancelled || completion.cancel_requested,
         ];
-        `RunnerAdvanced next
-      } else {
+        #RunnerAdvanced next
+      else
         let next: AgentJobTransitionState = [
           .pending = state.pending,
           .active = remaining,
@@ -127,10 +131,10 @@ const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCo
           .spawn_blocked = false,
           .cancelled = state.cancelled || completion.cancel_requested,
         ];
-        `RunnerAdvanced next
-      }
-    }
-  };
+        #RunnerAdvanced next
+      end;
+    end;
+  end;
 
 return {
   .apply_agent_job_completion,

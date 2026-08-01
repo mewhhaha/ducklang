@@ -1,7 +1,7 @@
-const readable = operations => {
+const readable = operations => do
   operations.read
   operations
-};
+end;
 
 const scalar_operations = 0;
 const scalar_operations = scalar_operations :+ {

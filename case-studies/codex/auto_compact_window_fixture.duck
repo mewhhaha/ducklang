@@ -20,50 +20,51 @@ type FixtureCompactWindowIds = AutoCompactWindowIds
 
 let initial_ids: FixtureCompactWindowIds = [
   .first_window_id = "window-1",
-  .previous_window_id = `None (),
+  .previous_window_id = #None,
   .window_id = "window-1",
 ];
 let window: FixtureCompactWindow = new_auto_compact_window initial_ids;
 let score = 0;
 
-if window.window_number == 0i64 && window.ids.first_window_id == "window-1" && window.ids.window_id == "window-1" {
-  score = score + 1
-}
+if window.window_number == 0i64 && window.ids.first_window_id == "window-1" && window.ids.window_id
+  == "window-1" then
+    score = score + 1
+  end;
 
 let restored_ids: FixtureCompactWindowIds = [
   .first_window_id = "window-1",
-  .previous_window_id = `Some "window-2",
+  .previous_window_id = #Some "window-2",
   .window_id = "window-3",
 ];
 window = restore_auto_compact_window(window, 3i64, restored_ids)
-if window.window_number == 3i64 && window.ids.window_id == "window-3" {
+if window.window_number == 3i64 && window.ids.window_id == "window-3" then
   score = score + 10
-}
+end;
 
 let first_reminder = claim_token_budget_reminder window;
 window = first_reminder.window
 let second_reminder = claim_token_budget_reminder window;
 window = second_reminder.window
-if first_reminder.granted && !(second_reminder.granted) {
+if first_reminder.granted && !(second_reminder.granted) then
   score = score + 100
-}
+end;
 
 let first_fallback = claim_auto_compact_fallback window;
 window = first_fallback.window
 let second_fallback = claim_auto_compact_fallback window;
 window = second_fallback.window
-if first_fallback.granted && !(second_fallback.granted) {
+if first_fallback.granted && !(second_fallback.granted) then
   score = score + 1000
-}
+end;
 
 window = request_new_context_window window
 let requested = take_new_context_window_request window;
 window = requested.window
 let already_taken = take_new_context_window_request window;
 window = already_taken.window
-if requested.granted && !(already_taken.granted) {
+if requested.granted && !(already_taken.granted) then
   score = score + 10000
-}
+end;
 
 window = request_new_context_window window
 window = advance_auto_compact_window(window, "window-4")
@@ -74,12 +75,14 @@ window = reset_reminder.window
 let reset_fallback = claim_auto_compact_fallback window;
 window = reset_fallback.window
 let ids_valid =
-  window.window_number == 4i64 && window.ids.first_window_id == "window-1" && window.ids.window_id == "window-4";
-if let `Some previous = window.ids.previous_window_id {
-  if ids_valid && previous == "window-3" && !(reset_request.granted) && reset_reminder.granted && reset_fallback.granted {
-    score = score + 100000
-  }
-}
+  window.window_number == 4i64 && window.ids.first_window_id == "window-1" && window.ids.window_id
+  == "window-4";
+if let #Some previous = window.ids.previous_window_id then
+  if ids_valid && previous == "window-3" && !(reset_request.granted) && reset_reminder.granted
+    && reset_fallback.granted then
+      score = score + 100000
+    end;
+end;
 
 window = set_estimated_prefill(window, 150i64)
 let estimated = auto_compact_window_snapshot(&window);
@@ -89,13 +92,13 @@ window = set_estimated_prefill(window, 90i64)
 let observed = auto_compact_window_snapshot(&window);
 window = clear_auto_compact_prefill window
 let cleared = auto_compact_window_snapshot(&window);
-let estimated_valid = if let `Some tokens = estimated.prefill_input_tokens { tokens == 150i64
-} else { false };
-let observed_valid = if let `Some tokens = observed.prefill_input_tokens { tokens == 120i64 } else {
-  false };
-let cleared_valid = if let `None () = cleared.prefill_input_tokens { true } else { false };
-if estimated_valid && observed_valid && cleared_valid {
+let estimated_valid = if let #Some tokens = estimated.prefill_input_tokens then tokens == 150i64
+else false end;
+let observed_valid = if let #Some tokens = observed.prefill_input_tokens then tokens == 120i64 else
+  false end;
+let cleared_valid = if let #None = cleared.prefill_input_tokens then true else false end;
+if estimated_valid && observed_valid && cleared_valid then
   score = score + 1000000
-}
+end;
 
 return { .score = score };

@@ -21,11 +21,11 @@ type ProfilePhaseOption = TurnProfilePhaseOption
 type ProfileTransition = TurnProfileTransition
 type ProfileCompletion = TurnProfileCompletion
 
-const empty_turn_profile_state: () -> ProfileState = () => {
+const empty_turn_profile_state: () -> ProfileState = () => do
   [
-    .started_at = `None (),
-    .last_transition_at = `None (),
-    .active_phase = `None (),
+    .started_at = #None,
+    .last_transition_at = #None,
+    .active_phase = #None,
     .seen_sampling = false,
     .before_first_sampling = duration_ms 0i64,
     .sampling = duration_ms 0i64,
@@ -34,102 +34,102 @@ const empty_turn_profile_state: () -> ProfileState = () => {
     .pending_idle_after_sampling = duration_ms 0i64,
     .sampling_request_count = 0i64,
     .sampling_retry_count = 0i64,
-    .completed_profile = `None (),
+    .completed_profile = #None,
   ]
-};
+end;
 
-const start_turn_profile: [ProfileState, ProfileInstant] -> ProfileState = (
+const start_turn_profile: (ProfileState, ProfileInstant) -> ProfileState = (
   state: ProfileState,
   started_at: ProfileInstant,
-) => {
+) => do
   let started = empty_turn_profile_state();
   let started_at_ms = monotonic_ms_value started_at;
   started <& {
-    .started_at = `Some (monotonic_ms started_at_ms),
-    .last_transition_at = `Some (monotonic_ms started_at_ms),
+    .started_at = #Some (monotonic_ms started_at_ms),
+    .last_transition_at = #Some (monotonic_ms started_at_ms),
   }
-};
+end;
 
-const turn_profile_phase_equal: [ProfilePhase, ProfilePhase] -> Bool = (
+const turn_profile_phase_equal: (ProfilePhase, ProfilePhase) -> Bool = (
   left: ProfilePhase,
   right: ProfilePhase,
-) => {
-  if let `Sampling () = left {
-    if let `Sampling () = right { true } else { false }
-  } else if let `ToolBlocking () = left {
-    if let `ToolBlocking () = right { true } else { false }
-  } else {
+) => do
+  if let #Sampling = left then
+    if let #Sampling = right then true else false end;
+  else let #ToolBlocking = left then
+    if let #ToolBlocking = right then true else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const advance_turn_profile: [ProfileState, ProfileInstant] -> ProfileState = (
+const advance_turn_profile: (ProfileState, ProfileInstant) -> ProfileState = (
   state: ProfileState,
   now: ProfileInstant,
-) => {
+) => do
   let now_ms = monotonic_ms_value now;
-  if let `Some previous = state.last_transition_at {
+  if let #Some previous = state.last_transition_at then
     let previous_ms = monotonic_ms_value previous;
 
-    if let `Some phase = state.active_phase {
-      if let `Sampling () = phase {
+    if let #Some phase = state.active_phase then
+      if let #Sampling = phase then
         state <& {
-          .last_transition_at = `Some (monotonic_ms now_ms),
-          .active_phase = `Some (`Sampling ()),
+          .last_transition_at = #Some (monotonic_ms now_ms),
+          .active_phase = #Some (#Sampling),
           .sampling = duration_add(
             state.sampling,
             duration_between(monotonic_ms previous_ms, monotonic_ms now_ms),
           ),
         }
-      } else if let `ToolBlocking () = phase {
+      else let #ToolBlocking = phase then
         state <& {
-          .last_transition_at = `Some (monotonic_ms now_ms),
-          .active_phase = `Some (`ToolBlocking ()),
+          .last_transition_at = #Some (monotonic_ms now_ms),
+          .active_phase = #Some (#ToolBlocking),
           .tool_blocking = duration_add(
             state.tool_blocking,
             duration_between(monotonic_ms previous_ms, monotonic_ms now_ms),
           ),
         }
-      } else {
-        state <& { .last_transition_at = `Some (monotonic_ms now_ms), .active_phase = `None () }
-      }
-    } else if state.seen_sampling {
+      else
+        state <& { .last_transition_at = #Some (monotonic_ms now_ms), .active_phase = #None }
+      end;
+    else state.seen_sampling then
       state <& {
-        .last_transition_at = `Some (monotonic_ms now_ms),
-        .active_phase = `None (),
+        .last_transition_at = #Some (monotonic_ms now_ms),
+        .active_phase = #None,
         .pending_idle_after_sampling = duration_add(
           state.pending_idle_after_sampling,
           duration_between(monotonic_ms previous_ms, monotonic_ms now_ms),
         ),
       }
-    } else {
+    else
       state <& {
-        .last_transition_at = `Some (monotonic_ms now_ms),
-        .active_phase = `None (),
+        .last_transition_at = #Some (monotonic_ms now_ms),
+        .active_phase = #None,
         .before_first_sampling = duration_add(
           state.before_first_sampling,
           duration_between(monotonic_ms previous_ms, monotonic_ms now_ms),
         ),
       }
-    }
-  } else {
+    end;
+  else
     state
-  }
-};
+  end;
+end;
 
-const begin_sampling: [ProfileState, ProfileInstant] -> ProfileTransition = (
+const begin_sampling: (ProfileState, ProfileInstant) -> ProfileTransition = (
   state: ProfileState,
   now: ProfileInstant,
-) => {
+) => do
   let now_ms = monotonic_ms_value now;
-  let completed = if let `Some _ = state.completed_profile { true } else { false };
-  let started = if let `Some _ = state.started_at { true } else { false };
-  let active = if let `Some _ = state.active_phase { true } else { false };
-  if completed || !(started) || active {
+  let completed = if let #Some _ = state.completed_profile then true else false end;
+  let started = if let #Some _ = state.started_at then true else false end;
+  let active = if let #Some _ = state.active_phase then true else false end;
+  if completed || !(started) || active then
     [.state = state, .started = false]
-  } else {
+  else
     let next = advance_turn_profile(state, monotonic_ms now_ms);
-    if next.seen_sampling {
+    if next.seen_sampling then
       next = next <& {
         .between_sampling_overhead = duration_add(
           next.between_sampling_overhead,
@@ -137,97 +137,97 @@ const begin_sampling: [ProfileState, ProfileInstant] -> ProfileTransition = (
         ),
         .pending_idle_after_sampling = duration_ms 0i64,
       }
-    }
+    end;
     next = next <& {
       .seen_sampling = true,
-      .active_phase = `Some (`Sampling ()),
+      .active_phase = #Some (#Sampling),
       .sampling_request_count = saturating_add_i64(next.sampling_request_count, 1i64),
-    }
+    };
     [.state = next, .started = true]
-  }
-};
+  end;
+end;
 
-const begin_tool_blocking: [ProfileState, ProfileInstant] -> ProfileTransition = (
+const begin_tool_blocking: (ProfileState, ProfileInstant) -> ProfileTransition = (
   state: ProfileState,
   now: ProfileInstant,
-) => {
+) => do
   let now_ms = monotonic_ms_value now;
-  let completed = if let `Some _ = state.completed_profile { true } else { false };
-  let started = if let `Some _ = state.started_at { true } else { false };
-  let active = if let `Some _ = state.active_phase { true } else { false };
-  if completed || !(started) || active {
+  let completed = if let #Some _ = state.completed_profile then true else false end;
+  let started = if let #Some _ = state.started_at then true else false end;
+  let active = if let #Some _ = state.active_phase then true else false end;
+  if completed || !(started) || active then
     [.state = state, .started = false]
-  } else {
+  else
     let next = advance_turn_profile(state, monotonic_ms now_ms);
-    next = next <& { .active_phase = `Some (`ToolBlocking ()) }
+    next = next <& { .active_phase = #Some (#ToolBlocking) };
     [.state = next, .started = true]
-  }
-};
+  end;
+end;
 
-const end_turn_profile_phase: [ProfileState, ProfileInstant, ProfilePhase] -> ProfileState = (
+const end_turn_profile_phase: (ProfileState, ProfileInstant, ProfilePhase) -> ProfileState = (
   state: ProfileState,
   now: ProfileInstant,
   phase: ProfilePhase,
-) => {
+) => do
   let now_ms = monotonic_ms_value now;
-  let completed = if let `Some _ = state.completed_profile { true } else { false };
-  if completed {
+  let completed = if let #Some _ = state.completed_profile then true else false end;
+  if completed then
     state
-  } else if let `Some active = state.active_phase {
-    if turn_profile_phase_equal(active, phase) {
+  else let #Some active = state.active_phase then
+    if turn_profile_phase_equal(active, phase) then
       let next = advance_turn_profile(state, monotonic_ms now_ms);
-      next <& { .active_phase = `None () }
-    } else {
+      next <& { .active_phase = #None }
+    else
       state
-    }
-  } else {
+    end;
+  else
     state
-  }
-};
+  end;
+end;
 
-const record_sampling_retry: ProfileState -> ProfileState = state => {
-  let completed = if let `Some _ = state.completed_profile { true } else { false };
-  let started = if let `Some _ = state.started_at { true } else { false };
-  if completed || !(started) {
+const record_sampling_retry: ProfileState -> ProfileState = state => do
+  let completed = if let #Some _ = state.completed_profile then true else false end;
+  let started = if let #Some _ = state.started_at then true else false end;
+  if completed || !(started) then
     state
-  } else {
+  else
     state <& { .sampling_retry_count = saturating_add_i64(state.sampling_retry_count, 1i64) }
-  }
-};
+  end;
+end;
 
-const add_turn_profile_rounding: [Profile, ProfilePhaseOption, Bool, ProfileDuration] -> Profile = (
+const add_turn_profile_rounding: (Profile, ProfilePhaseOption, Bool, ProfileDuration) -> Profile = (
   profile: Profile,
   final_phase: ProfilePhaseOption,
   seen_sampling: Bool,
   rounding: ProfileDuration,
-) => {
-  if let `Some phase = final_phase {
-    if let `Sampling () = phase {
+) => do
+  if let #Some phase = final_phase then
+    if let #Sampling = phase then
       profile <& { .sampling = duration_add(profile.sampling, rounding) }
-    } else if let `ToolBlocking () = phase {
+    else let #ToolBlocking = phase then
       profile <& { .tool_blocking = duration_add(profile.tool_blocking, rounding) }
-    } else {
+    else
       profile
-    }
-  } else if seen_sampling {
+    end;
+  else seen_sampling then
     profile <& { .after_last_sampling = duration_add(profile.after_last_sampling, rounding) }
-  } else {
+  else
     profile <& { .before_first_sampling = duration_add(profile.before_first_sampling, rounding) }
-  }
-};
+  end;
+end;
 
-const complete_turn_profile: [ProfileState, ProfileInstant] -> ProfileCompletion = (
+const complete_turn_profile: (ProfileState, ProfileInstant) -> ProfileCompletion = (
   state: ProfileState,
   now: ProfileInstant,
-) => {
+) => do
   let now_ms = monotonic_ms_value now;
-  if let `Some completed = state.completed_profile {
+  if let #Some completed = state.completed_profile then
     [.state = state, .profile = completed]
-  } else {
+  else
     let final_phase = state.active_phase;
     let next = advance_turn_profile(state, monotonic_ms now_ms);
-    let after_last_sampling: ProfileDuration = if next.seen_sampling {
-      next.pending_idle_after_sampling } else { duration_ms 0i64 };
+    let after_last_sampling: ProfileDuration = if next.seen_sampling then
+      next.pending_idle_after_sampling else duration_ms 0i64 end;
     next = next <& { .pending_idle_after_sampling = duration_ms 0i64 }
 
     let profile: Profile = [
@@ -239,10 +239,10 @@ const complete_turn_profile: [ProfileState, ProfileInstant] -> ProfileCompletion
       .sampling_request_count = next.sampling_request_count,
       .sampling_retry_count = next.sampling_retry_count,
     ];
-    let total: ProfileDuration = if let `Some started_at = next.started_at { duration_between(
+    let total: ProfileDuration = if let #Some started_at = next.started_at then duration_between(
       started_at,
       monotonic_ms now_ms,
-    ) } else { duration_ms 0i64 };
+    ) else duration_ms 0i64 end;
     let total_ms: I64 = duration_ms_value total;
     let classified_ms: I64 = read_duration_ms(&profile.before_first_sampling);
     classified_ms = saturating_add_i64(classified_ms, read_duration_ms(&profile.sampling))
@@ -255,9 +255,9 @@ const complete_turn_profile: [ProfileState, ProfileInstant] -> ProfileCompletion
       classified_ms,
       read_duration_ms(&profile.after_last_sampling),
     )
-    let rounding: ProfileDuration = if total_ms > classified_ms { duration_ms(
+    let rounding: ProfileDuration = if total_ms > classified_ms then duration_ms(
       total_ms - classified_ms
-    ) } else { duration_ms 0i64 };
+    ) else duration_ms 0i64 end;
 
     profile = add_turn_profile_rounding(profile, final_phase, next.seen_sampling, rounding)
 
@@ -268,7 +268,7 @@ const complete_turn_profile: [ProfileState, ProfileInstant] -> ProfileCompletion
     let after_last_sampling_ms = read_duration_ms(&profile.after_last_sampling);
     let sampling_request_count = profile.sampling_request_count;
     let sampling_retry_count = profile.sampling_retry_count;
-    next = next <& { .active_phase = `None (), .completed_profile = `Some profile }
+    next = next <& { .active_phase = #None, .completed_profile = #Some profile }
     let returned_profile: Profile = [
       .before_first_sampling = duration_ms before_first_sampling_ms,
       .sampling = duration_ms sampling_ms,
@@ -279,8 +279,8 @@ const complete_turn_profile: [ProfileState, ProfileInstant] -> ProfileCompletion
       .sampling_retry_count = sampling_retry_count,
     ];
     [.state = next, .profile = returned_profile]
-  }
-};
+  end;
+end;
 
 return {
   .empty_turn_profile_state,

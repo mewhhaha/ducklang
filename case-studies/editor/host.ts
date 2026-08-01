@@ -15,6 +15,10 @@ export type MockEditorRunner = EditorRunner & {
   saves: Uint8Array[];
 };
 
+export type MockEditorOptions = {
+  save_error?: string;
+};
+
 export function live_runner(path: string): EditorRunner {
   if (!Deno.stdin.isTerminal() || !Deno.stdout.isTerminal()) {
     throw new Error("The editor requires terminal stdin and stdout");
@@ -46,6 +50,7 @@ export function live_runner(path: string): EditorRunner {
 export function mock_runner(
   initial: Uint8Array,
   keys: Uint8Array[],
+  options: MockEditorOptions = {},
 ): MockEditorRunner {
   const frames: Uint8Array[] = [];
   const saves: Uint8Array[] = [];
@@ -71,6 +76,15 @@ export function mock_runner(
     },
     save(value: DuckHostValue): DuckHostValue {
       saves.push(expect_bytes(value, "Terminal.save contents").slice());
+
+      if (options.save_error !== undefined) {
+        return union_value(
+          "SaveResult",
+          "Err",
+          text_value(options.save_error),
+        );
+      }
+
       return union_value("SaveResult", "Ok", unit_value);
     },
     columns(): DuckHostValue {
@@ -120,8 +134,16 @@ function create_live_terminal(path: string): DuckInit["Terminal"] {
       try {
         Deno.writeFileSync(path, expect_bytes(value, "Terminal.save contents"));
         return union_value("SaveResult", "Ok", unit_value);
-      } catch {
-        return union_value("SaveResult", "Err", unit_value);
+      } catch (error) {
+        let message: string;
+
+        if (error instanceof Error) {
+          message = error.message;
+        } else {
+          message = String(error);
+        }
+
+        return union_value("SaveResult", "Err", text_value(message));
       }
     },
     columns(): DuckHostValue {
@@ -166,6 +188,10 @@ function bytes_value(value: Uint8Array): DuckHostValue {
 
 function integer_value(value: number): DuckHostValue {
   return { kind: "integer", value };
+}
+
+function text_value(value: string): DuckHostValue {
+  return { kind: "text", value };
 }
 
 function union_value(

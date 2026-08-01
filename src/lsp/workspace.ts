@@ -4,8 +4,10 @@ import {
   build_binding_index,
 } from "../frontend/binding_index.ts";
 import type { Source as FrontSource } from "../frontend/ast.ts";
+import { parse_duck_source } from "../frontend/baba_parser.ts";
 import { Source } from "../frontend/source.ts";
-import { scan_source, source_tokens } from "../frontend/tokenize.ts";
+import { baba_source_syntax } from "../frontend/source_parse.ts";
+import { source_tokens } from "../frontend/tokenize.ts";
 import { document_content_hash, type TextDocument } from "./documents.ts";
 import {
   definition_location,
@@ -821,7 +823,7 @@ function source_metadata(
 } {
   const dependencies = new Set<string>();
   const symbol_sites: WorkspaceSymbolSite[] = [];
-  const tokens = source_tokens(scan_source(text));
+  const tokens = source_tokens(baba_source_syntax(parse_duck_source(text)));
   let brace_depth = 0;
   let declaration_container: string | undefined;
   let declaration_kind: number = symbol_kind.class;
@@ -842,6 +844,9 @@ function source_metadata(
     const previous = tokens[index - 1];
     const path = tokens[index + 1];
     let introduced_symbol = false;
+    const starts_statement = previous === undefined ||
+      previous.kind === "newline" ||
+      (previous.kind === "symbol" && previous.text === ";");
 
     if (token?.kind === "symbol" && token.text === "{") {
       brace_depth += 1;
@@ -918,7 +923,7 @@ function source_metadata(
         expects_top_level_name = true;
       } else if (
         (token.text === "let" || token.text === "const") &&
-        (previous === undefined || previous.kind === "newline")
+        starts_statement
       ) {
         declaration_members = false;
         declaration_parameters = false;
@@ -952,7 +957,7 @@ function source_metadata(
       } else if (
         expects_top_level_name &&
         token.text !== "rec" && token.text !== "open" &&
-        !(previous?.kind === "symbol" && previous.text === "`")
+        !(previous?.kind === "symbol" && previous.text === "#")
       ) {
         if (token.text !== "_") {
           let kind = binding_kind;
@@ -978,7 +983,7 @@ function source_metadata(
         }
       } else if (
         token.text === "and" &&
-        (previous === undefined || previous.kind === "newline") &&
+        starts_statement &&
         path?.kind === "name" && path.text !== "_"
       ) {
         let definition = path;
@@ -1014,7 +1019,7 @@ function source_metadata(
         !declaration_members && !binding_pattern &&
         token.text !== "_" && path?.kind === "symbol" &&
         (path.text === "=" || path.text === ":=") &&
-        (previous === undefined || previous.kind === "newline")
+        starts_statement
       ) {
         symbol_sites.push({
           container_name: undefined,
@@ -1054,7 +1059,7 @@ function source_metadata(
     if (
       token?.kind === "name" &&
       previous?.kind === "symbol" &&
-      ((previous.text === "`" && declaration_members) ||
+      ((previous.text === "#" && declaration_members) ||
         (previous.text === "." &&
           (declaration_members || shape_binding_pattern)))
     ) {
@@ -1065,7 +1070,7 @@ function source_metadata(
         container_name = declaration_container;
         kind = declaration_member_kind;
 
-        if (previous.text === "`") {
+        if (previous.text === "#") {
           kind = symbol_kind.enum_member;
         }
       }

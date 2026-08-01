@@ -143,10 +143,10 @@ Deno.test("inlay type hints resolve source-defined extension methods", () => {
 
 Deno.test("inlay effect hints snapshot inferred row and result", () => {
   const text = `declare effect Io { read: () => Text }
-let greet = () => {
+let greet = () => do
   value <- Io.read()
   value
-};
+end;
 `;
 
   assert_equals(dump(hints(text, category_config("effects"))), [{
@@ -179,10 +179,10 @@ Deno.test("inlay labels cap at sixteen characters and retain full detail", () =>
 
 Deno.test("inlay type hints annotate state binding names", () => {
   const text = `declare effect Io { read: () => Text }
-let greet = () => {
+let greet = () => do
   value <- Io.read()
   value
-};
+end;
 `;
 
   assert_equals(dump(hints(text, category_config("types"))), [{
@@ -195,7 +195,8 @@ let greet = () => {
 });
 
 Deno.test("inlay ownership hints snapshot call boundaries", () => {
-  const text = "declare effect Host { send: (&Text, #Text, Text) => Unit }\n" +
+  const text =
+    "declare effect Host { send: (&Text, freeze Text, Text) => Unit }\n" +
     'let value = "x";\n' +
     "let frozen = freeze value;\n" +
     "Host.send(&value, frozen, value)\n";
@@ -269,12 +270,12 @@ Deno.test("inlay comptime hints use the environment before each binding", () => 
 });
 
 Deno.test("inlay loop hints snapshot static expansion counts", () => {
-  const text = "for index in 1..5 {\n" +
+  const text = "for index in 1..5 do\n" +
     "  index\n" +
-    "}\n" +
-    'for byte in "abc" {\n' +
+    "end\n" +
+    'for byte in "abc" do\n' +
     "  byte\n" +
-    "}\n";
+    "end\n";
 
   assert_equals(dump(hints(text, category_config("loops"))), [{
     line: 0,

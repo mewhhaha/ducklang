@@ -1,16 +1,16 @@
-type Maybe = | `Some I32 | `None Unit
+type Maybe = | #Some I32 | #None
 
-let some: Maybe = `Some 40;
-let none: Maybe = `None ();
-let values = [none, some];
+let present: Maybe = #Some 40;
+let none: Maybe = #None;
+let values = [none, present];
 let total = 0;
 
-for option in values {
-  let `Some value = option else {
+for option in values do
+  let #Some value = option else do
     continue;
-  };
+  end;
 
   total = total + value + 2
-}
+end
 
 total

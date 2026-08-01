@@ -10,12 +10,14 @@ type FixtureTexts = HookTexts
 
 const fixture_texts = comptime list Text;
 
-let result: FixtureResult = [`None (), `Some 0, "  remember this  ", ""];
-let [status, _, _, contexts, _, _, _] = evaluate_hook_command(`UserPromptSubmit (), result);
+let result: FixtureResult = [#None, #Some 0, "  remember this  ", ""];
+let [status, _, _, contexts, _, _, _] = evaluate_hook_command(#UserPromptSubmit, result);
 let score: I32 = 0;
 
-if let `Completed () = status {
-  if fixture_texts.nth_or("", 0, contexts) == "remember this" { score = 1 }
-}
+if let #Completed = status then
+  if fixture_texts.nth_or("", 0, contexts) == "remember this" then
+    score = 1
+  end;
+end;
 
 return { .score = score };

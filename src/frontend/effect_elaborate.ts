@@ -38,6 +38,7 @@ import {
   const_i32_value,
   expanded_type_product_entries,
 } from "./fixed_array_type.ts";
+import { has_source_span, inherit_source_span } from "./syntax.ts";
 
 type EffectElaboration = {
   analysis: FrontEffectAnalysis;
@@ -1198,9 +1199,8 @@ function rewrite_statements(
         stmt.type_annotation?.tag === "tuple" ||
         stmt.type_annotation?.tag === "product"
       ) {
-        throw new Error(
-          "Rich type annotation is not lowered yet on " + stmt.name,
-        );
+        annotation = undefined;
+        type_annotation = stmt.type_annotation;
       }
 
       result.push({
@@ -1287,7 +1287,7 @@ function apply_function_parameter_types(
     types = type.param.items;
   }
 
-  if (type.param.tag === "product") {
+  if (type.param.tag === "product" && type.param.value_pack === true) {
     types = expanded_type_product_entries(
       type.param,
       (name) =>
@@ -1681,16 +1681,25 @@ function rewrite_expr(
     let rest = expr.rest;
 
     if (rest !== undefined) {
-      rest = rewrite_expr(rest, providers, elaboration);
+      const source_rest = rest;
+      rest = rewrite_expr(source_rest, providers, elaboration);
+      if (rest !== source_rest && has_source_span(source_rest)) {
+        rest = { ...rest };
+        inherit_source_span(rest, source_rest);
+      } else if (!has_source_span(rest) && has_source_span(source_rest)) {
+        inherit_source_span(rest, source_rest);
+      }
     }
 
-    return {
+    const rewritten: Extract<FrontExpr, { tag: "array" }> = {
       ...expr,
       items: expr.items.map((item) =>
         rewrite_expr(item, providers, elaboration)
       ),
       rest,
     };
+    if (has_source_span(expr)) inherit_source_span(rewritten, expr);
+    return rewritten;
   }
 
   if (expr.tag === "array_repeat") {

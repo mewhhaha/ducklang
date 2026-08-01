@@ -8,36 +8,36 @@ type FixtureContentNode = FunctionOutputContentItemNode
 type FixtureContents = FunctionOutputContentItems
 type FixtureDetailOption = OutputImageDetailOption
 
-let contents: FixtureContents = `Nil ();
-let beta: FixtureContent = `InputText "beta";
+let contents: FixtureContents = #Nil;
+let beta: FixtureContent = #InputText "beta";
 let beta_node: FixtureContentNode = [beta, contents];
-contents = `Cons beta_node
-let unicode_blank: FixtureContent = `InputText "　";
+contents = #Cons beta_node
+let unicode_blank: FixtureContent = #InputText "　";
 let unicode_blank_node: FixtureContentNode = [unicode_blank, contents];
-contents = `Cons unicode_blank_node
-let encrypted: FixtureContent = `EncryptedContent "secret";
+contents = #Cons unicode_blank_node
+let encrypted: FixtureContent = #EncryptedContent "secret";
 let encrypted_node: FixtureContentNode = [encrypted, contents];
-contents = `Cons encrypted_node
-let audio: FixtureContent = `InputAudio "audio://one";
+contents = #Cons encrypted_node
+let audio: FixtureContent = #InputAudio "audio://one";
 let audio_node: FixtureContentNode = [audio, contents];
-contents = `Cons audio_node
-let no_detail: FixtureDetailOption = `None ();
-let image: FixtureContent = `InputImage (["image://one", no_detail]);
+contents = #Cons audio_node
+let no_detail: FixtureDetailOption = #None;
+let image: FixtureContent = #InputImage (["image://one", no_detail]);
 let image_node: FixtureContentNode = [image, contents];
-contents = `Cons image_node
-let blank_image: FixtureContent = `InputImage (["  ", no_detail]);
+contents = #Cons image_node
+let blank_image: FixtureContent = #InputImage (["  ", no_detail]);
 let blank_image_node: FixtureContentNode = [blank_image, contents];
-contents = `Cons blank_image_node
-let alpha: FixtureContent = `InputText " alpha ";
+contents = #Cons blank_image_node
+let alpha: FixtureContent = #InputText " alpha ";
 let alpha_node: FixtureContentNode = [alpha, contents];
-contents = `Cons alpha_node
-let blank: FixtureContent = `InputText "\n\t";
+contents = #Cons alpha_node
+let blank: FixtureContent = #InputText "\n\t";
 let blank_node: FixtureContentNode = [blank, contents];
-contents = `Cons blank_node
+contents = #Cons blank_node
 
 let score = 0;
-if code_mode_content_result contents == " alpha \nimage://one\naudio://one\nbeta" {
+if code_mode_content_result contents == " alpha \nimage://one\naudio://one\nbeta" then
   score = 1
-}
+end;
 
 return { .score = score };

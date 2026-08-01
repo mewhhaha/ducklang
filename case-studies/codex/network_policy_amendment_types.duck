@@ -4,8 +4,8 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "./network_policy_types.duck" ();
 
 type NetworkPolicyRuleAction =
-  | `AllowRule Unit
-  | `DenyRule Unit
+  | #AllowRule
+  | #DenyRule
 
 type NetworkPolicyAmendment = struct {
   .host = Text,
@@ -13,14 +13,14 @@ type NetworkPolicyAmendment = struct {
 }
 
 type NetworkExecPolicyProtocol =
-  | `ExecHttp Unit
-  | `ExecHttps Unit
-  | `ExecSocks5Tcp Unit
-  | `ExecSocks5Udp Unit
+  | #ExecHttp
+  | #ExecHttps
+  | #ExecSocks5Tcp
+  | #ExecSocks5Udp
 
 type NetworkExecPolicyDecision =
-  | `ExecAllow Unit
-  | `ExecForbidden Unit
+  | #ExecAllow
+  | #ExecForbidden
 
 type NetworkExecPolicyAmendment = struct {
   .protocol = NetworkExecPolicyProtocol,

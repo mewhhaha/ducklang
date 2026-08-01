@@ -6,15 +6,16 @@ const {} = import "./app_server_types.duck" ();
 
 type ThreadDeleteResponseJson = AppServerJson
 
-const materialize_thread_delete_response: [] -> ThreadDeleteResponseJson = () => {
+const materialize_thread_delete_response: () -> ThreadDeleteResponseJson = () => do
   json_object(json_object_empty())
-};
+end;
 
-const materialize_thread_deleted_notification: Text -> ThreadDeleteResponseJson = (thread_id: Text) => {
+const materialize_thread_deleted_notification: Text -> ThreadDeleteResponseJson =
+  (thread_id: Text) => do
     let fields = json_object_empty();
     fields = json_object_prepend("threadId", json_string thread_id, fields)
     json_object fields
-  };
+  end;
 
 return {
   .materialize_thread_delete_response,

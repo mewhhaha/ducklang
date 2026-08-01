@@ -6,23 +6,27 @@ const { .run_report_agent_job_result } = import "./agent_job_report_execution.du
 
 let score = 0;
 let accepted = plan_report_agent_job_result(
-  `Function "{\"job_id\":\"job-1\",\"item_id\":\"row-1\",\"result\":{\"answer\":42},\"stop\":true}"
+  #Function "{\"job_id\":\"job-1\",\"item_id\":\"row-1\",\"result\":{\"answer\":42},\"stop\":true}"
 );
-if let `RecordResult args = accepted {
+if let #RecordResult args = accepted then
   let result = run_report_agent_job_result args;
-  if let `Completed output = result {
-    if output == "{\"accepted\":true}" { score = score + 1 }
-  }
-}
+  if let #Completed output = result then
+    if output == "{\"accepted\":true}" then
+      score = score + 1
+    end;
+  end;
+end;
 
 let rejected = plan_report_agent_job_result(
-  `Function "{\"job_id\":\"job-1\",\"item_id\":\"row-2\",\"result\":{}}"
+  #Function "{\"job_id\":\"job-1\",\"item_id\":\"row-2\",\"result\":{}}"
 );
-if let `RecordResult args = rejected {
+if let #RecordResult args = rejected then
   let result = run_report_agent_job_result args;
-  if let `Completed output = result {
-    if output == "{\"accepted\":false}" { score = score + 10 }
-  }
-}
+  if let #Completed output = result then
+    if output == "{\"accepted\":false}" then
+      score = score + 10
+    end;
+  end;
+end;
 
 return { .score = score };

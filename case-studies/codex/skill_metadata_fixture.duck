@@ -14,30 +14,30 @@ type FixtureTextOption = SkillTextOption
 type FixtureProductOption = SkillProductOption
 
 let metadata: FixtureTextOption =
-  `Some "policy:\n  allow_implicit_invocation: false\n  products: [codex, chatgpt]";
+  #Some "policy:\n  allow_implicit_invocation: false\n  products: [codex, chatgpt]";
 let policy = parse_skill_policy metadata;
-let codex: FixtureProductOption = `Some (`Codex ());
-let atlas: FixtureProductOption = `Some (`Atlas ());
+let codex: FixtureProductOption = #Some (#Codex);
+let atlas: FixtureProductOption = #Some (#Atlas);
 let score = 0;
 
-if let `Some yaml = frontmatter "---\nname: search\ndescription: Search source trees\n---\nUse rg." {
-    if let `Some description = yaml_scalar(yaml, "description") {
-      if description == "Search source trees" {
-        score = score + 1
-      }
-    }
-  }
+if let #Some yaml = frontmatter "---\nname: search\ndescription: Search source trees\n---\nUse rg." then
+  if let #Some description = yaml_scalar(yaml, "description") then
+    if description == "Search source trees" then
+      score = score + 1
+    end;
+  end;
+end;
 
-if !policy_allows_implicit_invocation policy {
+if !policy_allows_implicit_invocation policy then
   score = score + 10
-}
+end;
 
-if policy_allows_product(policy, codex) {
+if policy_allows_product(policy, codex) then
   score = score + 100
-}
+end;
 
-if !policy_allows_product(policy, atlas) {
+if !policy_allows_product(policy, atlas) then
   score = score + 1000
-}
+end;
 
 return { .score = score };

@@ -12,10 +12,12 @@ let input: FixtureArgs = args.prepend("mcp", args.prepend("list", args.singleton
 let plan: FixturePlan = parse_cli input;
 let score = 0;
 
-if let `ManageMcp command = plan {
-  if let `McpList json = command {
-    if json { score = 1 }
-  }
-}
+if let #ManageMcp command = plan then
+  if let #McpList json = command then
+    if json then
+      score = 1
+    end;
+  end;
+end;
 
 return { .score = score };

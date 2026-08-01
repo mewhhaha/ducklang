@@ -1,12 +1,12 @@
-let fold_range = (start, end, initial, const step) => {
+let fold_range = (start, finish, initial, const step) => do
   let state = initial;
 
-  for index in start..end {
+  for index in start..finish do
     state = step(state, index)
-  }
+  end
 
   state
-};
+end;
 
 const add_index = (total, index) => total + index;
 

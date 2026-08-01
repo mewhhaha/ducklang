@@ -11,54 +11,62 @@ name_fields = json_object_prepend("threadId", json_string "thread-1", name_field
 
 let score = 0;
 let name_result: FixtureMethodResult = decode_thread_control_method(
-  `SetThreadName (),
+  #SetThreadName,
   json_object name_fields,
 );
-if let `MethodOk method = name_result {
-  if let `ThreadControl control = method {
-    if let `ThreadSetName params = control {
+if let #MethodOk method = name_result then
+  if let #ThreadControl control = method then
+    if let #ThreadSetName params = control then
       let [thread_id, name] = params;
-      if thread_id == "thread-1" && name == "  Work  " { score = score + 1 }
-    }
-  }
-}
+      if thread_id == "thread-1" && name == "  Work  " then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 let increment_fields = json_object_empty();
 increment_fields = json_object_prepend("threadId", json_string "thread-2", increment_fields)
 let increment_result: FixtureMethodResult = decode_thread_control_method(
-  `IncrementThreadElicitation (),
+  #IncrementThreadElicitation,
   json_object increment_fields,
 );
-if let `MethodOk method = increment_result {
-  if let `ThreadControl control = method {
-    if let `ThreadIncrementElicitation thread_id = control {
-      if thread_id == "thread-2" { score = score + 10 }
-    }
-  }
-}
+if let #MethodOk method = increment_result then
+  if let #ThreadControl control = method then
+    if let #ThreadIncrementElicitation thread_id = control then
+      if thread_id == "thread-2" then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 let decrement_fields = json_object_empty();
 decrement_fields = json_object_prepend("threadId", json_string "thread-3", decrement_fields)
 let decrement_result: FixtureMethodResult = decode_thread_control_method(
-  `DecrementThreadElicitation (),
+  #DecrementThreadElicitation,
   json_object decrement_fields,
 );
-if let `MethodOk method = decrement_result {
-  if let `ThreadControl control = method {
-    if let `ThreadDecrementElicitation thread_id = control {
-      if thread_id == "thread-3" { score = score + 100 }
-    }
-  }
-}
+if let #MethodOk method = decrement_result then
+  if let #ThreadControl control = method then
+    if let #ThreadDecrementElicitation thread_id = control then
+      if thread_id == "thread-3" then
+        score = score + 100
+      end;
+    end;
+  end;
+end;
 
 let invalid_fields = json_object_empty();
 invalid_fields = json_object_prepend("name", json_string "Work", invalid_fields)
 let invalid_result: FixtureMethodResult = decode_thread_control_method(
-  `SetThreadName (),
+  #SetThreadName,
   json_object invalid_fields,
 );
-if let `MethodError reason = invalid_result {
-  if reason == "thread/name/set.params.threadId is required" { score = score + 1000 }
-}
+if let #MethodError reason = invalid_result then
+  if reason == "thread/name/set.params.threadId is required" then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

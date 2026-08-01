@@ -20,101 +20,104 @@ const texts = comptime list Text;
 const tools = comptime list McpToolValue;
 const runtimes = comptime list McpRuntime;
 
-const model_visible = (visibility: McpVisibility) => {
-  if let `Model () = visibility {
+const model_visible = (visibility: McpVisibility) => do
+  if let #Model = visibility then
     true
-  } else if let `ModelAndApp () = visibility {
+  else let #ModelAndApp = visibility then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
 const build_mcp_tool_runtimes = (
   available: McpToolValues,
   allowed_connectors: McpTextList,
   search_tool_enabled: Bool,
-) => {
-  let exposure: McpExposure = if search_tool_enabled { `Deferred () } else { `Direct () };
+) => do
+  let exposure: McpExposure = if search_tool_enabled then #Deferred else #Direct end;
   let current = available;
   let selected = runtimes.empty();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [tool, tail] = node;
       let [server_name, _, _, _, connector_id, _, visibility, enabled, _] = tool;
       let app_tool = server_name == "codex_apps";
       let exposed = model_visible visibility && enabled;
 
-      if app_tool {
-        let allowed = if let `Some requested = connector_id {
+      if app_tool then
+        let allowed = if let #Some requested = connector_id then
           texts.any(allowed_connectors, (candidate: Text) => candidate == requested)
-        } else {
+        else
           false
-        };
+        end;
         exposed = exposed && allowed
-      }
+      end;
 
-      if exposed {
+      if exposed then
         let runtime: McpRuntime = [tool, exposure];
         selected = runtimes.prepend(runtime, selected)
-      }
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   runtimes.reverse(selected)
-};
+end;
 
-const bool_option_is_true = (value: McpBoolValue) => {
-  if let `Some enabled = value { enabled } else { false }
-};
+const bool_option_is_true = (value: McpBoolValue) => do
+  if let #Some enabled = value then enabled else false end;
+end;
 
-const requires_mcp_tool_approval: [McpAnnotations, McpMode, Bool] -> Bool = (
+const requires_mcp_tool_approval: (McpAnnotations, McpMode, Bool) -> Bool = (
   annotations: McpAnnotations,
   mode: McpMode,
   full_access: Bool,
-) => {
+) => do
   let [read_only, destructive, open_world] = annotations;
 
-  if full_access {
+  if full_access then
     false
-  } else if let `Never () = mode {
+  else let #Never = mode then
     false
-  } else if let `Prompt () = mode {
+  else let #Prompt = mode then
     true
-  } else if let `Writes () = mode {
+  else let #Writes = mode then
     !(bool_option_is_true read_only)
-  } else {
-    !(bool_option_is_true read_only) || bool_option_is_true destructive || bool_option_is_true open_world
-  }
-};
+  else
+    !(bool_option_is_true read_only) || bool_option_is_true destructive
+      || bool_option_is_true open_world
+  end;
+end;
 
-const normalize_mcp_approval_decision: [McpDecision, McpMode] -> McpDecision = (
+const normalize_mcp_approval_decision: (McpDecision, McpMode) -> McpDecision = (
   decision: McpDecision,
   mode: McpMode,
-) => {
-  let prompting = if let `Prompt () = mode { true } else if let `Writes () = mode { true } else {
-    false };
+) => do
+  let prompting = if let #Prompt = mode then true else let #Writes = mode then true else
+    false end;
 
-  if prompting {
-    if let `AcceptForSession () = decision {
-      `Accept ()
-    } else if let `AcceptAndRemember () = decision {
-      `Accept ()
-    } else {
+  if prompting then
+    if let #AcceptForSession = decision then
+      #Accept
+    else let #AcceptAndRemember = decision then
+      #Accept
+    else
       decision
-    }
-  } else {
+    end;
+  else
     decision
-  }
-};
+  end;
+end;
 
 return {
   .model_visible,

@@ -3,22 +3,22 @@ module () where
 const { .inspect_standard_base64 } = import "duck:prelude/base64" ();
 const {} = import "./audio_types.duck" ();
 
-const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult = (parsed,
-  code) => {
+const prepare_audio_payload: (ParsedAudioDataUrl, I32) -> AudioPreparationResult = (parsed,
+  code) => do
     let canonical_mime: Text = "";
-    if code == 0 {
+    if code == 0 then
       canonical_mime = "audio/wav"
-    } else if code == 1 {
+    else code == 1 then
       canonical_mime = "audio/mpeg"
-    } else if code == 2 {
+    else code == 2 then
       canonical_mime = "audio/mp4"
-    } else if code == 3 {
+    else code == 3 then
       canonical_mime = "audio/webm"
-    } else if code == 4 {
+    else code == 4 then
       canonical_mime = "audio/ogg"
-    }
+    end;
 
-    if code == 5 {
+    if code == 5 then
       return [
         .status_code = 3,
         .url = "",
@@ -27,8 +27,8 @@ const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult
         .mime = parsed.mime,
         .format_code = code,
       ];
-    }
-    if code < 0 || code > 5 {
+    end;
+    if code < 0 || code > 5 then
       return [
         .status_code = 2,
         .url = "",
@@ -37,10 +37,10 @@ const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult
         .mime = parsed.mime,
         .format_code = code,
       ];
-    }
+    end;
 
     let inspection = inspect_standard_base64 parsed.payload;
-    if inspection.error_kind != 0 {
+    if inspection.error_kind != 0 then
       [
         .status_code = 1,
         .url = "",
@@ -49,7 +49,7 @@ const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult
         .mime = parsed.mime,
         .format_code = code,
       ]
-    } else if inspection.decoded_length > 52428800 {
+    else inspection.decoded_length > 52428800 then
       [
         .status_code = 4,
         .url = "",
@@ -58,7 +58,7 @@ const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult
         .mime = parsed.mime,
         .format_code = code,
       ]
-    } else {
+    else
       [
         .status_code = 0,
         .url = @append("data:", @append(canonical_mime, @append(";base64,", parsed.payload))),
@@ -67,7 +67,7 @@ const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult
         .mime = parsed.mime,
         .format_code = code,
       ]
-    }
-  };
+    end;
+  end;
 
 return { .prepare_audio_payload };

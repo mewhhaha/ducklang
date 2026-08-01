@@ -24,1220 +24,1293 @@ infixl 70 % = @syntax.rem
 prefix 80 ! = @syntax.not
 prefix 80 - = @syntax.negate
 
-const append = [left, right] => @append(left, right);
-const text_append = [left: Text, right: Text] => @append(left, right);
+const append: (Text, Text) -> Text = (left, right) => @append(left, right);
+const text_append = (left: Text, right: Text) => @append(left, right);
 const append_text = (left: Text) => (right: Text) => @append(left, right);
-const length = value => @len value;
-const get = [value, index] => @get(value, index);
-const slice = [value, start, end] => @slice(value, start, end);
+const length: Text -> I32 = value => @len value;
+const get: (Text, I32) -> I32 = (value, index) => @get(value, index);
+const slice: (Text, I32, I32) -> Text =
+  (value, start, finish) => @slice(value, start, finish);
 const text_length = (value: Text) => @len value;
-const text_get = [value: Text, index: I32] => @get(value, index);
-const text_slice = [value: Text, start: I32, end: I32] => @slice(value, start, end);
+const text_get = (value: Text, index: I32) => @get(value, index);
+const text_slice = (value: Text, start: I32, finish: I32) => @slice(value, start, finish);
 
-const text_starts_with_at = [text: Text, prefix: Text, start: I32] => {
+const text_starts_with_at = (text: Text, prefix: Text, start: I32) => do
   let pattern_length = text_length prefix;
   let source_length = text_length text;
 
-  if start < 0 || start + pattern_length > source_length {
+  if start < 0 || start + pattern_length > source_length then
     false
-  } else {
+  else
     let matches = true;
     let offset = 0;
 
-    loop {
-      if offset >= pattern_length { break; }
-      if text_get [text, start + offset] != text_get [prefix, offset] {
+    loop do
+      if offset >= pattern_length then
+        break;
+      end;
+      if text_get (text, start + offset) != text_get (prefix, offset) then
         matches = false
         break;
-      }
+      end;
       offset = offset + 1
-    }
+    end;
 
     matches
-  }
-};
+  end;
+end;
 
-const text_starts_with = [text: Text, prefix: Text] => {
-  text_starts_with_at [text, prefix, 0]
-};
+const text_starts_with = (text: Text, prefix: Text) => do
+  text_starts_with_at (text, prefix, 0)
+end;
 
-const text_ends_with = [text: Text, suffix: Text] => {
+const text_ends_with = (text: Text, suffix: Text) => do
   let start = text_length text - text_length suffix;
-  text_starts_with_at [text, suffix, start]
-};
+  text_starts_with_at (text, suffix, start)
+end;
 
-const text_find_from = [text: Text, needle: Text, start: I32] => {
+const text_find_from = (text: Text, needle: Text, start: I32) => do
   let source_length = text_length text;
   let needle_length = text_length needle;
   let found = -1;
 
-  if start >= 0 && start + needle_length <= source_length {
+  if start >= 0 && start + needle_length <= source_length then
     let index = start;
-    let end = source_length - needle_length + 1;
+    let search_end = source_length - needle_length + 1;
 
-    loop {
-      if index >= end { break; }
-      if text_starts_with_at [text, needle, index] {
+    loop do
+      if index >= search_end then
+        break;
+      end;
+      if text_starts_with_at (text, needle, index) then
         found = index
         break;
-      }
+      end;
       index = index + 1
-    }
-  }
+    end;
+  end;
 
   found
-};
+end;
 
-const text_find = [text: Text, needle: Text] => {
-  text_find_from [text, needle, 0]
-};
+const text_find = (text: Text, needle: Text) => do
+  text_find_from (text, needle, 0)
+end;
 
-const text_contains = [text: Text, needle: Text] => {
-  text_find [text, needle] >= 0
-};
+const text_contains = (text: Text, needle: Text) => do
+  text_find (text, needle) >= 0
+end;
 
-const text_split = [text: Text, separator: Text] => {
-  let reversed: RuntimeTexts = `Nil ();
+const text_split = (text: Text, separator: Text) => do
+  let reversed: RuntimeTexts = #Nil;
 
-  if separator == "" {
+  if separator == "" then
     let node: RuntimeTextNode = [text, reversed];
-    reversed = `Cons node
-  } else {
+    reversed = #Cons node
+  else
     let start = 0;
     let done = false;
 
-    loop {
-      let found = text_find_from [text, separator, start];
+    loop do
+      let found = text_find_from (text, separator, start);
 
-      if found < 0 {
-        let node: RuntimeTextNode = [text_slice [text, start, text_length text], reversed];
-        reversed = `Cons node
+      if found < 0 then
+        let node: RuntimeTextNode = [text_slice (text, start, text_length text), reversed];
+        reversed = #Cons node
         done = true
-      } else {
-        let node: RuntimeTextNode = [text_slice [text, start, found], reversed];
-        reversed = `Cons node
+      else
+        let node: RuntimeTextNode = [text_slice (text, start, found), reversed];
+        reversed = #Cons node
         start = found + text_length separator
-      }
+      end;
 
-      if done { break; }
-    }
-  }
+      if done then
+        break;
+      end;
+    end;
+  end;
 
-  let parts: RuntimeTexts = `Nil ();
+  let parts: RuntimeTexts = #Nil;
   let current = reversed;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let typed_node: RuntimeTextNode = node;
       let [part, tail] = typed_node;
       let result_node: RuntimeTextNode = [part, parts];
-      parts = `Cons result_node
+      parts = #Cons result_node
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   parts
-};
+end;
 
-const text_replace_all = [text: Text, needle: Text, replacement: Text] => {
-  if needle == "" {
+const text_replace_all = (text: Text, needle: Text, replacement: Text) => do
+  if needle == "" then
     text
-  } else {
+  else
     let output: Text = "";
     let start = 0;
-    let found = text_find_from [text, needle, start];
+    let found = text_find_from (text, needle, start);
 
-    loop {
-      if found < 0 {
-        output = text_append [output, text_slice [text, start, text_length text]]
+    loop do
+      if found < 0 then
+        output = text_append (output, text_slice (text, start, text_length text))
         break;
-      }
+      end;
 
-      output = text_append [output, text_slice [text, start, found]]
-      output = text_append [output, replacement]
+      output = text_append (output, text_slice (text, start, found))
+      output = text_append (output, replacement)
       start = found + text_length needle
-      found = text_find_from [text, needle, start]
-    }
+      found = text_find_from (text, needle, start)
+    end;
 
     output
-  }
-};
+  end;
+end;
 
-const text_escape_xml = (text: Text) => {
+const text_escape_xml = (text: Text) => do
   let output: Text = "";
 
-  for index in 0..text_length text {
-    let byte = text_get [text, index];
+  for index in 0..text_length text do
+    let byte = text_get (text, index);
     let escaped: Text = "";
 
-    if byte == 38 {
+    if byte == 38 then
       escaped = "&amp;"
-    } else if byte == 60 {
+    else byte == 60 then
       escaped = "&lt;"
-    } else if byte == 62 {
+    else byte == 62 then
       escaped = "&gt;"
-    } else if byte == 34 {
+    else byte == 34 then
       escaped = "&quot;"
-    } else if byte == 39 {
+    else byte == 39 then
       escaped = "&apos;"
-    }
+    end;
 
-    if escaped == "" {
-      output = text_append [output, text_slice [text, index, index + 1]]
-    } else {
-      output = text_append [output, escaped]
-    }
-  }
+    if escaped == "" then
+      output = text_append (output, text_slice (text, index, index + 1))
+    else
+      output = text_append (output, escaped)
+    end;
+  end
 
   output
-};
+end;
 
-const text_compare = [left: Text, right: Text] => {
+const text_compare = (left: Text, right: Text) => do
   let common_length = text_length left;
 
-  if text_length right < common_length {
+  if text_length right < common_length then
     common_length = text_length right
-  }
+  end;
 
   let comparison = 0;
   let index = 0;
 
-  loop {
-    if comparison != 0 || index >= common_length {
+  loop do
+    if comparison != 0 || index >= common_length then
       break;
-    }
+    end;
 
-    let left_byte = text_get [left, index];
-    let right_byte = text_get [right, index];
+    let left_byte = text_get (left, index);
+    let right_byte = text_get (right, index);
 
-    if left_byte < right_byte {
+    if left_byte < right_byte then
       comparison = -1
-    } else if left_byte > right_byte {
+    else left_byte > right_byte then
       comparison = 1
-    } else {
+    else
       index = index + 1
-    }
-  }
+    end;
+  end;
 
-  if comparison != 0 {
+  if comparison != 0 then
     comparison
-  } else if text_length left < text_length right {
-    -1
-  } else if text_length left > text_length right {
+  else text_length left < text_length right then -1
+  else text_length left > text_length right then
     1
-  } else {
+  else
     0
-  }
-};
+  end;
+end;
 
-const text_less_than = [left: Text, right: Text] => {
-  text_compare [left, right] < 0
-};
+const text_less_than = (left: Text, right: Text) => do
+  text_compare (left, right) < 0
+end;
 
-const text_byte_is_ascii_whitespace = (byte: I32) => {
+const text_byte_is_ascii_whitespace = (byte: I32) => do
   byte == 32 || byte == 9 || byte == 10 || byte == 13
-};
+end;
 
-const text_byte_is_ascii_digit = (byte: I32) => if byte >= 48 { byte <= 57 } else { false };
+const text_byte_is_ascii_digit = (byte: I32) => if byte >= 48 then byte <= 57 else false end;
 
-const text_byte_is_ascii_lower = (byte: I32) => if byte >= 97 { byte <= 122 } else { false };
+const text_byte_is_ascii_lower = (byte: I32) => if byte >= 97 then byte <= 122 else false end;
 
-const text_byte_is_ascii_upper = (byte: I32) => if byte >= 65 { byte <= 90 } else { false };
+const text_byte_is_ascii_upper = (byte: I32) => if byte >= 65 then byte <= 90 else false end;
 
-const text_byte_is_ascii_alpha = (byte: I32) => {
+const text_byte_is_ascii_alpha = (byte: I32) => do
   text_byte_is_ascii_lower byte || text_byte_is_ascii_upper byte
-};
+end;
 
-const text_byte_is_ascii_alphanumeric = (byte: I32) => {
+const text_byte_is_ascii_alphanumeric = (byte: I32) => do
   text_byte_is_ascii_alpha byte || text_byte_is_ascii_digit byte
-};
+end;
 
-const text_byte_is_ascii_hex_digit = (byte: I32) => {
-  if text_byte_is_ascii_digit byte {
+const text_byte_is_ascii_hex_digit = (byte: I32) => do
+  if text_byte_is_ascii_digit byte then
     true
-  } else if byte >= 97 {
+  else byte >= 97 then
     byte <= 102
-  } else if byte >= 65 {
+  else byte >= 65 then
     byte <= 70
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const text_ascii_words: Text -> RuntimeTexts = text => {
-  let reversed: RuntimeTexts = `Nil ();
+const text_ascii_words: Text -> RuntimeTexts = text => do
+  let reversed: RuntimeTexts = #Nil;
   let index = 0;
 
-  loop {
-    loop {
-      if index >= text_length text { break; }
-      if text_byte_is_ascii_alphanumeric(text_get [text, index]) { break; }
+  loop do
+    loop do
+      if index >= text_length text then
+        break;
+      end;
+      if text_byte_is_ascii_alphanumeric(text_get (text, index)) then
+        break;
+      end;
       index = index + 1
-    }
+    end;
 
-    if index >= text_length text { break; }
+    if index >= text_length text then
+      break;
+    end;
     let start = index;
 
-    loop {
-      if index >= text_length text { break; }
-      if !(text_byte_is_ascii_alphanumeric(text_get [text, index])) { break; }
+    loop do
+      if index >= text_length text then
+        break;
+      end;
+      if !(text_byte_is_ascii_alphanumeric(text_get (text, index))) then
+        break;
+      end;
       index = index + 1
-    }
+    end;
 
-    let node: RuntimeTextNode = [text_slice [text, start, index], reversed];
-    reversed = `Cons node
-  }
+    let node: RuntimeTextNode = [text_slice (text, start, index), reversed];
+    reversed = #Cons node
+  end;
 
-  let words: RuntimeTexts = `Nil ();
+  let words: RuntimeTexts = #Nil;
   let current = reversed;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let typed_node: RuntimeTextNode = node;
       let [word, tail] = typed_node;
       let result_node: RuntimeTextNode = [word, words];
-      words = `Cons result_node
+      words = #Cons result_node
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   words
-};
+end;
 
-const text_longest_suffix_prefix_length = [text: Text, prefix: Text] => {
+const text_longest_suffix_prefix_length = (text: Text, prefix: Text) => do
   let maximum = text_length text;
 
-  if maximum >= text_length prefix {
+  if maximum >= text_length prefix then
     maximum = text_length prefix - 1
-  }
+  end;
 
   let matched = 0;
 
-  if maximum > 0 {
+  if maximum > 0 then
     let candidate = 1;
 
-    loop {
-      if candidate > maximum { break; }
+    loop do
+      if candidate > maximum then
+        break;
+      end;
       let candidate_matches = true;
       let candidate_offset = 0;
 
-      loop {
-        if candidate_offset >= candidate { break; }
+      loop do
+        if candidate_offset >= candidate then
+          break;
+        end;
         let text_index = text_length text - candidate + candidate_offset;
 
-        if text_get [text, text_index] != text_get [prefix, candidate_offset] {
+        if text_get (text, text_index) != text_get (prefix, candidate_offset) then
           candidate_matches = false
           break;
-        }
+        end;
         candidate_offset = candidate_offset + 1
-      }
+      end;
 
-      if candidate_matches {
+      if candidate_matches then
         matched = candidate
-      }
+      end;
       candidate = candidate + 1
-    }
-  }
+    end;
+  end;
 
   matched
-};
+end;
 
-const text_fold_i32 = (text: Text, initial: I32, const combine) => {
-  let state = initial;
+const text_fold_i32: (Text, I32, I32 -> I32 -> I32) -> I32 =
+  (text, initial, const combine) => do
+    let state = initial;
 
-  for byte in text {
-    state = combine(state, byte)
-  }
+    for byte in text do
+      state = combine(state, byte)
+    end
 
-  state
-};
+    state
+  end;
 
-const text_any = (text: Text, const predicate) => {
+const text_any: (Text, I32 -> Bool) -> Bool = (text, const predicate) => do
   let matched = false;
 
-  for byte in text {
-    if predicate byte {
+  for byte in text do
+    if predicate byte then
       matched = true
-    }
-  }
+    end;
+  end
 
   matched
-};
+end;
 
-const text_all = (text: Text, const predicate) => {
+const text_all: (Text, I32 -> Bool) -> Bool = (text, const predicate) => do
   let matched = true;
 
-  for byte in text {
-    if predicate byte {
+  for byte in text do
+    if predicate byte then
       ()
-    } else {
+    else
       matched = false
-    }
-  }
+    end;
+  end
 
   matched
-};
+end;
 
-const text_count = (text: Text, const predicate) => {
+const text_count: (Text, I32 -> Bool) -> I32 = (text, const predicate) => do
   let count = 0;
 
-  for byte in text {
-    if predicate byte {
+  for byte in text do
+    if predicate byte then
       count = count + 1
-    }
-  }
+    end;
+  end
 
   count
-};
+end;
 
-const text_is_blank = (text: Text) => {
+const text_is_blank = (text: Text) => do
   text_all(text, text_byte_is_ascii_whitespace)
-};
+end;
 
-const text_trim_ascii_whitespace = (text: Text) => {
+const text_trim_ascii_whitespace = (text: Text) => do
   let start = 0;
-  let end = text_length text;
+  let trim_end = text_length text;
 
-  loop {
-    if start < end && text_byte_is_ascii_whitespace(text_get [text, start]) {
+  loop do
+    if start < trim_end && text_byte_is_ascii_whitespace(text_get (text, start)) then
       start = start + 1
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
-  loop {
-    if end > start && text_byte_is_ascii_whitespace(text_get [text, end - 1]) {
-      end = end - 1
-    } else {
+  loop do
+    if trim_end > start && text_byte_is_ascii_whitespace(text_get (text, trim_end - 1)) then
+      trim_end = trim_end - 1
+    else
       break;
-    }
-  }
+    end;
+  end;
 
-  text_slice [text, start, end]
-};
+  text_slice (text, start, trim_end)
+end;
 
-const text_whitespace_width_at = (text: Text, index: I32) => {
+const text_whitespace_width_at = (text: Text, index: I32) => do
   let remaining = text_length text - index;
-  let first = text_get [text, index];
+  let first = text_get (text, index);
 
-  if text_byte_is_ascii_whitespace first || first == 11 || first == 12 {
+  if text_byte_is_ascii_whitespace first || first == 11 || first == 12 then
     1
-  } else if remaining >= 2 && first == 194 {
-    let second = text_get [text, index + 1];
-    if second == 133 || second == 160 { 2 } else { 0 }
-  } else if remaining >= 3 && first == 225 && text_get [text, index + 1] == 154 && text_get [
+  else remaining >= 2 && first == 194 then
+    let second = text_get (text, index + 1);
+    if second == 133 || second == 160 then 2 else 0 end;
+  else remaining >= 3 && first == 225 && text_get (text, index + 1) == 154 && text_get (
     text,
     index + 2,
-  ] == 128 {
+  ) == 128 then
     3
-  } else if remaining >= 3 && first == 226 && text_get [text, index + 1] == 128 {
-    let third = text_get [text, index + 2];
-    if third >= 128 && third <= 138 || third == 168 || third == 169 || third == 175 { 3 } else { 0 }
-  } else if remaining >= 3 && first == 226 && text_get [text, index + 1] == 129 && text_get [
+  else remaining >= 3 && first == 226 && text_get (text, index + 1) == 128 then
+    let third = text_get (text, index + 2);
+    if third >= 128 && third <= 138 || third == 168 || third == 169 || third
+      == 175 then 3 else 0 end;
+  else remaining >= 3 && first == 226 && text_get (text, index + 1) == 129 && text_get (
     text,
     index + 2,
-  ] == 159 {
+  ) == 159 then
     3
-  } else if remaining >= 3 && first == 227 && text_get [text, index + 1] == 128 && text_get [
+  else remaining >= 3 && first == 227 && text_get (text, index + 1) == 128 && text_get (
     text,
     index + 2,
-  ] == 128 {
+  ) == 128 then
     3
-  } else {
+  else
     0
-  }
-};
-
-const text_trim_whitespace = (text: Text) => {
-  let start = 0;
-  let end = text_length text;
-  let width = 0;
-
-  loop {
-    if start >= end { break; }
-    width = text_whitespace_width_at(text, start)
-    if width == 0 { break; }
-    start = start + width
-  }
-
-  loop {
-    if end <= start { break; }
-    width = text_whitespace_width_at(text, end - 1)
-    if width == 0 && end - start >= 2 {
-      let candidate = text_whitespace_width_at(text, end - 2);
-      if candidate == 2 { width = candidate }
-    }
-    if width == 0 && end - start >= 3 {
-      let candidate = text_whitespace_width_at(text, end - 3);
-      if candidate == 3 { width = candidate }
-    }
-    if width == 0 { break; }
-    end = end - width
-  }
-
-  text_slice [text, start, end]
-};
-
-const text_trim_start_whitespace = (text: Text) => {
-  let start = 0;
-
-  loop {
-    if start >= text_length text { break; }
-    let width = text_whitespace_width_at(text, start);
-    if width == 0 { break; }
-    start = start + width
-  }
-
-  text_slice [text, start, text_length text]
-};
-
-const text_repeat = (text: Text, count: I32) => {
-  let output: Text = "";
-
-  if count > 0 {
-    for iteration in 0..count {
-      output = text_append [output, text]
-    }
-  }
-
-  output
-};
-
-const text_collapse_ascii_whitespace = (text: Text) => {
-  let output: Text = "";
-  let segment_start = 0;
-  let index = 0;
-  let pending_space = false;
-
-  loop {
-    if index >= text_length text {
-      break;
-    }
-
-    if text_byte_is_ascii_whitespace(text_get [text, index]) {
-      if segment_start < index {
-        if pending_space && output != "" {
-          output = text_append [output, " "]
-        }
-
-        output = text_append [output, text_slice [text, segment_start, index]]
-      }
-
-      pending_space = output != "" || segment_start < index
-      index = index + 1
-      segment_start = index
-    } else {
-      index = index + 1
-    }
-  }
-
-  if segment_start < text_length text {
-    if pending_space && output != "" {
-      output = text_append [output, " "]
-    }
-
-    output = text_append [output, text_slice [text, segment_start, text_length text]]
-  }
-
-  output
-};
-
-const path_join = [directory: Text, name: Text] => {
-  if directory == "" {
-    name
-  } else if text_get [directory, text_length directory - 1] == 47 {
-    text_append [directory, name]
-  } else {
-    text_append [directory, text_append ["/", name]]
-  }
-};
-
-const path_parent = (path: Text) => {
-  let end = text_length path;
-  let trimming = end > 1;
-
-  loop {
-    if trimming {
-      if text_get [path, end - 1] == 47 {
-        end = end - 1
-        trimming = end > 1
-      } else {
-        trimming = false
-      }
-    } else {
-      break;
-    }
-  }
-
-  let separator = -1;
-
-  if end > 0 {
-    for index in 0..end {
-      if text_get [path, index] == 47 {
-        separator = index
-      }
-    }
-  }
-
-  if separator < 0 {
-    text_slice [path, 0, end]
-  } else if separator == 0 {
-    "/"
-  } else {
-    text_slice [path, 0, separator]
-  }
-};
-
-const path_basename = (path: Text) => {
-  let end = text_length path;
-  let trimming = end > 1;
-
-  loop {
-    if trimming {
-      if text_get [path, end - 1] == 47 {
-        end = end - 1
-        trimming = end > 1
-      } else {
-        trimming = false
-      }
-    } else {
-      break;
-    }
-  }
-
-  let separator = -1;
-
-  if end > 0 {
-    for index in 0..end {
-      if text_get [path, index] == 47 {
-        separator = index
-      }
-    }
-  }
-
-  text_slice [path, separator + 1, end]
-};
-
-const i32_decimal_digit_count = (value: I32) => {
-  let remaining = value;
-
-  if remaining > 0 {
-    remaining = 0 - remaining
-  }
-
-  let count = 1;
-  let done = remaining > -10;
-
-  loop {
-    if done {
-      break;
-    }
-
-    remaining = remaining / 10
-    count = count + 1
-
-    if remaining > -10 {
-      done = true
-    }
-  }
-
-  count
-};
-
-const i32_power_of_ten = (exponent: I32) => {
-  let power = 1;
-  let remaining_exponent = exponent;
-  loop {
-    if remaining_exponent <= 0 { break; }
-    power = power * 10
-    remaining_exponent = remaining_exponent - 1
-  }
-
-  power
-};
-
-const format_i32: I32 -> Text = value => {
-  let digit_count = i32_decimal_digit_count value;
-  let negative = value < 0;
-  let output_length = digit_count;
-
-  if negative {
-    output_length = output_length + 1
-  }
-
-  let encoded = @Bytes.generate(output_length, index => {
-    if negative && index == 0 {
-      45
-    } else {
-      let digit_index = output_length - index - 1;
-      let divisor = i32_power_of_ten digit_index;
-      let digit = (value / divisor) % 10;
-
-      if digit < 0 {
-        digit = 0 - digit
-      }
-
-      48 + digit
-    }
-  });
-  @Utf8.decode encoded
-};
-
-const i64_decimal_digit_count = (value: I64) => {
-  let remaining = value;
-  let count = 1;
-  let done = false;
-
-  if remaining < 0i64 {
-    done = remaining > -10i64
-  } else {
-    done = remaining < 10i64
-  }
-
-  loop {
-    if done {
-      break;
-    }
-
-    remaining = remaining / 10i64
-    count = count + 1
-
-    if remaining < 0i64 {
-      if remaining > -10i64 { done = true }
-    } else {
-      if remaining < 10i64 { done = true }
-    }
-  }
-
-  count
-};
-
-let i64_decimal_digit_at: [I64, I32] -> I32 = (value: I64, index: I32) => {
-  let digit = if index == 0 {
-    @unsafe_i32_wrap_i64(value % 10i64)
-  } else if index == 1 {
-    @unsafe_i32_wrap_i64((value / 10i64) % 10i64)
-  } else if index == 2 {
-    @unsafe_i32_wrap_i64((value / 100i64) % 10i64)
-  } else if index == 3 {
-    @unsafe_i32_wrap_i64((value / 1000i64) % 10i64)
-  } else if index == 4 {
-    @unsafe_i32_wrap_i64((value / 10000i64) % 10i64)
-  } else if index == 5 {
-    @unsafe_i32_wrap_i64((value / 100000i64) % 10i64)
-  } else if index == 6 {
-    @unsafe_i32_wrap_i64((value / 1000000i64) % 10i64)
-  } else if index == 7 {
-    @unsafe_i32_wrap_i64((value / 10000000i64) % 10i64)
-  } else if index == 8 {
-    @unsafe_i32_wrap_i64((value / 100000000i64) % 10i64)
-  } else if index == 9 {
-    @unsafe_i32_wrap_i64((value / 1000000000i64) % 10i64)
-  } else if index == 10 {
-    @unsafe_i32_wrap_i64((value / 10000000000i64) % 10i64)
-  } else if index == 11 {
-    @unsafe_i32_wrap_i64((value / 100000000000i64) % 10i64)
-  } else if index == 12 {
-    @unsafe_i32_wrap_i64((value / 1000000000000i64) % 10i64)
-  } else if index == 13 {
-    @unsafe_i32_wrap_i64((value / 10000000000000i64) % 10i64)
-  } else if index == 14 {
-    @unsafe_i32_wrap_i64((value / 100000000000000i64) % 10i64)
-  } else if index == 15 {
-    @unsafe_i32_wrap_i64((value / 1000000000000000i64) % 10i64)
-  } else if index == 16 {
-    @unsafe_i32_wrap_i64((value / 10000000000000000i64) % 10i64)
-  } else if index == 17 {
-    @unsafe_i32_wrap_i64((value / 100000000000000000i64) % 10i64)
-  } else {
-    @unsafe_i32_wrap_i64((value / 1000000000000000000i64) % 10i64)
-  };
-
-  if digit < 0 {
-    digit = 0 - digit
-  }
-
-  digit
-};
-
-let format_i64: I64 -> Text = value => {
-  let digit_count = i64_decimal_digit_count value;
-  let negative = value < 0i64;
-  let output_length = digit_count;
-
-  if negative {
-    output_length = output_length + 1
-  }
-
-  let encoded = @Bytes.generate(output_length, index => {
-    if negative && index == 0 {
-      45
-    } else {
-      let digit_index = output_length - index - 1;
-      48 + i64_decimal_digit_at(value, digit_index)
-    }
-  });
-  @Utf8.decode encoded
-};
-
-const text_approx_token_count: Text -> I32 = text => {
-  let bytes = text_length text;
-
-  if bytes <= 0 {
-    0
-  } else {
-    (bytes + 3) / 4
-  }
-};
-
-const text_line_count: Text -> I32 = text => {
-  let bytes = text_length text;
-  let lines = 0;
-
-  if bytes > 0 {
-    let index = 0;
-    loop {
-      if index >= bytes { break; }
-      if text_get [text, index] == 10 { lines = lines + 1 }
-      index = index + 1
-    }
-
-    if text_get [text, bytes - 1] != 10 {
-      lines = lines + 1
-    }
-  }
-
-  lines
-};
-
-const text_is_utf8_continuation_at = (text: Text, index: I32) => {
-  @bit_and(text_get [text, index], 192) == 128
-};
-
-const text_floor_utf8_boundary = (text: Text, requested: I32) => {
-  let index = requested;
-
-  if index < 0 {
-    index = 0
-  } else if index > text_length text {
-    index = text_length text
-  }
-
-  let done = index == 0 || index == text_length text;
-
-  loop {
-    if done {
-      break;
-    }
-
-    if text_is_utf8_continuation_at(text, index) {
-      index = index - 1
-
-      if index == 0 {
-        done = true
-      }
-    } else {
-      done = true
-    }
-  }
-
-  index
-};
-
-const text_truncate_end_bytes = (text: Text, maximum_bytes: I32) => {
-  if text_length text <= maximum_bytes {
-    text
-  } else {
-    let requested = maximum_bytes;
-
-    if requested < 0 {
-      requested = 0
-    }
-
-    text_slice [text, 0, text_floor_utf8_boundary(text, requested)]
-  }
-};
-
-const text_ceil_utf8_boundary = (text: Text, requested: I32) => {
-  let index = requested;
-
-  if index < 0 {
-    index = 0
-  } else if index > text_length text {
-    index = text_length text
-  }
-
-  let done = index == text_length text;
-
-  loop {
-    if done {
-      break;
-    }
-
-    if text_is_utf8_continuation_at(text, index) {
-      index = index + 1
-
-      if index == text_length text {
-        done = true
-      }
-    } else {
-      done = true
-    }
-  }
-
-  index
-};
-
-const text_utf8_character_count = (text: Text, start: I32, end: I32) => {
-  let count = 0;
-
-  if start < end {
-    for index in start..end {
-      if text_is_utf8_continuation_at(text, index) {
-        ()
-      } else {
+  end;
+  end;
+
+    const text_trim_whitespace = (text: Text) => do
+      let start = 0;
+      let trim_end = text_length text;
+      let width = 0;
+
+      loop do
+        if start >= trim_end then
+          break;
+        end;
+        width = text_whitespace_width_at(text, start)
+        if width == 0 then
+          break;
+        end;
+        start = start + width
+      end;
+
+      loop do
+        if trim_end <= start then
+          break;
+        end;
+        width = text_whitespace_width_at(text, trim_end - 1)
+        if width == 0 && trim_end - start >= 2 then
+          let candidate = text_whitespace_width_at(text, trim_end - 2);
+          if candidate == 2 then
+            width = candidate
+          end;
+        end;
+        if width == 0 && trim_end - start >= 3 then
+          let candidate = text_whitespace_width_at(text, trim_end - 3);
+          if candidate == 3 then
+            width = candidate
+          end;
+        end;
+        if width == 0 then
+          break;
+        end;
+        trim_end = trim_end - width
+      end;
+
+      text_slice (text, start, trim_end)
+    end;
+
+    const text_trim_start_whitespace = (text: Text) => do
+      let start = 0;
+
+      loop do
+        if start >= text_length text then
+          break;
+        end;
+        let width = text_whitespace_width_at(text, start);
+        if width == 0 then
+          break;
+        end;
+        start = start + width
+      end;
+
+      text_slice (text, start, text_length text)
+    end;
+
+    const text_repeat = (text: Text, count: I32) => do
+      let output: Text = "";
+
+      if count > 0 then
+        for iteration in 0..count do
+          output = text_append (output, text)
+        end
+      end;
+
+      output
+    end;
+
+    const text_collapse_ascii_whitespace = (text: Text) => do
+      let output: Text = "";
+      let segment_start = 0;
+      let index = 0;
+      let pending_space = false;
+
+      loop do
+        if index >= text_length text then
+          break;
+        end;
+
+        if text_byte_is_ascii_whitespace(text_get (text, index)) then
+          if segment_start < index then
+            if pending_space && output != "" then
+              output = text_append (output, " ")
+            end;
+
+            output = text_append (output, text_slice (text, segment_start, index))
+          end;
+
+          pending_space = output != "" || segment_start < index
+          index = index + 1
+          segment_start = index
+        else
+          index = index + 1
+        end;
+      end;
+
+      if segment_start < text_length text then
+        if pending_space && output != "" then
+          output = text_append (output, " ")
+        end;
+
+        output = text_append (output, text_slice (text, segment_start, text_length text))
+      end;
+
+      output
+    end;
+
+    const path_join = (directory: Text, name: Text) => do
+      if directory == "" then
+        name
+      else text_get (directory, text_length directory - 1) == 47 then
+        text_append (directory, name)
+      else
+        text_append (directory, text_append ("/", name))
+      end;
+    end;
+
+    const path_parent = (path: Text) => do
+      let path_end = text_length path;
+      let trimming = path_end > 1;
+
+      loop do
+        if trimming then
+          if text_get (path, path_end - 1) == 47 then
+            path_end = path_end - 1
+            trimming = path_end > 1
+          else
+            trimming = false
+          end;
+        else
+          break;
+        end;
+      end;
+
+      let separator = -1;
+
+      if path_end > 0 then
+        for index in 0..path_end do
+          if text_get (path, index) == 47 then
+            separator = index
+          end;
+        end
+      end;
+
+      if separator < 0 then
+        text_slice (path, 0, path_end)
+      else separator == 0 then
+        "/"
+      else
+        text_slice (path, 0, separator)
+      end;
+    end;
+
+    const path_basename = (path: Text) => do
+      let path_end = text_length path;
+      let trimming = path_end > 1;
+
+      loop do
+        if trimming then
+          if text_get (path, path_end - 1) == 47 then
+            path_end = path_end - 1
+            trimming = path_end > 1
+          else
+            trimming = false
+          end;
+        else
+          break;
+        end;
+      end;
+
+      let separator = -1;
+
+      if path_end > 0 then
+        for index in 0..path_end do
+          if text_get (path, index) == 47 then
+            separator = index
+          end;
+        end
+      end;
+
+      text_slice (path, separator + 1, path_end)
+    end;
+
+    const i32_decimal_digit_count = (value: I32) => do
+      let remaining = value;
+
+      if remaining > 0 then
+        remaining = 0 - remaining
+      end;
+
+      let count = 1;
+      let done = remaining > -10;
+
+      loop do
+        if done then
+          break;
+        end;
+
+        remaining = remaining / 10
         count = count + 1
-      }
-    }
-  }
 
-  count
-};
+        if remaining > -10 then
+          done = true
+        end;
+      end;
 
-const text_utf8_length = (text: Text) => {
-  text_utf8_character_count(text, 0, text_length text)
-};
+      count
+    end;
 
-const text_take_utf8_characters = (text: Text, maximum_characters: I32) => {
-  let end = 0;
-  let characters = 0;
+    const i32_power_of_ten = (exponent: I32) => do
+      let power = 1;
+      let remaining_exponent = exponent;
+      loop do
+        if remaining_exponent <= 0 then
+          break;
+        end;
+        power = power * 10
+        remaining_exponent = remaining_exponent - 1
+      end;
 
-  loop {
-    if end >= text_length text || characters >= maximum_characters {
-      break;
-    }
+      power
+    end;
 
-    end = end + 1
+    const format_i32: I32 -> Text = value => do
+      let digit_count = i32_decimal_digit_count value;
+      let negative = value < 0;
+      let output_length = digit_count;
 
-    if end >= text_length text {
-      characters = characters + 1
-    } else if text_is_utf8_continuation_at(text, end) {
-      ()
-    } else {
-      characters = characters + 1
-    }
-  }
+      if negative then
+        output_length = output_length + 1
+      end;
 
-  text_slice [text, 0, end]
-};
+      let encoded = @Bytes.generate(output_length, index => do
+        if negative && index == 0 then
+          45
+        else
+          let digit_index = output_length - index - 1;
+          let divisor = i32_power_of_ten digit_index;
+          let digit = (value / divisor) % 10;
 
-const text_truncate_middle_bytes: [Text, I32] -> Text = (text, maximum_bytes) => {
-  let source_bytes = text_length text;
+          if digit < 0 then
+            digit = 0 - digit
+          end;
 
-  if source_bytes == 0 || source_bytes <= maximum_bytes {
-    text
-  } else {
-    let budget = maximum_bytes;
+          48 + digit
+        end;
+      end);
+      @Utf8.decode encoded
+    end;
 
-    if budget < 0 {
-      budget = 0
-    }
+    const i64_decimal_digit_count = (value: I64) => do
+      let remaining = value;
+      let count = 1;
+      let done = false;
 
-    let left_budget = budget / 2;
-    let right_budget = budget - left_budget;
-    let prefix_end = text_floor_utf8_boundary(text, left_budget);
-    let suffix_start = text_ceil_utf8_boundary(text, source_bytes - right_budget);
+      if remaining < 0i64 then
+        done = remaining > -10i64
+      else
+        done = remaining < 10i64
+      end;
 
-    if suffix_start < prefix_end {
-      suffix_start = prefix_end
-    }
+      loop do
+        if done then
+          break;
+        end;
 
-    let removed_characters = text_utf8_character_count(text, prefix_end, suffix_start);
-    let marker = text_append ["…", text_append [format_i32 removed_characters, " chars truncated…"]];
-    let prefix = text_slice [text, 0, prefix_end];
-    let suffix = text_slice [text, suffix_start, source_bytes];
-    text_append [prefix, text_append [marker, suffix]]
-  }
-};
+        remaining = remaining / 10i64
+        count = count + 1
 
-const text_truncate_middle_tokens: [Text, I32] -> Text = (text, maximum_tokens) => {
-  let source_bytes = text_length text;
-  let budget_bytes = maximum_tokens * 4;
+        if remaining < 0i64 then
+          if remaining > -10i64 then
+            done = true
+          end;
+        else
+          if remaining < 10i64 then
+            done = true
+          end;
+        end;
+      end;
 
-  if maximum_tokens > 0 && source_bytes <= budget_bytes {
-    text
-  } else {
-    let budget = budget_bytes;
+      count
+    end;
 
-    if budget < 0 {
-      budget = 0
-    }
+    let i64_decimal_digit_at: (I64, I32) -> I32 = (value: I64, index: I32) => do
+      let digit = if index == 0 then
+        @unsafe_i32_wrap_i64(value % 10i64)
+      else index == 1 then
+        @unsafe_i32_wrap_i64((value / 10i64) % 10i64)
+      else index == 2 then
+        @unsafe_i32_wrap_i64((value / 100i64) % 10i64)
+      else index == 3 then
+        @unsafe_i32_wrap_i64((value / 1000i64) % 10i64)
+      else index == 4 then
+        @unsafe_i32_wrap_i64((value / 10000i64) % 10i64)
+      else index == 5 then
+        @unsafe_i32_wrap_i64((value / 100000i64) % 10i64)
+      else index == 6 then
+        @unsafe_i32_wrap_i64((value / 1000000i64) % 10i64)
+      else index == 7 then
+        @unsafe_i32_wrap_i64((value / 10000000i64) % 10i64)
+      else index == 8 then
+        @unsafe_i32_wrap_i64((value / 100000000i64) % 10i64)
+      else index == 9 then
+        @unsafe_i32_wrap_i64((value / 1000000000i64) % 10i64)
+      else index == 10 then
+        @unsafe_i32_wrap_i64((value / 10000000000i64) % 10i64)
+      else index == 11 then
+        @unsafe_i32_wrap_i64((value / 100000000000i64) % 10i64)
+      else index == 12 then
+        @unsafe_i32_wrap_i64((value / 1000000000000i64) % 10i64)
+      else index == 13 then
+        @unsafe_i32_wrap_i64((value / 10000000000000i64) % 10i64)
+      else index == 14 then
+        @unsafe_i32_wrap_i64((value / 100000000000000i64) % 10i64)
+      else index == 15 then
+        @unsafe_i32_wrap_i64((value / 1000000000000000i64) % 10i64)
+      else index == 16 then
+        @unsafe_i32_wrap_i64((value / 10000000000000000i64) % 10i64)
+      else index == 17 then
+        @unsafe_i32_wrap_i64((value / 100000000000000000i64) % 10i64)
+      else
+        @unsafe_i32_wrap_i64((value / 1000000000000000000i64) % 10i64)
+      end;
 
-    let left_budget = budget / 2;
-    let right_budget = budget - left_budget;
-    let prefix_end = text_floor_utf8_boundary(text, left_budget);
-    let suffix_start = text_ceil_utf8_boundary(text, source_bytes - right_budget);
+      if digit < 0 then
+        digit = 0 - digit
+      end;
 
-    if suffix_start < prefix_end {
-      suffix_start = prefix_end
-    }
+      digit
+    end;
 
-    let removed_bytes = suffix_start - prefix_end;
-    let removed_tokens = if removed_bytes <= 0 { 0 } else { (removed_bytes + 3) / 4 };
-    let marker = text_append ["…", text_append [format_i32 removed_tokens, " tokens truncated…"]];
-    let prefix = text_slice [text, 0, prefix_end];
-    let suffix = text_slice [text, suffix_start, source_bytes];
-    text_append [prefix, text_append [marker, suffix]]
-  }
-};
+    let format_i64: I64 -> Text = value => do
+      let digit_count = i64_decimal_digit_count value;
+      let negative = value < 0i64;
+      let output_length = digit_count;
 
-const bytes_fold_i32 = (bytes: Bytes, initial: I32, const combine) => {
-  let state = initial;
+      if negative then
+        output_length = output_length + 1
+      end;
 
-  for byte in bytes {
-    state = combine(state, byte)
-  }
+      let encoded = @Bytes.generate(output_length, index => do
+        if negative && index == 0 then
+          45
+        else
+          let digit_index = output_length - index - 1;
+          48 + i64_decimal_digit_at(value, digit_index)
+        end;
+      end);
+      @Utf8.decode encoded
+    end;
 
-  state
-};
+    const text_approx_token_count: Text -> I32 = text => do
+      let bytes = text_length text;
 
-const bytes_any = (bytes: Bytes, const predicate) => {
-  let matched = false;
+      if bytes <= 0 then
+        0
+      else
+        (bytes + 3) / 4
+      end;
+    end;
 
-  for byte in bytes {
-    if predicate byte {
-      matched = true
-    }
-  }
+    const text_line_count: Text -> I32 = text => do
+      let bytes = text_length text;
+      let lines = 0;
 
-  matched
-};
+      if bytes > 0 then
+        let index = 0;
+        loop do
+          if index >= bytes then
+            break;
+          end;
+          if text_get (text, index) == 10 then
+            lines = lines + 1
+          end;
+          index = index + 1
+        end;
 
-const bytes_all = (bytes: Bytes, const predicate) => {
-  let matched = true;
+        if text_get (text, bytes - 1) != 10 then
+          lines = lines + 1
+        end;
+      end;
 
-  for byte in bytes {
-    if predicate byte {
-      ()
-    } else {
-      matched = false
-    }
-  }
+      lines
+    end;
 
-  matched
-};
+    const text_is_utf8_continuation_at = (text: Text, index: I32) => do
+      @bit_and(text_get (text, index), 192) == 128
+    end;
 
-const bytes_count = (bytes: Bytes, const predicate) => {
-  let count = 0;
+    const text_floor_utf8_boundary = (text: Text, requested: I32) => do
+      let index = requested;
 
-  for byte in bytes {
-    if predicate byte {
-      count = count + 1
-    }
-  }
+      if index < 0 then
+        index = 0
+      else index > text_length text then
+        index = text_length text
+      end;
 
-  count
-};
+      let done = index == 0 || index == text_length text;
 
-const bit_and = [left, right] => @bit_and(left, right);
-const bit_or = [left, right] => @bit_or(left, right);
-const bit_xor = [left, right] => @bit_xor(left, right);
-const shift_left = [value, amount] => @shift_left(value, amount);
-const shift_right_unsigned = [value, amount] => @shift_right_u(value, amount);
+      loop do
+        if done then
+          break;
+        end;
 
-const sqrt_f32 = value => @f32_sqrt value;
-const f32_from_i32 = value => @f32_from_i32 value;
-const i32_from_f32 = value => @i32_from_f32 value;
-const f64_from_i32 = value => @f64_from_i32 value;
-const i32_from_f64 = value => @i32_from_f64 value;
-const unsafe_i32_wrap_i64 = value => @unsafe_i32_wrap_i64 value;
-const unsafe_i64_extend_i32_signed = value => @unsafe_i64_extend_i32_signed value;
-const unsafe_i64_extend_i32_unsigned = value => @unsafe_i64_extend_i32_unsigned value;
-const unsafe_i32_reinterpret_f32 = value => @unsafe_i32_reinterpret_f32 value;
-const unsafe_f32_reinterpret_i32 = value => @unsafe_f32_reinterpret_i32 value;
-const format_f32: [F32, I32] -> Text = [value, fractional_digits] => @format_f32(
-  value,
-  fractional_digits,
-);
+        if text_is_utf8_continuation_at(text, index) then
+          index = index - 1
 
-const generate_bytes = [length: I32, generate: I32 -> I32] => @Bytes.generate(length, generate);
-const encode_utf8 = text => @Utf8.encode text;
-const decode_utf8 = bytes => @Utf8.decode bytes;
+          if index == 0 then
+            done = true
+          end;
+        else
+          done = true
+        end;
+      end;
 
-const text_byte_ascii_lowercase = (byte: I32) => {
-  if text_byte_is_ascii_upper byte { byte + 32 } else { byte }
-};
+      index
+    end;
 
-const text_starts_with_ascii_case_insensitive_at = [text: Text, prefix: Text, start: I32] => {
-  let pattern_length = text_length prefix;
-  let source_length = text_length text;
+    const text_truncate_end_bytes = (text: Text, maximum_bytes: I32) => do
+      if text_length text <= maximum_bytes then
+        text
+      else
+        let requested = maximum_bytes;
 
-  if start < 0 || start + pattern_length > source_length {
-    false
-  } else {
-    let matches = true;
+        if requested < 0 then
+          requested = 0
+        end;
 
-    for offset in 0..pattern_length {
-      let source_byte = text_get [text, start + offset];
-      let pattern_byte = text_get [prefix, offset];
+        text_slice (text, 0, text_floor_utf8_boundary(text, requested))
+      end;
+    end;
 
-      if source_byte >= 65 && source_byte <= 90 {
-        source_byte = source_byte + 32
-      }
+    const text_ceil_utf8_boundary = (text: Text, requested: I32) => do
+      let index = requested;
 
-      if pattern_byte >= 65 && pattern_byte <= 90 {
-        pattern_byte = pattern_byte + 32
-      }
+      if index < 0 then
+        index = 0
+      else index > text_length text then
+        index = text_length text
+      end;
 
-      if source_byte != pattern_byte {
-        matches = false
-      }
-    }
+      let done = index == text_length text;
 
-    matches
-  }
-};
+      loop do
+        if done then
+          break;
+        end;
 
-const text_find_ascii_case_insensitive = [text: Text, needle: Text] => {
-  let source_length = text_length text;
-  let needle_length = text_length needle;
-  let found = -1;
+        if text_is_utf8_continuation_at(text, index) then
+          index = index + 1
 
-  if needle_length <= source_length {
-    for index in 0..(source_length - needle_length + 1) {
-      if found < 0 && text_starts_with_ascii_case_insensitive_at [text, needle, index] {
-        found = index
-      }
-    }
-  }
+          if index == text_length text then
+            done = true
+          end;
+        else
+          done = true
+        end;
+      end;
 
-  found
-};
+      index
+    end;
 
-const text_contains_ascii_case_insensitive = [text: Text, needle: Text] => {
-  text_find_ascii_case_insensitive [text, needle] >= 0
-};
+    const text_utf8_character_count = (text: Text, start: I32, finish: I32) => do
+      let count = 0;
 
-const text_equal_ascii_case_insensitive = [left: Text, right: Text] => {
-  text_length left == text_length right && text_find_ascii_case_insensitive [left, right] == 0
-};
+      if start < finish then
+        for index in start..finish do
+          if text_is_utf8_continuation_at(text, index) then
+            ()
+          else
+            count = count + 1
+          end;
+        end
+      end;
 
-const min_i32 = [left: I32, right: I32] => {
-  if left < right { left } else { right }
-};
+      count
+    end;
 
-const max_i32 = [left: I32, right: I32] => {
-  if left > right { left } else { right }
-};
+    const text_utf8_length = (text: Text) => do
+      text_utf8_character_count(text, 0, text_length text)
+    end;
 
-const panic = value => @panic value;
+    const text_take_utf8_characters = (text: Text, maximum_characters: I32) => do
+      let slice_end = 0;
+      let characters = 0;
 
-const f32x4 = [x, y, z, w] => @f32x4(x, y, z, w);
-const f32x4_splat = value => @f32x4_splat value;
-const f32x4_add = [left, right] => @f32x4_add(left, right);
-const f32x4_subtract = [left, right] => @f32x4_sub(left, right);
-const f32x4_multiply = [left, right] => @f32x4_mul(left, right);
-const f32x4_divide = [left, right] => @f32x4_div(left, right);
+      loop do
+        if slice_end >= text_length text || characters >= maximum_characters then
+          break;
+        end;
 
-return {
-  .append,
-  .text_append,
-  .append_text,
-  .length,
-  .get,
-  .slice,
-  .text_length,
-  .text_get,
-  .text_slice,
-  .text_starts_with_at,
-  .text_starts_with,
-  .text_ends_with,
-  .text_find_from,
-  .text_find,
-  .text_contains,
-  .text_split,
-  .text_ascii_words,
-  .text_replace_all,
-  .text_escape_xml,
-  .text_compare,
-  .text_less_than,
-  .text_byte_ascii_lowercase,
-  .text_find_ascii_case_insensitive,
-  .text_contains_ascii_case_insensitive,
-  .text_equal_ascii_case_insensitive,
-  .min_i32,
-  .max_i32,
-  .text_byte_is_ascii_whitespace,
-  .text_byte_is_ascii_digit,
-  .text_byte_is_ascii_lower,
-  .text_byte_is_ascii_upper,
-  .text_byte_is_ascii_alpha,
-  .text_byte_is_ascii_alphanumeric,
-  .text_byte_is_ascii_hex_digit,
-  .text_longest_suffix_prefix_length,
-  .text_fold_i32,
-  .text_any,
-  .text_all,
-  .text_count,
-  .text_is_blank,
-  .text_trim_whitespace,
-  .text_trim_start_whitespace,
-  .text_trim_ascii_whitespace,
-  .text_repeat,
-  .text_collapse_ascii_whitespace,
-  .path_join,
-  .path_parent,
-  .path_basename,
-  .text_approx_token_count,
-  .text_line_count,
-  .text_utf8_length,
-  .text_take_utf8_characters,
-  .text_floor_utf8_boundary,
-  .text_ceil_utf8_boundary,
-  .text_truncate_end_bytes,
-  .text_truncate_middle_bytes,
-  .text_truncate_middle_tokens,
-  .bytes_fold_i32,
-  .bytes_any,
-  .bytes_all,
-  .bytes_count,
-  .bit_and,
-  .bit_or,
-  .bit_xor,
-  .shift_left,
-  .shift_right_unsigned,
-  .sqrt_f32,
-  .f32_from_i32,
-  .i32_from_f32,
-  .f64_from_i32,
-  .i32_from_f64,
-  .unsafe_i32_wrap_i64,
-  .unsafe_i64_extend_i32_signed,
-  .unsafe_i64_extend_i32_unsigned,
-  .unsafe_i32_reinterpret_f32,
-  .unsafe_f32_reinterpret_i32,
-  .format_i32,
-  .format_i64,
-  .format_f32,
-  .generate_bytes,
-  .encode_utf8,
-  .decode_utf8,
-  .panic,
-  .f32x4,
-  .f32x4_splat,
-  .f32x4_add,
-  .f32x4_subtract,
-  .f32x4_multiply,
-  .f32x4_divide,
-};
+        slice_end = slice_end + 1
+
+        if slice_end >= text_length text then
+          characters = characters + 1
+        else text_is_utf8_continuation_at(text, slice_end) then
+          ()
+        else
+          characters = characters + 1
+        end;
+      end;
+
+      text_slice (text, 0, slice_end)
+    end;
+
+    const text_truncate_middle_bytes: (Text, I32) -> Text = (text, maximum_bytes) => do
+      let source_bytes = text_length text;
+
+      if source_bytes == 0 || source_bytes <= maximum_bytes then
+        text
+      else
+        let budget = maximum_bytes;
+
+        if budget < 0 then
+          budget = 0
+        end;
+
+        let left_budget = budget / 2;
+        let right_budget = budget - left_budget;
+        let prefix_end = text_floor_utf8_boundary(text, left_budget);
+        let suffix_start = text_ceil_utf8_boundary(text, source_bytes - right_budget);
+
+        if suffix_start < prefix_end then
+          suffix_start = prefix_end
+        end;
+
+        let removed_characters = text_utf8_character_count(text, prefix_end, suffix_start);
+        let marker = text_append (
+          "…",
+          text_append (format_i32 removed_characters, " chars truncated…"),
+        );
+        let prefix = text_slice (text, 0, prefix_end);
+        let suffix = text_slice (text, suffix_start, source_bytes);
+        text_append (prefix, text_append (marker, suffix))
+      end;
+    end;
+
+    const text_truncate_middle_tokens: (Text, I32) -> Text = (text, maximum_tokens) => do
+      let source_bytes = text_length text;
+      let budget_bytes = maximum_tokens * 4;
+
+      if maximum_tokens > 0 && source_bytes <= budget_bytes then
+        text
+      else
+        let budget = budget_bytes;
+
+        if budget < 0 then
+          budget = 0
+        end;
+
+        let left_budget = budget / 2;
+        let right_budget = budget - left_budget;
+        let prefix_end = text_floor_utf8_boundary(text, left_budget);
+        let suffix_start = text_ceil_utf8_boundary(text, source_bytes - right_budget);
+
+        if suffix_start < prefix_end then
+          suffix_start = prefix_end
+        end;
+
+        let removed_bytes = suffix_start - prefix_end;
+        let removed_tokens = if removed_bytes <= 0 then 0 else (removed_bytes + 3) / 4 end;
+        let marker = text_append (
+          "…",
+          text_append (format_i32 removed_tokens, " tokens truncated…"),
+        );
+        let prefix = text_slice (text, 0, prefix_end);
+        let suffix = text_slice (text, suffix_start, source_bytes);
+        text_append (prefix, text_append (marker, suffix))
+      end;
+    end;
+
+    const bytes_fold_i32: (Bytes, I32, I32 -> I32 -> I32) -> I32 =
+      (bytes, initial, const combine) => do
+        let state = initial;
+
+        for byte in bytes do
+          state = combine(state, byte)
+        end
+
+        state
+      end;
+
+    const bytes_any: (Bytes, I32 -> Bool) -> Bool =
+      (bytes, const predicate) => do
+        let matched = false;
+
+        for byte in bytes do
+          if predicate byte then
+            matched = true
+          end;
+        end
+
+        matched
+      end;
+
+    const bytes_all: (Bytes, I32 -> Bool) -> Bool =
+      (bytes, const predicate) => do
+        let matched = true;
+
+        for byte in bytes do
+          if predicate byte then
+            ()
+          else
+            matched = false
+          end;
+        end
+
+        matched
+      end;
+
+    const bytes_count: (Bytes, I32 -> Bool) -> I32 =
+      (bytes, const predicate) => do
+        let count = 0;
+
+        for byte in bytes do
+          if predicate byte then
+            count = count + 1
+          end;
+        end
+
+        count
+      end;
+
+    const bit_and: (I32, I32) -> I32 = (left, right) => @bit_and(left, right);
+    const bit_or: (I32, I32) -> I32 = (left, right) => @bit_or(left, right);
+    const bit_xor: (I32, I32) -> I32 = (left, right) => @bit_xor(left, right);
+    const shift_left: (I32, I32) -> I32 =
+      (value, amount) => @shift_left(value, amount);
+    const shift_right_unsigned: (I32, I32) -> I32 =
+      (value, amount) => @shift_right_u(value, amount);
+
+    const sqrt_f32: F32 -> F32 = value => @f32_sqrt value;
+    const f32_from_i32: I32 -> F32 = value => @f32_from_i32 value;
+    const i32_from_f32: F32 -> I32 = value => @i32_from_f32 value;
+    const f64_from_i32: I32 -> F64 = value => @f64_from_i32 value;
+    const i32_from_f64: F64 -> I32 = value => @i32_from_f64 value;
+    const unsafe_i32_wrap_i64: I64 -> I32 = value => @unsafe_i32_wrap_i64 value;
+    const unsafe_i64_extend_i32_signed: I32 -> I64 =
+      value => @unsafe_i64_extend_i32_signed value;
+    const unsafe_i64_extend_i32_unsigned: I32 -> I64 =
+      value => @unsafe_i64_extend_i32_unsigned value;
+    const unsafe_i32_reinterpret_f32: F32 -> I32 =
+      value => @unsafe_i32_reinterpret_f32 value;
+    const unsafe_f32_reinterpret_i32: I32 -> F32 =
+      value => @unsafe_f32_reinterpret_i32 value;
+    const format_f32: (F32, I32) -> Text = (value, fractional_digits) => @format_f32(
+      value,
+      fractional_digits,
+    );
+
+    const generate_bytes = (length: I32, generate: I32 -> I32) => @Bytes.generate(length, generate);
+    const encode_utf8 = text => @Utf8.encode text;
+    const decode_utf8 = bytes => @Utf8.decode bytes;
+
+    const text_byte_ascii_lowercase = (byte: I32) => do
+      if text_byte_is_ascii_upper byte then byte + 32 else byte end;
+    end;
+
+    const text_starts_with_ascii_case_insensitive_at = (text: Text, prefix: Text, start: I32) => do
+      let pattern_length = text_length prefix;
+      let source_length = text_length text;
+
+      if start < 0 || start + pattern_length > source_length then
+        false
+      else
+        let matches = true;
+
+        for offset in 0..pattern_length do
+          let source_byte = text_get (text, start + offset);
+          let pattern_byte = text_get (prefix, offset);
+
+          if source_byte >= 65 && source_byte <= 90 then
+            source_byte = source_byte + 32
+          end;
+
+          if pattern_byte >= 65 && pattern_byte <= 90 then
+            pattern_byte = pattern_byte + 32
+          end;
+
+          if source_byte != pattern_byte then
+            matches = false
+          end;
+        end
+
+        matches
+      end;
+    end;
+
+    const text_find_ascii_case_insensitive = (text: Text, needle: Text) => do
+      let source_length = text_length text;
+      let needle_length = text_length needle;
+      let found = -1;
+
+      if needle_length <= source_length then
+        for index in 0..(source_length - needle_length + 1) do
+          if found < 0 && text_starts_with_ascii_case_insensitive_at (text, needle, index) then
+            found = index
+          end;
+        end
+      end;
+
+      found
+    end;
+
+    const text_contains_ascii_case_insensitive = (text: Text, needle: Text) => do
+      text_find_ascii_case_insensitive (text, needle) >= 0
+    end;
+
+    const text_equal_ascii_case_insensitive = (left: Text, right: Text) => do
+      text_length left == text_length right && text_find_ascii_case_insensitive (left, right) == 0
+    end;
+
+    const min_i32 = (left: I32, right: I32) => do
+      if left < right then left else right end;
+    end;
+
+    const max_i32 = (left: I32, right: I32) => do
+      if left > right then left else right end;
+    end;
+
+    const panic = value => @panic value;
+
+    const f32x4: (F32, F32, F32, F32) -> F32x4 =
+      (x, y, z, w) => @f32x4(x, y, z, w);
+    const f32x4_splat: F32 -> F32x4 = value => @f32x4_splat value;
+    const f32x4_add: (F32x4, F32x4) -> F32x4 =
+      (left, right) => @f32x4_add(left, right);
+    const f32x4_subtract: (F32x4, F32x4) -> F32x4 =
+      (left, right) => @f32x4_sub(left, right);
+    const f32x4_multiply: (F32x4, F32x4) -> F32x4 =
+      (left, right) => @f32x4_mul(left, right);
+    const f32x4_divide: (F32x4, F32x4) -> F32x4 =
+      (left, right) => @f32x4_div(left, right);
+
+    return {
+      .append,
+      .text_append,
+      .append_text,
+      .length,
+      .get,
+      .slice,
+      .text_length,
+      .text_get,
+      .text_slice,
+      .text_starts_with_at,
+      .text_starts_with,
+      .text_ends_with,
+      .text_find_from,
+      .text_find,
+      .text_contains,
+      .text_split,
+      .text_ascii_words,
+      .text_replace_all,
+      .text_escape_xml,
+      .text_compare,
+      .text_less_than,
+      .text_byte_ascii_lowercase,
+      .text_find_ascii_case_insensitive,
+      .text_contains_ascii_case_insensitive,
+      .text_equal_ascii_case_insensitive,
+      .min_i32,
+      .max_i32,
+      .text_byte_is_ascii_whitespace,
+      .text_byte_is_ascii_digit,
+      .text_byte_is_ascii_lower,
+      .text_byte_is_ascii_upper,
+      .text_byte_is_ascii_alpha,
+      .text_byte_is_ascii_alphanumeric,
+      .text_byte_is_ascii_hex_digit,
+      .text_longest_suffix_prefix_length,
+      .text_fold_i32,
+      .text_any,
+      .text_all,
+      .text_count,
+      .text_is_blank,
+      .text_trim_whitespace,
+      .text_trim_start_whitespace,
+      .text_trim_ascii_whitespace,
+      .text_repeat,
+      .text_collapse_ascii_whitespace,
+      .path_join,
+      .path_parent,
+      .path_basename,
+      .text_approx_token_count,
+      .text_line_count,
+      .text_utf8_length,
+      .text_take_utf8_characters,
+      .text_floor_utf8_boundary,
+      .text_ceil_utf8_boundary,
+      .text_truncate_end_bytes,
+      .text_truncate_middle_bytes,
+      .text_truncate_middle_tokens,
+      .bytes_fold_i32,
+      .bytes_any,
+      .bytes_all,
+      .bytes_count,
+      .bit_and,
+      .bit_or,
+      .bit_xor,
+      .shift_left,
+      .shift_right_unsigned,
+      .sqrt_f32,
+      .f32_from_i32,
+      .i32_from_f32,
+      .f64_from_i32,
+      .i32_from_f64,
+      .unsafe_i32_wrap_i64,
+      .unsafe_i64_extend_i32_signed,
+      .unsafe_i64_extend_i32_unsigned,
+      .unsafe_i32_reinterpret_f32,
+      .unsafe_f32_reinterpret_i32,
+      .format_i32,
+      .format_i64,
+      .format_f32,
+      .generate_bytes,
+      .encode_utf8,
+      .decode_utf8,
+      .panic,
+      .f32x4,
+      .f32x4_splat,
+      .f32x4_add,
+      .f32x4_subtract,
+      .f32x4_multiply,
+      .f32x4_divide,
+    };

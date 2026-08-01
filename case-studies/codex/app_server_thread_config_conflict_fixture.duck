@@ -11,8 +11,8 @@ let fields = json_object_empty();
 fields = json_object_prepend("permissions", json_string "workspace", fields)
 fields = json_object_prepend("sandbox", json_string "workspaceWrite", fields)
 let decoded: FixtureResult = decode_thread_start(json_object fields);
-let score = if let `MethodError message = decoded {
-  if message == "`permissions` cannot be combined with `sandbox`" { 1 } else { 0 }
-} else { 0 };
+let score = if let #MethodError message = decoded then
+  if message == "`permissions` cannot be combined with `sandbox`" then 1 else 0 end;
+else 0 end;
 
 return { .score = score };

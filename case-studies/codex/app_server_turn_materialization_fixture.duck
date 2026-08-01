@@ -7,77 +7,81 @@ const { .materialize_turn_notification, .materialize_turn_steer_response } = tur
 
 type FixtureTurn = AppServerTurn
 
-const field_is_string = (fields, key: Text, expected: Text) => {
+const field_is_string = (fields, key: Text, expected: Text) => do
   let lookup = json_object_get(key, fields);
-  if let `Found value = lookup {
-    if let `String text = value { text == expected } else { false }
-  } else {
+  if let #Found value = lookup then
+    if let #String text = value then text == expected else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const field_is_number = (fields, key: Text, expected: Text) => {
+const field_is_number = (fields, key: Text, expected: Text) => do
   let lookup = json_object_get(key, fields);
-  if let `Found value = lookup {
-    if let `Number text = value { text == expected } else { false }
-  } else {
+  if let #Found value = lookup then
+    if let #Number text = value then text == expected else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const field_is_null = (fields, key: Text) => {
+const field_is_null = (fields, key: Text) => do
   let lookup = json_object_get(key, fields);
-  if let `Found value = lookup {
-    if let `Null () = value { true } else { false }
-  } else {
+  if let #Found value = lookup then
+    if let #Null = value then true else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
 let turn: FixtureTurn = [
   "turn-1",
   json_array_empty(),
-  `Full (),
-  `Interrupted (),
-  `None (),
-  `Some 100i64,
-  `Some 102i64,
-  `Some 2000i64,
+  #Full,
+  #Interrupted,
+  #None,
+  #Some 100i64,
+  #Some 102i64,
+  #Some 2000i64,
 ];
 let value = materialize_turn_notification("thread-1", turn);
 let fields = json_object_empty();
 let turn_fields = json_object_empty();
 let score = 0;
 
-if let `Object object = value {
+if let #Object object = value then
   fields = object
   let lookup = json_object_get("turn", object);
-  if let `Found nested = lookup {
-    if let `Object object = nested { turn_fields = object }
-  }
-}
+  if let #Found nested = lookup then
+    if let #Object object = nested then
+      turn_fields = object
+    end;
+  end;
+end;
 
 if field_is_string(fields, "threadId", "thread-1") && field_is_string(turn_fields, "id",
   "turn-1") && field_is_string(
     turn_fields,
     "status",
     "interrupted",
-  ) {
+  ) then
     score = score + 1
-  }
-if field_is_string(turn_fields, "itemsView", "full") && field_is_null(turn_fields, "error") {
+  end;
+if field_is_string(turn_fields, "itemsView", "full") && field_is_null(turn_fields, "error") then
   score = score + 10
-}
+end;
 if field_is_number(turn_fields, "startedAt", "100") && field_is_number(
   turn_fields,
   "completedAt",
   "102",
-) && field_is_number(turn_fields, "durationMs", "2000") {
+) && field_is_number(turn_fields, "durationMs", "2000") then
   score = score + 100
-}
+end;
 
-if let `Object response = materialize_turn_steer_response "turn-1" {
-  if field_is_string(response, "turnId", "turn-1") { score = score + 1000 }
-}
+if let #Object response = materialize_turn_steer_response "turn-1" then
+  if field_is_string(response, "turnId", "turn-1") then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

@@ -1,4 +1,4 @@
-import type { FrontExpr, Param, Pattern, Stmt } from "../../frontend/ast.ts";
+import type { FrontExpr, Param, Stmt } from "../../frontend/ast.ts";
 import type { CoreExpr, CoreField, CoreParam, CoreTypeField } from "../ast.ts";
 import {
   type CoreFromSourceCtx,
@@ -154,14 +154,8 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
 
     case "lam": {
       const body_ctx = fork_core_from_source_ctx(ctx);
-      const flattened = flattened_product_function(expr);
-      let params = expr.params;
-      let body = expr.body;
-
-      if (flattened !== undefined) {
-        params = flattened.params;
-        body = flattened.body;
-      }
+      const params = expr.params;
+      const body = expr.body;
 
       for (const param of params) {
         body_ctx.aliases.set(param.name, param.name);
@@ -182,14 +176,8 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
 
     case "rec": {
       const body_ctx = fork_core_from_source_ctx(ctx);
-      const flattened = flattened_product_function(expr);
-      let params = expr.params;
-      let body = expr.body;
-
-      if (flattened !== undefined) {
-        params = flattened.params;
-        body = flattened.body;
-      }
+      const params = expr.params;
+      const body = expr.body;
 
       for (const param of params) {
         body_ctx.aliases.set(param.name, param.name);
@@ -235,26 +223,74 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
       }
 
       if (
-        expr.func.tag === "var" && expr.func.name === "@integer.wrap" &&
+        expr.func.tag === "var" &&
+        (expr.func.name === "@integer.wrap" ||
+          expr.func.name === "@integer.narrow") &&
         !ctx.aliases.has(expr.func.name)
       ) {
         const args = compiler_builtin_args(expr);
         expect(
           args.length === 2,
-          "@integer.wrap expects 2 arguments, got " + args.length.toString(),
+          expr.func.name + " expects 2 arguments, got " +
+            args.length.toString(),
         );
         const value = args[0];
         const target = args[1];
-        expect(value, "Missing @integer.wrap value argument");
+        expect(value, "Missing " + expr.func.name + " value argument");
         expect(
-          target && target.tag === "var",
-          "@integer.wrap target must be an integer type value",
+          target &&
+            (target.tag === "var" || target.tag === "type_name"),
+          expr.func.name + " target must be an integer type value",
         );
-        const integer = integer_type_from_name(target.name);
-        expect(integer, "@integer.wrap target must be I<N> or U<N>");
+        const target_name = resolve_core_annotation(ctx, target.name);
+        expect(
+          target_name !== undefined,
+          expr.func.name + " target lost its resolved type",
+        );
+        const integer = integer_type_from_name(target_name);
+        expect(
+          integer,
+          expr.func.name + " target must be I<N> or U<N>",
+        );
+        const lowered_value = core_expr(value, ctx);
+        let source_integer = front_expr_integer_type(value, ctx);
+        if (source_integer === undefined && value.tag === "num") {
+          if (value.type === "i32") {
+            source_integer = { signed: true, width: 32 };
+          } else if (value.type === "i64") {
+            source_integer = { signed: true, width: 64 };
+          }
+        }
+        if (expr.func.name === "@integer.narrow") {
+          expect(
+            source_integer !== undefined,
+            "@integer.narrow lost its checked source integer type",
+          );
+          expect(
+            source_integer.width <= 64 && integer.width <= 64,
+            "@integer.narrow reached Core with a non-runtime integer type",
+          );
+          if (source_integer.width > 32 && integer.width <= 32) {
+            return {
+              tag: "prim",
+              prim: "i32.wrap_i64",
+              args: [lowered_value],
+              integer,
+            };
+          }
+          if (source_integer.width <= 32 && integer.width > 32) {
+            return {
+              tag: "prim",
+              prim: "i64.extend_i32_s",
+              args: [lowered_value],
+              integer,
+            };
+          }
+          return lowered_value;
+        }
         return core_integer_wrap(
-          core_expr(value, ctx),
-          front_expr_integer_type(value, ctx),
+          lowered_value,
+          source_integer,
           integer,
           ctx,
         );
@@ -364,7 +400,12 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
           if (annotation) {
             let parameter_types = [annotation.param];
 
-            if (annotation.param.tag === "product") {
+            if (annotation.param.tag === "tuple") {
+              parameter_types = annotation.param.items;
+            } else if (
+              annotation.param.tag === "product" &&
+              annotation.param.value_pack === true
+            ) {
               parameter_types = annotation.param.entries.map((entry) => {
                 return entry.type_expr;
               });
@@ -507,12 +548,13 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
         fields: expr.fields.map(core_type_field),
       };
 
-    case "struct_value":
+    case "struct_value": {
       return {
         tag: "struct_value",
-        type_expr: core_expr(expr.type_expr, ctx),
+        type_expr: core_runtime_type_expr(expr.type_expr, ctx),
         fields: expr.fields.map((field) => core_field(field, ctx)),
       };
+    }
 
     case "struct_update":
       return {
@@ -592,7 +634,7 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
       }
 
       if (expr.type_expr) {
-        type_expr = core_expr(expr.type_expr, ctx);
+        type_expr = core_runtime_type_expr(expr.type_expr, ctx);
       }
 
       return {
@@ -705,11 +747,21 @@ export function front_expr_integer_type(
   if (expr.tag === "app") {
     const args = compiler_builtin_args(expr);
 
-    if (expr.func.tag === "var" && expr.func.name === "@integer.wrap") {
+    if (
+      expr.func.tag === "var" &&
+      (expr.func.name === "@integer.wrap" ||
+        expr.func.name === "@integer.narrow")
+    ) {
       const target = args[1];
 
-      if (target && target.tag === "var") {
-        return integer_type_from_name(target.name);
+      if (
+        target &&
+        (target.tag === "var" || target.tag === "type_name")
+      ) {
+        const target_name = resolve_core_annotation(ctx, target.name);
+        if (target_name !== undefined) {
+          return integer_type_from_name(target_name);
+        }
       }
     }
 
@@ -2665,94 +2717,6 @@ const core_product_builtin_names = new Set([
   "@slice",
 ]);
 
-function flattened_product_function(
-  expr: Extract<FrontExpr, { tag: "lam" | "rec" }>,
-): { params: Param[]; body: FrontExpr } | undefined {
-  const pattern = expr.pattern;
-  const packed_param = expr.params[0];
-
-  if (pattern?.tag !== "product") {
-    return undefined;
-  }
-
-  let body = expr.body;
-
-  if (
-    expr.params.length === 1 && packed_param !== undefined &&
-    packed_param.name.startsWith("_pattern#param")
-  ) {
-    if (expr.body.tag !== "block") {
-      return undefined;
-    }
-
-    const final_stmt = expr.body.statements[expr.body.statements.length - 1];
-
-    if (!final_stmt || final_stmt.tag !== "expr") {
-      return undefined;
-    }
-
-    body = final_stmt.expr;
-  }
-
-  const params = flattened_product_pattern_params(pattern, { next: 0 });
-
-  if (params === undefined) {
-    return undefined;
-  }
-
-  return { params, body };
-}
-
-function flattened_product_pattern_params(
-  pattern: Extract<Pattern, { tag: "product" }>,
-  ignored: { next: number },
-): Param[] | undefined {
-  if (pattern.value_pack === true) {
-    return undefined;
-  }
-
-  const params: Param[] = [];
-
-  for (const entry of pattern.entries) {
-    if (entry.pattern.tag === "binding") {
-      params.push({
-        name: entry.pattern.name,
-        is_const: entry.pattern.mode === "const",
-        is_linear: entry.pattern.mode === "linear",
-        annotation: entry.pattern.annotation,
-        type_annotation: entry.pattern.type_annotation,
-      });
-      continue;
-    }
-
-    if (entry.pattern.tag === "wildcard") {
-      params.push({
-        name: "_pattern#ignored" + ignored.next.toString(),
-        is_const: entry.pattern.mode === "const",
-        is_linear: false,
-        annotation: undefined,
-      });
-      ignored.next += 1;
-      continue;
-    }
-
-    if (entry.pattern.tag === "product") {
-      const nested = flattened_product_pattern_params(entry.pattern, ignored);
-
-      if (nested === undefined) {
-        return undefined;
-      }
-
-      params.push(...nested);
-      continue;
-    }
-
-    return undefined;
-  }
-
-  return params;
-}
-
 export function core_param(param: {
   name: string;
   is_const: boolean;
@@ -2844,6 +2808,28 @@ function core_field(
   ctx: CoreFromSourceCtx,
 ): CoreField {
   return { name: field.name, value: core_expr(field.value, ctx) };
+}
+
+function core_runtime_type_expr(
+  expr: FrontExpr,
+  ctx: CoreFromSourceCtx,
+): CoreExpr {
+  if (
+    expr.tag === "var" &&
+    ctx.runtime_aggregate_type_names.has(expr.name)
+  ) {
+    return { tag: "var", name: expr.name };
+  }
+
+  if (expr.tag === "app") {
+    return {
+      tag: "app",
+      func: core_runtime_type_expr(expr.func, ctx),
+      args: expr.args.map((arg) => core_runtime_type_expr(arg, ctx)),
+    };
+  }
+
+  return core_expr(expr, ctx);
 }
 
 function core_type_field(

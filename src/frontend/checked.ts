@@ -53,3 +53,12 @@ export function diagnostics_of(check: Checked<unknown>): SourceDiagnostic[] {
 
   return [];
 }
+
+/** Boundary helper: inspect a successful verdict without exposing Validation internals. */
+export function checked_value<value>(
+  check: Checked<value>,
+): value | undefined {
+  const result = check.value();
+  if (Invalid.is(result)) return undefined;
+  return result[1];
+}

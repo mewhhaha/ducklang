@@ -16,7 +16,7 @@ type LoadedPlugin = [
   PluginTexts,
   PluginTexts,
   PluginTexts,
-  PluginTexts ]
+  PluginTexts]
 type LoadedPlugins = List LoadedPlugin
 
 type PluginCapabilitySummary = [Text, Text, PluginTextOption, Bool, PluginTexts, PluginTexts]
@@ -28,7 +28,7 @@ type PluginSelection = List PluginCapabilitySummary
 
 type PluginId = [Text, Text]
 type PluginIdParse =
-  | `Ok PluginId
-  | `Err Text
+  | #Ok PluginId
+  | #Err Text
 
 return {};

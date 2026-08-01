@@ -5,17 +5,24 @@ const { .parse_request_permissions_args, .parse_request_permissions_environment_
 
 let score = 0;
 
-if let `EnvironmentParseFailed message = parse_request_permissions_environment_id "[]" {
-  if message == "failed to parse function arguments: request_permissions arguments must be an object" { score = score + 1 }
-}
+if let #EnvironmentParseFailed message = parse_request_permissions_environment_id "[]" then
+  if message
+    == "failed to parse function arguments: request_permissions arguments must be an object" then
+      score = score + 1
+    end;
+end;
 
-if let `ParseFailed message = parse_request_permissions_args("{}", "/workspace") {
-  if message == "failed to parse function arguments: permissions is required" { score = score + 10 }
-}
+if let #ParseFailed message = parse_request_permissions_args("{}", "/workspace") then
+  if message == "failed to parse function arguments: permissions is required" then
+    score = score + 10 end;
+end;
 
 let invalid_path = "{\"permissions\":{\"file_system\":{\"read\":[1]}}}";
-if let `ParseFailed message = parse_request_permissions_args(invalid_path, "/workspace") {
-  if message == "failed to parse function arguments: permissions.file_system.read[0] must be a string" { score = score + 100 }
-}
+if let #ParseFailed message = parse_request_permissions_args(invalid_path, "/workspace") then
+  if message
+    == "failed to parse function arguments: permissions.file_system.read[0] must be a string" then
+      score = score + 100
+    end;
+end;
 
 return { .score = score };

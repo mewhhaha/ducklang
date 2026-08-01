@@ -5,13 +5,13 @@ const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .jso
   import "duck:prelude/json/values" ();
 const {} = import "./agent_tool_types.duck" ();
 
-const render_wait_agent_output: AgentToolMailboxSnapshot -> Text = snapshot => {
+const render_wait_agent_output: AgentToolMailboxSnapshot -> Text = snapshot => do
   let message = "Wait completed.";
-  if snapshot.timed_out {
+  if snapshot.timed_out then
     message = "Wait timed out."
-  } else if snapshot.steered {
+  else snapshot.steered then
     message = "Wait interrupted by new input."
-  }
+  end;
   encode_json(
     json_object(
       json_object_prepend(
@@ -21,6 +21,6 @@ const render_wait_agent_output: AgentToolMailboxSnapshot -> Text = snapshot => {
       )
     )
   )
-};
+end;
 
 return { .render_wait_agent_output };

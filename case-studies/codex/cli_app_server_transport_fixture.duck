@@ -11,11 +11,13 @@ const args = comptime list Text;
 let score = 0;
 
 let defaults: FixtureResult = parse_app_server_launch(args.empty());
-if let `Ok command = defaults {
-  if let `LaunchAppServer options = command {
-    if let `AppServerStdio () = options.transport { score = score + 1 }
-  }
-}
+if let #Ok command = defaults then
+  if let #LaunchAppServer options = command then
+    if let #AppServerStdio = options.transport then
+      score = score + 1
+    end;
+  end;
+end;
 
 let unix_input: FixtureArgs = args.prepend(
   "--listen",
@@ -28,30 +30,35 @@ let unix_input: FixtureArgs = args.prepend(
   ),
 );
 let unix: FixtureResult = parse_app_server_launch unix_input;
-if let `Ok command = unix {
-  if let `LaunchAppServer options = command {
-    if let `AppServerUnixSocket socket_path = options.transport {
-      if let `Some path = socket_path {
-        if path == "/tmp/codex.sock" && options.strict_config && options.remote_control && options.analytics_default_enabled {
-          score = score + 10
-        }
-      }
-    }
-  }
-}
+if let #Ok command = unix then
+  if let #LaunchAppServer options = command then
+    if let #AppServerUnixSocket socket_path = options.transport then
+      if let #Some path = socket_path then
+        if path == "/tmp/codex.sock" && options.strict_config && options.remote_control
+          && options.analytics_default_enabled then
+            score = score + 10
+          end;
+      end;
+    end;
+  end;
+end;
 
 let disabled: FixtureResult = parse_app_server_launch(
   args.prepend("--listen", args.singleton("off"))
 );
-if let `Ok command = disabled {
-  if let `LaunchAppServer options = command {
-    if let `AppServerOff () = options.transport { score = score + 100 }
-  }
-}
+if let #Ok command = disabled then
+  if let #LaunchAppServer options = command then
+    if let #AppServerOff = options.transport then
+      score = score + 100
+    end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_app_server_launch(
   args.prepend("--listen", args.singleton("http://example.com"))
 );
-if let `Err _ = invalid { score = score + 1000 }
+if let #Err _ = invalid then
+  score = score + 1000
+end;
 
 return { .score = score };

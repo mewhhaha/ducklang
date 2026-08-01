@@ -1,5 +1,6 @@
 [
   (block)
+  (conditional_branch)
   (shape_field_block)
   (type_field_block)
   (type_pattern)
@@ -11,7 +12,7 @@
   (array_expression)
   (array_repeat_expression)
   (array_pattern)
-  (match_case_block)
+  (case_expression)
   (host_parameter_list)
   (effect_operation_block)
   (effect_row)
@@ -23,4 +24,6 @@
   "}"
   ")"
   "]"
+  "else"
+  "end"
 ] @outdent

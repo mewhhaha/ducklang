@@ -15,65 +15,65 @@ type HookPromptOption = ContextualHookPromptOption
 
 const hook_prompt_fragments = comptime list ContextualHookPromptFragment;
 
-const is_contextual_user_fragment = (content: UserContent) => {
-  if let `InputText text = content {
-    if let `Some _ = parse_hook_prompt_fragment text {
+const is_contextual_user_fragment = (content: UserContent) => do
+  if let #InputText text = content then
+    if let #Some _ = parse_hook_prompt_fragment text then
       true
-    } else {
+    else
       is_standard_contextual_user_text text
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
 const parse_visible_hook_prompt_message = (
   id: Text,
   contents: UserContents,
-) => {
-  let result: HookPromptOption = `None ();
+) => do
+  let result: HookPromptOption = #None;
   let current = contents;
   let reversed: HookPromptFragments = hook_prompt_fragments.empty();
   let valid = true;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [content, tail] = node;
 
-      if let `InputText text = content {
+      if let #InputText text = content then
         let parsed = parse_hook_prompt_fragment text;
-        if let `Some fragment = parsed {
+        if let #Some fragment = parsed then
           reversed = hook_prompt_fragments.prepend(fragment, reversed)
-        } else if !(is_standard_contextual_user_text text) {
+        else !(is_standard_contextual_user_text text) then
           valid = false
-        }
-      } else {
+        end;
+      else
         valid = false
-      }
+      end;
 
-      if !(valid) {
+      if !(valid) then
         break;
-      }
+      end;
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
-  if valid {
-    if let `Nil () = reversed {
+  if valid then
+    if let #Nil = reversed then
       ()
-    } else {
+    else
       let prompt: HookPrompt = [
         .id = id,
         .fragments = hook_prompt_fragments.reverse(reversed),
       ];
-      result = `Some prompt
-    }
-  }
+      result = #Some prompt
+    end;
+  end;
 
   result
-};
+end;
 
 return {
   .is_contextual_user_fragment,

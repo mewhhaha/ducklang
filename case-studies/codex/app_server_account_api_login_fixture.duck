@@ -10,15 +10,19 @@ type FixtureResult = AppServerAccountLoginDecodeResult
 let fields = json_object_prepend("apiKey", json_string "secret", json_object_empty());
 let api_key: FixtureResult = decode_account_api_key_login fields;
 let score = 0;
-if let `AccountLoginOk login = api_key {
-  if let `AccountApiKeyLogin value = login {
-    if value == "secret" { score = score + 1 }
-  }
-}
+if let #AccountLoginOk login = api_key then
+  if let #AccountApiKeyLogin value = login then
+    if value == "secret" then
+      score = score + 1
+    end;
+  end;
+end;
 
 let device: FixtureResult = decode_account_device_code_login(json_object_empty());
-if let `AccountLoginOk login = device {
-  if let `AccountDeviceCodeLogin () = login { score = score + 10 }
-}
+if let #AccountLoginOk login = device then
+  if let #AccountDeviceCodeLogin = login then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

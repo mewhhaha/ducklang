@@ -7,7 +7,7 @@ type FixtureMailbox = AgentToolMailboxSnapshot
 
 let timeout: FixtureMailbox = [.updated_count = 0, .steered = false, .timed_out = true];
 let score = 0;
-if render_wait_agent_output timeout == "{\"message\":\"Wait timed out.\",\"timed_out\":true}" {
-  score = 1 }
+if render_wait_agent_output timeout == "{\"message\":\"Wait timed out.\",\"timed_out\":true}" then
+  score = 1 end;
 
 return { .score = score };

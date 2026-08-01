@@ -25,309 +25,315 @@ type MarketplaceFactsResult = Result Text MarketplaceFacts
 
 const texts = comptime list Text;
 
-let rec scan_plugin_facts_from: [PluginArgs, PluginFacts] -> PluginFactsResult = (
+let rec scan_plugin_facts_from: (PluginArgs, PluginFacts) -> PluginFactsResult = (
   args: PluginArgs,
   facts: PluginFacts,
-) => {
-  if let `Cons node = args {
+) => do
+  if let #Cons node = args then
     let [argument, tail] = node;
-    if argument == "--marketplace" || argument == "-m" {
-      if let `Cons value_node = tail {
+    if argument == "--marketplace" || argument == "-m" then
+      if let #Cons value_node = tail then
         let [value, remaining] = value_node;
-        scan_plugin_facts_from(remaining, facts <& { .marketplace_name = `Some value })
-      } else {
-        `Err (text_append("missing value for ", argument))
-      }
-    } else if argument == "--json" {
+        scan_plugin_facts_from(remaining, facts <& { .marketplace_name = #Some value })
+      else
+        #Err (text_append("missing value for ", argument))
+      end;
+    else argument == "--json" then
       scan_plugin_facts_from(tail, facts <& { .json = true })
-    } else if argument == "--available" {
+    else argument == "--available" then
       scan_plugin_facts_from(tail, facts <& { .available = true })
-    } else if text_starts_with(argument, "-") {
-      `Err (text_append("unknown plugin option: ", argument))
-    } else if let `None () = facts.selector {
-      scan_plugin_facts_from(tail, facts <& { .selector = `Some argument })
-    } else {
-      `Err "plugin command accepts exactly one plugin selector"
-    }
-  } else {
-    `Ok facts
-  }
-};
+    else text_starts_with(argument, "-") then
+      #Err (text_append("unknown plugin option: ", argument))
+    else let #None = facts.selector then
+      scan_plugin_facts_from(tail, facts <& { .selector = #Some argument })
+    else
+      #Err "plugin command accepts exactly one plugin selector"
+    end;
+  else
+    #Ok facts
+  end;
+end;
 
-const resolve_plugin_selector: [Text, CliPluginTextOption] -> PluginSelectorResult = (
+const resolve_plugin_selector: (Text, CliPluginTextOption) -> PluginSelectorResult = (
   plugin: Text,
   marketplace: CliPluginTextOption,
-) => {
+) => do
   let parsed = parse_plugin_id plugin;
-  if let `Ok pair = parsed {
+  if let #Ok pair = parsed then
     let [plugin_name, parsed_marketplace] = pair;
-    if let `Some requested_marketplace = marketplace {
-      if requested_marketplace == parsed_marketplace {
+    if let #Some requested_marketplace = marketplace then
+      if requested_marketplace == parsed_marketplace then
         let selector: PluginSelector = [
           .plugin_name = plugin_name,
           .marketplace_name = parsed_marketplace,
         ];
-        `Ok selector;
-      } else {
-        `Err (
+        #Ok selector;
+      else
+        #Err (
           text_append(
             text_append(text_append("plugin id `", plugin), "` conflicts with --marketplace "),
             requested_marketplace,
           )
         )
-      }
-    } else {
+      end;
+    else
       let selector: PluginSelector = [
         .plugin_name = plugin_name,
         .marketplace_name = parsed_marketplace,
       ];
-      `Ok selector;
-    }
-  } else if let `Some marketplace_name = marketplace {
-    if valid_plugin_segment plugin {
-      if valid_plugin_segment marketplace_name {
-        let selector: PluginSelector = [.plugin_name = plugin, .marketplace_name = marketplace_name];
-        `Ok selector;
-      } else {
-        `Err (text_append("invalid marketplace name: ", marketplace_name))
-      }
-    } else {
-      `Err (text_append("invalid plugin name: ", plugin))
-    }
-  } else {
-    `Err "plugin requires --marketplace unless passed as <plugin>@<marketplace>"
-  }
-};
+      #Ok selector;
+    end;
+  else let #Some marketplace_name = marketplace then
+    if valid_plugin_segment plugin then
+      if valid_plugin_segment marketplace_name then
+        let selector: PluginSelector =
+          [.plugin_name = plugin, .marketplace_name = marketplace_name];
+        #Ok selector;
+      else
+        #Err (text_append("invalid marketplace name: ", marketplace_name))
+      end;
+    else
+      #Err (text_append("invalid plugin name: ", plugin))
+    end;
+  else
+    #Err "plugin requires --marketplace unless passed as <plugin>@<marketplace>"
+  end;
+end;
 
-let parse_plugin_mutation: PluginArgs -> PluginMutationResult = (args: PluginArgs) => {
+let parse_plugin_mutation: PluginArgs -> PluginMutationResult = (args: PluginArgs) => do
   let initial: PluginFacts = [
-    .selector = `None (),
-    .marketplace_name = `None (),
+    .selector = #None,
+    .marketplace_name = #None,
     .json = false,
     .available = false,
   ];
   let scanned: PluginFactsResult = scan_plugin_facts_from(args, initial);
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
-    if facts.available {
-      `Err "--available is only valid for plugin list"
-    } else if let `Some plugin = facts.selector {
+  if let #Err message = scanned then
+    #Err message
+  else let #Ok facts = scanned then
+    if facts.available then
+      #Err "--available is only valid for plugin list"
+    else let #Some plugin = facts.selector then
       let selected: PluginSelectorResult = resolve_plugin_selector(plugin, facts.marketplace_name);
-      if let `Ok selector = selected {
+      if let #Ok selector = selected then
         let options: PluginMutationOptions = [.selector = selector, .json = facts.json];
-        `Ok options;
-      } else if let `Err message = selected {
-        `Err message
-      } else {
-        `Err "plugin selector returned an unknown result"
-      }
-    } else {
-      `Err "plugin command requires a plugin selector"
-    }
-  } else {
-    `Err "plugin option scanner returned an unknown result"
-  }
-};
+        #Ok options;
+      else let #Err message = selected then
+        #Err message
+      else
+        #Err "plugin selector returned an unknown result"
+      end;
+    else
+      #Err "plugin command requires a plugin selector"
+    end;
+  else
+    #Err "plugin option scanner returned an unknown result"
+  end;
+end;
 
-let parse_plugin_add: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
+let parse_plugin_add: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
   let parsed: PluginMutationResult = parse_plugin_mutation args;
-  if let `Ok options = parsed { `Ok (`PluginAdd options) } else if let `Err message = parsed { `Err message } else { `Err "plugin add parser returned an unknown result" }
-};
+  if let #Ok options = parsed then #Ok (#PluginAdd options) else let #Err message = parsed then #Err message else #Err "plugin add parser returned an unknown result" end;
+end;
 
-let parse_plugin_remove: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
+let parse_plugin_remove: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
   let parsed: PluginMutationResult = parse_plugin_mutation args;
-  if let `Ok options = parsed { `Ok (`PluginRemove options) } else if let `Err message = parsed {
-    `Err message } else { `Err "plugin remove parser returned an unknown result" }
-};
+  if let #Ok options = parsed then #Ok (#PluginRemove options) else let #Err message = parsed then
+    #Err message else #Err "plugin remove parser returned an unknown result" end;
+end;
 
-let parse_plugin_list: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
+let parse_plugin_list: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
   let initial: PluginFacts = [
-    .selector = `None (),
-    .marketplace_name = `None (),
+    .selector = #None,
+    .marketplace_name = #None,
     .json = false,
     .available = false,
   ];
   let scanned: PluginFactsResult = scan_plugin_facts_from(args, initial);
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
-    if let `Some _ = facts.selector {
-      `Err "plugin list does not accept a plugin selector"
-    } else if facts.available {
-      if facts.json {
+  if let #Err message = scanned then
+    #Err message
+  else let #Ok facts = scanned then
+    if let #Some _ = facts.selector then
+      #Err "plugin list does not accept a plugin selector"
+    else facts.available then
+      if facts.json then
         let options: PluginListOptions = [
           .marketplace_name = facts.marketplace_name,
           .json = facts.json,
           .available = facts.available,
         ];
-        `Ok (`PluginList options);
-      } else {
-        `Err "--available requires --json"
-      }
-    } else {
+        #Ok (#PluginList options);
+      else
+        #Err "--available requires --json"
+      end;
+    else
       let options: PluginListOptions = [
         .marketplace_name = facts.marketplace_name,
         .json = facts.json,
         .available = facts.available,
       ];
-      `Ok (`PluginList options);
-    }
-  } else {
-    `Err "plugin list scanner returned an unknown result"
-  }
-};
+      #Ok (#PluginList options);
+    end;
+  else
+    #Err "plugin list scanner returned an unknown result"
+  end;
+end;
 
-let rec scan_marketplace_add_from: [PluginArgs, MarketplaceAddFacts] -> MarketplaceAddFactsResult =
+let rec scan_marketplace_add_from: (PluginArgs, MarketplaceAddFacts) -> MarketplaceAddFactsResult =
   (
     args: PluginArgs,
     facts: MarketplaceAddFacts,
-  ) => {
-    if let `Cons node = args {
+  ) => do
+    if let #Cons node = args then
       let [argument, tail] = node;
-      if argument == "--ref" {
-        if let `Cons value_node = tail {
+      if argument == "--ref" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
-          scan_marketplace_add_from(remaining, facts <& { .ref_name = `Some value })
-        } else {
-          `Err "missing value for --ref"
-        }
-      } else if argument == "--sparse" {
-        if let `Cons value_node = tail {
+          scan_marketplace_add_from(remaining, facts <& { .ref_name = #Some value })
+        else
+          #Err "missing value for --ref"
+        end;
+      else argument == "--sparse" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
           scan_marketplace_add_from(
             remaining,
             facts <& { .sparse_paths_reversed = texts.prepend(value, facts.sparse_paths_reversed) },
           )
-        } else {
-          `Err "missing value for --sparse"
-        }
-      } else if argument == "--json" {
+        else
+          #Err "missing value for --sparse"
+        end;
+      else argument == "--json" then
         scan_marketplace_add_from(tail, facts <& { .json = true })
-      } else if text_starts_with(argument, "-") {
-        `Err (text_append("unknown marketplace add option: ", argument))
-      } else if let `None () = facts.source {
-        scan_marketplace_add_from(tail, facts <& { .source = `Some argument })
-      } else {
-        `Err "plugin marketplace add accepts exactly one source"
-      }
-    } else {
-      `Ok facts
-    }
-  };
+      else text_starts_with(argument, "-") then
+        #Err (text_append("unknown marketplace add option: ", argument))
+      else let #None = facts.source then
+        scan_marketplace_add_from(tail, facts <& { .source = #Some argument })
+      else
+        #Err "plugin marketplace add accepts exactly one source"
+      end;
+    else
+      #Ok facts
+    end;
+  end;
 
-let parse_marketplace_add: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
+let parse_marketplace_add: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
   let initial: MarketplaceAddFacts = [
-    .source = `None (),
-    .ref_name = `None (),
+    .source = #None,
+    .ref_name = #None,
     .sparse_paths_reversed = texts.empty(),
     .json = false,
   ];
   let scanned: MarketplaceAddFactsResult = scan_marketplace_add_from(args, initial);
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
-    if let `Some source = facts.source {
+  if let #Err message = scanned then
+    #Err message
+  else let #Ok facts = scanned then
+    if let #Some source = facts.source then
       let options: MarketplaceAddOptions = [
         .source = source,
         .ref_name = facts.ref_name,
         .sparse_paths = texts.reverse(facts.sparse_paths_reversed),
         .json = facts.json,
       ];
-      `Ok (`MarketplaceAdd options);
-    } else {
-      `Err "plugin marketplace add requires a source"
-    }
-  } else {
-    `Err "marketplace add scanner returned an unknown result"
-  }
-};
+      #Ok (#MarketplaceAdd options);
+    else
+      #Err "plugin marketplace add requires a source"
+    end;
+  else
+    #Err "marketplace add scanner returned an unknown result"
+  end;
+end;
 
-let rec scan_marketplace_from: [PluginArgs, MarketplaceFacts] -> MarketplaceFactsResult = (
+let rec scan_marketplace_from: (PluginArgs, MarketplaceFacts) -> MarketplaceFactsResult = (
   args: PluginArgs,
   facts: MarketplaceFacts,
-) => {
-  if let `Cons node = args {
+) => do
+  if let #Cons node = args then
     let [argument, tail] = node;
-    if argument == "--json" {
+    if argument == "--json" then
       scan_marketplace_from(tail, facts <& { .json = true })
-    } else if text_starts_with(argument, "-") {
-      `Err (text_append("unknown marketplace option: ", argument))
-    } else if let `None () = facts.marketplace_name {
-      scan_marketplace_from(tail, facts <& { .marketplace_name = `Some argument })
-    } else {
-      `Err "marketplace command accepts at most one name"
-    }
-  } else {
-    `Ok facts
-  }
-};
+    else text_starts_with(argument, "-") then
+      #Err (text_append("unknown marketplace option: ", argument))
+    else let #None = facts.marketplace_name then
+      scan_marketplace_from(tail, facts <& { .marketplace_name = #Some argument })
+    else
+      #Err "marketplace command accepts at most one name"
+    end;
+  else
+    #Ok facts
+  end;
+end;
 
-let parse_marketplace_list: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
-  let initial: MarketplaceFacts = [.marketplace_name = `None (), .json = false];
+let parse_marketplace_list: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
+  let initial: MarketplaceFacts = [.marketplace_name = #None, .json = false];
   let scanned: MarketplaceFactsResult = scan_marketplace_from(args, initial);
-  if let `Err message = scanned { `Err message } else if let `Ok facts = scanned {
-    if let `Some _ = facts.marketplace_name { `Err "plugin marketplace list does not accept a name"
-    } else { `Ok (
-      `MarketplaceList facts.json
-    ) }
-  } else { `Err "marketplace list scanner returned an unknown result" }
-};
+  if let #Err message = scanned then #Err message else let #Ok facts = scanned then
+    if let #Some _ = facts.marketplace_name then #Err "plugin marketplace list does not accept a name"
+    else #Ok (
+      #MarketplaceList facts.json
+    ) end;
+  else #Err "marketplace list scanner returned an unknown result" end;
+end;
 
-let parse_marketplace_upgrade: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
-  let initial: MarketplaceFacts = [.marketplace_name = `None (), .json = false];
+let parse_marketplace_upgrade: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
+  let initial: MarketplaceFacts = [.marketplace_name = #None, .json = false];
   let scanned: MarketplaceFactsResult = scan_marketplace_from(args, initial);
-  if let `Err message = scanned { `Err message } else if let `Ok facts = scanned {
+  if let #Err message = scanned then #Err message else let #Ok facts = scanned then
     let options: MarketplaceUpgradeOptions = [
       .marketplace_name = facts.marketplace_name,
       .json = facts.json,
     ];
-    `Ok (`MarketplaceUpgrade options);
-  } else { `Err "marketplace upgrade scanner returned an unknown result" }
-};
+    #Ok (#MarketplaceUpgrade options);
+  else #Err "marketplace upgrade scanner returned an unknown result" end;
+end;
 
-let parse_marketplace_remove: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
-  let initial: MarketplaceFacts = [.marketplace_name = `None (), .json = false];
+let parse_marketplace_remove: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
+  let initial: MarketplaceFacts = [.marketplace_name = #None, .json = false];
   let scanned: MarketplaceFactsResult = scan_marketplace_from(args, initial);
-  if let `Err message = scanned { `Err message } else if let `Ok facts = scanned {
-    if let `Some marketplace_name = facts.marketplace_name {
+  if let #Err message = scanned then #Err message else let #Ok facts = scanned then
+    if let #Some marketplace_name = facts.marketplace_name then
       let options: MarketplaceRemoveOptions = [
         .marketplace_name = marketplace_name,
         .json = facts.json,
       ];
-      `Ok (`MarketplaceRemove options);
-    } else { `Err "plugin marketplace remove requires a name" }
-  } else { `Err "marketplace remove scanner returned an unknown result" }
-};
+      #Ok (#MarketplaceRemove options);
+    else #Err "plugin marketplace remove requires a name" end;
+  else #Err "marketplace remove scanner returned an unknown result" end;
+end;
 
-let parse_marketplace_options: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
-  if let `Cons node = args {
+let parse_marketplace_options: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
+  if let #Cons node = args then
     let [command, remaining] = node;
-    if command == "add" { parse_marketplace_add remaining } else if command == "list" {
-      parse_marketplace_list remaining } else if command == "upgrade" { parse_marketplace_upgrade remaining } else if command == "remove" { parse_marketplace_remove
-      remaining } else { `Err (
-        text_append("unknown plugin marketplace command: ", command)
-      ) }
-  } else { `Err "plugin marketplace requires add, list, upgrade, or remove" }
-};
+    if command == "add" then parse_marketplace_add remaining else command == "list" then
+      parse_marketplace_list remaining else command
+          == "upgrade" then parse_marketplace_upgrade remaining else command
+              == "remove" then parse_marketplace_remove
+                remaining else #Err (
+                  text_append("unknown plugin marketplace command: ", command)
+                ) end;
+          else #Err "plugin marketplace requires add, list, upgrade, or remove" end;
+      end;
 
-let parse_plugin_options: PluginArgs -> PluginCommandResult = (args: PluginArgs) => {
-  if let `Cons node = args {
-    let [command, remaining] = node;
-    if command == "add" { parse_plugin_add remaining } else if command == "list" { parse_plugin_list
-      remaining } else if command == "marketplace" { parse_marketplace_options remaining } else if command == "remove" { parse_plugin_remove remaining } else { `Err (
-      text_append("unknown plugin command: ", command)
-    ) }
-  } else { `Err "plugin requires add, list, marketplace, or remove" }
-};
+    let parse_plugin_options: PluginArgs -> PluginCommandResult = (args: PluginArgs) => do
+      if let #Cons node = args then
+        let [command, remaining] = node;
+        if command == "add" then parse_plugin_add remaining else command
+            == "list" then parse_plugin_list
+              remaining else command
+                  == "marketplace" then parse_marketplace_options remaining else command
+                      == "remove" then parse_plugin_remove remaining else #Err (
+                        text_append("unknown plugin command: ", command)
+                      ) end;
+                  else #Err "plugin requires add, list, marketplace, or remove" end;
+              end;
 
-return {
-  .parse_marketplace_add,
-  .parse_marketplace_list,
-  .parse_marketplace_remove,
-  .parse_marketplace_upgrade,
-  .parse_plugin_add,
-  .parse_plugin_list,
-  .parse_plugin_options,
-  .parse_plugin_remove,
-};
+          return {
+            .parse_marketplace_add,
+            .parse_marketplace_list,
+            .parse_marketplace_remove,
+            .parse_marketplace_upgrade,
+            .parse_plugin_add,
+            .parse_plugin_list,
+            .parse_plugin_options,
+            .parse_plugin_remove,
+          };

@@ -17,4 +17,4 @@ let matches = texts.length(command) == 2 && texts.nth_or("", 0, command) == "car
   command,
 ) == "fmt";
 
-return { .score = if matches { 5 } else { 0 } };
+return { .score = if matches then 5 else 0 end };

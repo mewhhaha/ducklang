@@ -3,12 +3,12 @@ const { .get } = import "duck:prelude/runtime" ();
 let message = "answer";
 let answer = 0;
 
-if (let 'a' = @cast(get(message, 0), Char)) {
+if (let 'a' = @cast(get(message, 0), Char)) then
   answer = 42
-}
+end;
 
-if true && !false {
+if true && !false then
   answer
-} else {
+else
   0
-}
+end;

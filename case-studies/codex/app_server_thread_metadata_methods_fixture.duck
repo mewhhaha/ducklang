@@ -7,7 +7,7 @@ const { .decode_thread_metadata_update } = methods_module();
 type FixtureMethodResult = AppServerMethodDecodeResult
 
 let git_fields = json_object_empty();
-git_fields = json_object_prepend("originUrl", `Null (), git_fields)
+git_fields = json_object_prepend("originUrl", #Null, git_fields)
 git_fields = json_object_prepend("sha", json_string "  abc123  ", git_fields)
 let fields = json_object_empty();
 fields = json_object_prepend("gitInfo", json_object git_fields, fields)
@@ -15,23 +15,26 @@ fields = json_object_prepend("threadId", json_string "thread-1", fields)
 
 let score = 0;
 let decoded: FixtureMethodResult = decode_thread_metadata_update(json_object fields);
-if let `MethodOk method = decoded {
-  if let `ThreadMetadataUpdate params = method {
+if let #MethodOk method = decoded then
+  if let #ThreadMetadataUpdate params = method then
     let [thread_id, patch] = params;
-    let sha_valid = if let `Set value = patch.sha { value == "abc123" } else { false };
-    let branch_valid = if let `Keep () = patch.branch { true } else { false };
-    let origin_valid = if let `Clear () = patch.origin_url { true } else { false };
-    if thread_id == "thread-1" && sha_valid && branch_valid && origin_valid { score = score + 1 }
-  }
-}
+    let sha_valid = if let #Set value = patch.sha then value == "abc123" else false end;
+    let branch_valid = if let #Keep = patch.branch then true else false end;
+    let origin_valid = if let #Clear = patch.origin_url then true else false end;
+    if thread_id == "thread-1" && sha_valid && branch_valid && origin_valid then
+      score = score + 1 end;
+  end;
+end;
 
 let empty_fields = json_object_empty();
 empty_fields = json_object_prepend("gitInfo", json_object(json_object_empty()), empty_fields)
 empty_fields = json_object_prepend("threadId", json_string "thread-1", empty_fields)
 let empty_result: FixtureMethodResult = decode_thread_metadata_update(json_object empty_fields);
-if let `MethodError reason = empty_result {
-  if reason == "gitInfo must include at least one field" { score = score + 10 }
-}
+if let #MethodError reason = empty_result then
+  if reason == "gitInfo must include at least one field" then
+    score = score + 10
+  end;
+end;
 
 let invalid_git = json_object_empty();
 invalid_git = json_object_prepend("branch", json_string "   ", invalid_git)
@@ -39,8 +42,10 @@ let invalid_fields = json_object_empty();
 invalid_fields = json_object_prepend("gitInfo", json_object invalid_git, invalid_fields)
 invalid_fields = json_object_prepend("threadId", json_string "thread-1", invalid_fields)
 let invalid_result: FixtureMethodResult = decode_thread_metadata_update(json_object invalid_fields);
-if let `MethodError reason = invalid_result {
-  if reason == "gitInfo.branch must not be empty" { score = score + 100 }
-}
+if let #MethodError reason = invalid_result then
+  if reason == "gitInfo.branch must not be empty" then
+    score = score + 100
+  end;
+end;
 
 return { .score = score };

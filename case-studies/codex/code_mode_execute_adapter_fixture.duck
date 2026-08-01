@@ -11,46 +11,50 @@ let score = 0;
 let successful: FixtureInvocation = [
   .call_id = "call-ok",
   .tool_name = ["", "exec"],
-  .payload = `ExecuteCustomPayload "text('ok')",
-  .enabled_tools = `ExecuteToolsNil ()];
+  .payload = #ExecuteCustomPayload "text('ok')",
+  .enabled_tools = #ExecuteToolsNil];
 let successful_execution: FixtureExecution = [
   .invocation = successful,
   .turn_sub_id = "turn-sub",
-  .image_detail_policy = `OriginalDetailUnsupported ()];
+  .image_detail_policy = #OriginalDetailUnsupported];
 let successful_result = run_code_mode_execute successful_execution;
-if let `CodeModeExecuteCompleted completion = successful_result {
-  if let `RuntimeResult result = completion.response {
+if let #CodeModeExecuteCompleted completion = successful_result then
+  if let #RuntimeResult result = completion.response then
     let [cell_id, content_items, error] = result;
-    if cell_id == "cell-1" {
-      if let `RuntimeItemsCons node = content_items {
+    if cell_id == "cell-1" then
+      if let #RuntimeItemsCons node = content_items then
         let [content, _] = node;
-        if let `RuntimeInputText text = content {
-          if text == "done" {
-            if let `RuntimeErrorMissing () = error {
-              if let `WaitLimitMissing () = completion.token_limit {
-                if let `ElapsedMicroseconds elapsed = completion.elapsed {
-                  if elapsed == 150000i64 { score = score + 1 }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+        if let #RuntimeInputText text = content then
+          if text == "done" then
+            if let #RuntimeErrorMissing = error then
+              if let #WaitLimitMissing = completion.token_limit then
+                if let #ElapsedMicroseconds elapsed = completion.elapsed then
+                  if elapsed == 150000i64 then
+                    score = score + 1
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let failed: FixtureInvocation = [
   .call_id = "call-fail",
   .tool_name = ["", "exec"],
-  .payload = `ExecuteCustomPayload "text('fail')",
-  .enabled_tools = `ExecuteToolsNil ()];
+  .payload = #ExecuteCustomPayload "text('fail')",
+  .enabled_tools = #ExecuteToolsNil];
 let failed_execution: FixtureExecution = [
   .invocation = failed,
   .turn_sub_id = "turn-sub",
-  .image_detail_policy = `OriginalDetailUnsupported ()];
-if let `CodeModeExecuteRejected message = run_code_mode_execute failed_execution {
-  if message == "runtime unavailable" { score = score + 10 }
-}
+  .image_detail_policy = #OriginalDetailUnsupported];
+if let #CodeModeExecuteRejected message = run_code_mode_execute failed_execution then
+  if message == "runtime unavailable" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

@@ -1,7 +1,8 @@
 module () where
 
 const {} = import "./compact_model_fallback_types.duck" ();
-const { .compaction_implementation_tag, .compaction_reason_tag } = import "./compaction_tags.duck" ();
+const { .compaction_implementation_tag, .compaction_reason_tag } =
+  import "./compaction_tags.duck" ();
 
 type ModelFallbackError = CompactionModelError
 type ModelFallbackTextOption = CompactionFallbackTextOption
@@ -9,40 +10,40 @@ type ModelFallbackTelemetry = CompactionFallbackTelemetry
 type ModelFallbackReason = CompactionReason
 type ModelFallbackImplementation = CompactionImplementation
 
-const should_retry_with_current_model: ModelFallbackError -> Bool = error => {
-  if let `InvalidRequest _ = error {
+const should_retry_with_current_model: ModelFallbackError -> Bool = error => do
+  if let #InvalidRequest _ = error then
     true
-  } else if let `UnexpectedStatus _ = error {
+  else let #UnexpectedStatus _ = error then
     true
-  } else if let `ContextWindowExceeded () = error {
+  else let #ContextWindowExceeded = error then
     true
-  } else if let `UsageLimitReached _ = error {
+  else let #UsageLimitReached _ = error then
     true
-  } else if let `ServerOverloaded () = error {
+  else let #ServerOverloaded = error then
     true
-  } else if let `InternalServerError () = error {
+  else let #InternalServerError = error then
     true
-  } else if let `RetryLimit _ = error {
+  else let #RetryLimit _ = error then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const model_fallback_telemetry: [
+const model_fallback_telemetry: (
   Text,
   Text,
   ModelFallbackReason,
   ModelFallbackImplementation,
   ModelFallbackTextOption,
-] -> ModelFallbackTelemetry = (
+) -> ModelFallbackTelemetry = (
   previous_model,
   current_model,
   reason,
   implementation,
   fallback_error,
-) => {
-  let outcome = if let `None () = fallback_error { "succeeded" } else { "failed" };
+) => do
+  let outcome = if let #None = fallback_error then "succeeded" else "failed" end;
 
   [
     .metric = "codex.compaction.model_fallback",
@@ -55,7 +56,7 @@ const model_fallback_telemetry: [
     .fallback_error = fallback_error,
     .message = "previous-model compaction failed; retried with current model",
   ]
-};
+end;
 
 return {
   .should_retry_with_current_model,

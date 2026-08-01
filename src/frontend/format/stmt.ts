@@ -86,6 +86,10 @@ function format_stmt_without_attributes(
         }
       }
 
+      if (text.endsWith(";")) {
+        return text;
+      }
+
       return text + ";";
     }
 
@@ -105,6 +109,10 @@ function format_stmt_without_attributes(
 
     if (stmt.else_branch !== undefined) {
       text += " else " + format_expr(stmt.else_branch);
+    }
+
+    if (text.endsWith(";")) {
+      return text;
     }
 
     return text + ";";
@@ -190,12 +198,11 @@ function format_stmt_without_attributes(
     }
 
     return head + format_expr(stmt.start) + range_operator +
-      format_expr(stmt.end) + " by " + format_expr(stmt.step) + " " +
-      "{ " +
+      format_expr(stmt.end) + " by " + format_expr(stmt.step) + " do " +
       format_statement_sequence(
         stmt.body,
         (item) => format_stmt_with_expr(item, format_expr),
-      ) + " }";
+      ) + " end";
   }
 
   if (stmt.tag === "for_collection") {
@@ -230,22 +237,22 @@ function format_stmt_without_attributes(
       body = matching.body.statements.slice(0, -1);
     }
 
-    return head + "{ " + format_statement_sequence(
+    return head + "do " + format_statement_sequence(
       body,
       (item) => format_stmt_with_expr(item, format_expr),
-    ) + " }";
+    ) + " end";
   }
 
   if (stmt.tag === "if_stmt") {
-    return "if " + format_expr(stmt.cond) + " { " +
+    return "if " + format_expr(stmt.cond) + " then " +
       format_statement_sequence(
         stmt.body,
         (item) => format_stmt_with_expr(item, format_expr),
-      ) + " }";
+      ) + " end";
   }
 
   if (stmt.tag === "if_let_stmt") {
-    let pattern = "`" + stmt.case_name;
+    let pattern = "#" + stmt.case_name;
 
     if (stmt.value_name) {
       pattern += " " + format_binding_name(stmt.value_name);
@@ -253,11 +260,11 @@ function format_stmt_without_attributes(
       pattern += " _";
     }
 
-    return "if let " + pattern + " = " + format_expr(stmt.target) + " { " +
+    return "if let " + pattern + " = " + format_expr(stmt.target) + " then " +
       format_statement_sequence(
         stmt.body,
         (item) => format_stmt_with_expr(item, format_expr),
-      ) + " }";
+      ) + " end";
   }
 
   if (stmt.tag === "type_check") {

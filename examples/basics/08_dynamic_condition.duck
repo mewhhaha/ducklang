@@ -7,11 +7,11 @@ declare effect Input {
 declare Init { input: Input }
 
 flag <- Input.flag()
-let score = if flag {
+let score = if flag then
   10
-} else {
+else
   20
-};
+end;
 
 let result = score * 2 + 1;
 return { .result = result };

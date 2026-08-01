@@ -15,12 +15,14 @@ let input: FixtureArgs = args.prepend(
 let plan: FixturePlan = parse_cli input;
 let score = 0;
 
-if let `ManageAppServer command = plan {
-  if let `ProxyAppServer socket_path = command {
-    if let `Some path = socket_path {
-      if path == "codex.sock" { score = 1 }
-    }
-  }
-}
+if let #ManageAppServer command = plan then
+  if let #ProxyAppServer socket_path = command then
+    if let #Some path = socket_path then
+      if path == "codex.sock" then
+        score = 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

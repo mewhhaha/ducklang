@@ -14,58 +14,67 @@ let missing_arguments: FixtureInvocation = [
   .cell_id = "cell-1",
   .runtime_tool_call_id = "runtime-1",
   .tool_name = ["", "request_user_input"],
-  .tool_kind = `NestedFunction (),
-  .input = `None ()];
+  .tool_kind = #NestedFunction,
+  .input = #None];
 let missing_plan: FixturePlan = plan_code_mode_nested_tool missing_arguments;
-if let `DispatchNestedTool dispatch = missing_plan {
-  if dispatch.cell_id == "cell-1" && dispatch.runtime_tool_call_id == "runtime-1" && dispatch.call_id_prefix == "exec-" {
-    let [namespace, local_name] = dispatch.tool_name;
-    if namespace == "" && local_name == "request_user_input" {
-      if let `NestedFunctionPayload arguments = dispatch.payload {
-        if arguments == "{}" { score = score + 1 }
-      }
-    }
-  }
-}
+if let #DispatchNestedTool dispatch = missing_plan then
+  if dispatch.cell_id == "cell-1" && dispatch.runtime_tool_call_id == "runtime-1"
+    && dispatch.call_id_prefix == "exec-" then
+      let [namespace, local_name] = dispatch.tool_name;
+      if namespace == "" && local_name == "request_user_input" then
+        if let #NestedFunctionPayload arguments = dispatch.payload then
+          if arguments == "{}" then
+            score = score + 1
+          end;
+        end;
+      end;
+    end;
+end;
 
-let object_members: FixtureJsonObject = `Cons (
-  [["value", `Number "42"], `Cons ([["enabled", `Bool true], `Nil ()])]
+let object_members: FixtureJsonObject = #Cons (
+  [["value", #Number "42"], #Cons ([["enabled", #Bool true], #Nil])]
 );
-let object_input: FixtureJson = `Object object_members;
+let object_input: FixtureJson = #Object object_members;
 let function_call: FixtureInvocation = [
   .cell_id = "cell-2",
   .runtime_tool_call_id = "runtime-2",
   .tool_name = ["tools__", "lookup"],
-  .tool_kind = `NestedFunction (),
-  .input = `Some object_input];
-if let `DispatchNestedTool dispatch = plan_code_mode_nested_tool function_call {
-  if let `NestedFunctionPayload arguments = dispatch.payload {
-    if arguments == "{\"value\":42,\"enabled\":true}" { score = score + 10 }
-  }
-}
+  .tool_kind = #NestedFunction,
+  .input = #Some object_input];
+if let #DispatchNestedTool dispatch = plan_code_mode_nested_tool function_call then
+  if let #NestedFunctionPayload arguments = dispatch.payload then
+    if arguments == "{\"value\":42,\"enabled\":true}" then
+      score = score + 10
+    end;
+  end;
+end;
 
 let freeform_call: FixtureInvocation = [
   .cell_id = "cell-3",
   .runtime_tool_call_id = "runtime-3",
   .tool_name = ["", "apply_patch"],
-  .tool_kind = `NestedFreeform (),
-  .input = `Some (`String "*** Begin Patch")];
-if let `DispatchNestedTool dispatch = plan_code_mode_nested_tool freeform_call {
-  if let `NestedCustomPayload input = dispatch.payload {
-    if input == "*** Begin Patch" { score = score + 100 }
-  }
-}
+  .tool_kind = #NestedFreeform,
+  .input = #Some (#String "*** Begin Patch")];
+if let #DispatchNestedTool dispatch = plan_code_mode_nested_tool freeform_call then
+  if let #NestedCustomPayload input = dispatch.payload then
+    if input == "*** Begin Patch" then
+      score = score + 100
+    end;
+  end;
+end;
 
 let namespaced_exec: FixtureInvocation = [
   .cell_id = "cell-4",
   .runtime_tool_call_id = "runtime-4",
   .tool_name = ["tools__", "exec"],
-  .tool_kind = `NestedFreeform (),
-  .input = `Some (`String "nested")];
-if let `DispatchNestedTool dispatch = plan_code_mode_nested_tool namespaced_exec {
-  if let `NestedCustomPayload input = dispatch.payload {
-    if input == "nested" { score = score + 1000 }
-  }
-}
+  .tool_kind = #NestedFreeform,
+  .input = #Some (#String "nested")];
+if let #DispatchNestedTool dispatch = plan_code_mode_nested_tool namespaced_exec then
+  if let #NestedCustomPayload input = dispatch.payload then
+    if input == "nested" then
+      score = score + 1000
+    end;
+  end;
+end;
 
 return { .score = score };

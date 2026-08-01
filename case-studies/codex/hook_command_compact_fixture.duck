@@ -6,10 +6,13 @@ const { .evaluate_hook_command } = hook_command_module();
 
 type FixtureResult = HookCommandResult
 
-let result: FixtureResult = [`None (), `Some 0, "{\"continue\":false,\"stopReason\":\"pause\"}", ""];
-let [status, _, _, _, _, _, _] = evaluate_hook_command(`PreCompact (), result);
+let result: FixtureResult =
+  [#None, #Some 0, "{\"continue\":false,\"stopReason\":\"pause\"}", ""];
+let [status, _, _, _, _, _, _] = evaluate_hook_command(#PreCompact, result);
 let score: I32 = 0;
 
-if let `Stopped () = status { score = 1 }
+if let #Stopped = status then
+  score = 1
+end;
 
 return { .score = score };

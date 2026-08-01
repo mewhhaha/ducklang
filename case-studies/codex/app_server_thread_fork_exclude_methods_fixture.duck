@@ -11,10 +11,10 @@ let fields = json_object_empty();
 fields = json_object_prepend("excludeTurns", json_bool true, fields)
 fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let decoded: FixtureResult = decode_thread_fork(json_object fields);
-let score = if let `MethodOk method = decoded {
-  if let `ThreadFork params = method {
-    if let `TurnsExcluded () = params.turns { 1 } else { 0 }
-  } else { 0 }
-} else { 0 };
+let score = if let #MethodOk method = decoded then
+  if let #ThreadFork params = method then
+    if let #TurnsExcluded = params.turns then 1 else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

@@ -7,51 +7,58 @@ const { .wait_for_environment_tool_definitions, .wait_for_environment_tool_specs
 type FixtureDefinitions = ToolDefinitions
 type FixtureSpecs = ToolSpecs
 
-let definitions_score: I32 = scratch {
+let definitions_score: I32 = scratch do
   let score = 0;
   let disabled: FixtureDefinitions = wait_for_environment_tool_definitions false;
-  if let `Nil () = disabled { score = score + 1 }
+  if let #Nil = disabled then
+    score = score + 1
+  end;
 
   let enabled: FixtureDefinitions = wait_for_environment_tool_definitions true;
-  if let `Cons node = enabled {
+  if let #Cons node = enabled then
     let [definition, tail] = node;
     let [name, exposure, tool_handler, payload, parallel, waits] = definition;
     let [namespace, local_name] = name;
-    if namespace == "" && local_name == "wait_for_environment" && !(parallel) && !(waits) {
-      if let `Direct () = exposure {
-        if let `WaitForEnvironment () = tool_handler {
-          if let `FunctionPayload () = payload {
-            if let `Nil () = tail { score = score + 10 }
-          }
-        }
-      }
-    }
-  }
+    if namespace == "" && local_name == "wait_for_environment" && !(parallel) && !(waits) then
+      if let #Direct = exposure then
+        if let #WaitForEnvironment = tool_handler then
+          if let #FunctionPayload = payload then
+            if let #Nil = tail then
+              score = score + 10
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
 
   score
-};
+end;
 
-let specs_score: I32 = scratch {
+let specs_score: I32 = scratch do
   let score = 0;
   let specs: FixtureSpecs = wait_for_environment_tool_specs true;
-  if let `Cons node = specs {
+  if let #Cons node = specs then
     let [spec, tail] = node;
     let [_, kind, description, parameters, output, strict] = spec;
     let expected_description =
       "Wait for a selected execution environment marked as `starting` to become available. Use this when the current task needs that environment's files, commands, or installed capabilities. Do not wait if the task can be completed using tools already available, such as connectors. Waiting may take several minutes and blocks other tool calls. If startup fails, continue without that environment.";
     let expected_parameters =
       "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"The exact environment ID marked as `starting` in `<environment_context>`.\"}},\"required\":[\"environment_id\"],\"additionalProperties\":false}";
-    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
-    if description == expected_description && parameters == expected_parameters && output_valid && !(
-      strict
-    ) {
-      if let `FunctionSpec () = kind {
-        if let `Nil () = tail { score = score + 100 }
-      }
-    }
-  }
+    let output_valid = if let #ToolOutputSchemaMissing = output then true else false end;
+    if description == expected_description && parameters == expected_parameters && output_valid
+      && !(
+        strict
+      ) then
+        if let #FunctionSpec = kind then
+          if let #Nil = tail then
+            score = score + 100
+          end;
+        end;
+      end;
+  end;
 
   score
-};
+end;
 
 return { .score = definitions_score + specs_score };

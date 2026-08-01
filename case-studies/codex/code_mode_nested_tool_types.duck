@@ -6,8 +6,8 @@ const {} = import "./original_image_detail_types.duck" ();
 const {} = import "./tool_types.duck" ();
 
 type CodeModeNestedToolKind =
-  | `NestedFunction Unit
-  | `NestedFreeform Unit
+  | #NestedFunction
+  | #NestedFreeform
 
 type CodeModeNestedToolInput = Option Json
 
@@ -20,8 +20,8 @@ type CodeModeNestedToolInvocation = struct {
 }
 
 type CodeModeNestedToolPayload =
-  | `NestedFunctionPayload Text
-  | `NestedCustomPayload Text
+  | #NestedFunctionPayload Text
+  | #NestedCustomPayload Text
 
 type CodeModeNestedToolDispatch = struct {
   .cell_id = Text,
@@ -32,19 +32,19 @@ type CodeModeNestedToolDispatch = struct {
 }
 
 type CodeModeNestedToolPlan =
-  | `DispatchNestedTool CodeModeNestedToolDispatch
-  | `RejectNestedTool Text
+  | #DispatchNestedTool CodeModeNestedToolDispatch
+  | #RejectNestedTool Text
 
 type CodeModeResultBody =
-  | `ResultTextBody Text
-  | `ResultContentBody FunctionOutputContentItems
+  | #ResultTextBody Text
+  | #ResultContentBody FunctionOutputContentItems
 
 type CodeModeResultInput =
-  | `ResultMessage FunctionOutputContentItems
-  | `ResultFunctionCall CodeModeResultBody
-  | `ResultCustomCall CodeModeResultBody
-  | `ResultToolSearch JsonArray
-  | `ResultMcpCall Json
-  | `ResultJsonToolOutput Json
+  | #ResultMessage FunctionOutputContentItems
+  | #ResultFunctionCall CodeModeResultBody
+  | #ResultCustomCall CodeModeResultBody
+  | #ResultToolSearch JsonArray
+  | #ResultMcpCall Json
+  | #ResultJsonToolOutput Json
 
 return {};

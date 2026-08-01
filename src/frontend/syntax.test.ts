@@ -82,6 +82,38 @@ Deno.test("strict tokenize retains its filtered stream and comment option", () =
   assert_throws(() => tokenize('"\\q"'), "Unsupported string escape: \\q");
 });
 
+Deno.test("scanner expands template literals into typed expression tokens", () => {
+  const text = 'render `hello {{reader}} {name + "!"}`';
+  const syntax = scan_source(text);
+
+  assert_equals(reconstruct(text), text);
+  assert_equals(syntax.diagnostics, []);
+  assert_equals(
+    tokenize(text).map((token) => [token.kind, token.text]),
+    [
+      ["name", "render"],
+      ["template_start", "`"],
+      ["template_text", "hello {reader} "],
+      ["template_interpolation_start", "{"],
+      ["name", "name"],
+      ["symbol", "+"],
+      ["string", "!"],
+      ["template_interpolation_end", "}"],
+      ["template_text", ""],
+      ["template_end", "`"],
+      ["eof", ""],
+    ],
+  );
+  assert_throws(
+    () => tokenize("`missing } brace`"),
+    "Unescaped `}` in template literal; write `}}`",
+  );
+  assert_throws(
+    () => tokenize("`empty {} hole`"),
+    "Template interpolation requires an expression",
+  );
+});
+
 Deno.test("scanner keeps category operators as single symbols", () => {
   assert_equals(
     tokenize(

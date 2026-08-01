@@ -14,20 +14,20 @@ type PlanToolSpecs = ToolSpecs
 
 const update_plan_tool_name: () -> PlanToolName = () => ["", "update_plan"];
 
-const update_plan_tool_definitions: () -> PlanToolDefinitions = () => {
+const update_plan_tool_definitions: () -> PlanToolDefinitions = () => do
   let definition: PlanToolDefinition = [
     update_plan_tool_name(),
-    `Direct (),
-    `UpdatePlan (),
-    `FunctionPayload (),
+    #Direct,
+    #UpdatePlan,
+    #FunctionPayload,
     false,
     false,
   ];
-  let empty: PlanToolDefinitions = `Nil ();
-  `Cons ([definition, empty] as PlanToolDefinitionNode)
-};
+  let empty: PlanToolDefinitions = #Nil;
+  #Cons ([definition, empty] as PlanToolDefinitionNode)
+end;
 
-const update_plan_tool_specs: () -> PlanToolSpecs = () => {
+const update_plan_tool_specs: () -> PlanToolSpecs = () => do
   let description_tail = text_append(
     "Provide an optional explanation and a list of plan items, each with a step and status.\n",
     "At most one step can be in_progress at a time.\n",
@@ -39,15 +39,15 @@ const update_plan_tool_specs: () -> PlanToolSpecs = () => {
   );
   let spec: PlanToolSpec = [
     update_plan_tool_name(),
-    `FunctionSpec (),
+    #FunctionSpec,
     description,
     parameters,
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
     false,
   ];
-  let empty: PlanToolSpecs = `Nil ();
-  `Cons ([spec, empty] as PlanToolSpecNode)
-};
+  let empty: PlanToolSpecs = #Nil;
+  #Cons ([spec, empty] as PlanToolSpecNode)
+end;
 
 return {
   .update_plan_tool_definitions,

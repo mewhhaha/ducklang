@@ -7,19 +7,19 @@ const { .single_image_processing_fixture_result } =
 
 type ExtraFixtureResponses = HistoryItems
 
-const verify_image_preparation_extra_fixture: () -> I32 = () => {
-  let responses: ExtraFixtureResponses = `Nil ();
+const verify_image_preparation_extra_fixture: () -> I32 = () => do
+  let responses: ExtraFixtureResponses = #Nil;
   let results = single_image_processing_fixture_result(0, "data:image/png;base64,AA==");
   let rewrite = apply_image_processing_results(responses, results);
-  if let `RejectedImageRewrite failure = rewrite {
-    if let `ExtraImageProcessingResults count = failure {
-      if count == 1 { 1 } else { 0 }
-    } else {
+  if let #RejectedImageRewrite failure = rewrite then
+    if let #ExtraImageProcessingResults count = failure then
+      if count == 1 then 1 else 0 end;
+    else
       0
-    }
-  } else {
+    end;
+  else
     0
-  }
-};
+  end;
+end;
 
 return { .verify_image_preparation_extra_fixture };

@@ -11,11 +11,13 @@ const args = comptime list Text;
 let score = 0;
 
 let defaults: FixtureResult = parse_responses_proxy_options(args.empty());
-if let `Ok command = defaults {
-  if let `RunResponsesProxy options = command {
-    if options.upstream_url == "https://api.openai.com/v1/responses" { score = score + 1 }
-  }
-}
+if let #Ok command = defaults then
+  if let #RunResponsesProxy options = command then
+    if options.upstream_url == "https://api.openai.com/v1/responses" then
+      score = score + 1
+    end;
+  end;
+end;
 
 let input: FixtureArgs = args.prepend(
   "--port",
@@ -40,23 +42,26 @@ let input: FixtureArgs = args.prepend(
   ),
 );
 let planned: FixtureResult = parse_responses_proxy_options input;
-if let `Ok command = planned {
-  if let `RunResponsesProxy options = command {
-    if let `Some port = options.port {
-      if let `Some server_info = options.server_info {
-        if let `Some dump_dir = options.dump_dir {
-          if port == 4500i64 && server_info == "server.json" && options.http_shutdown && options.upstream_url == "https://example.com/responses" && dump_dir == "dumps" {
-            score = score + 10
-          }
-        }
-      }
-    }
-  }
-}
+if let #Ok command = planned then
+  if let #RunResponsesProxy options = command then
+    if let #Some port = options.port then
+      if let #Some server_info = options.server_info then
+        if let #Some dump_dir = options.dump_dir then
+          if port == 4500i64 && server_info == "server.json" && options.http_shutdown
+            && options.upstream_url == "https://example.com/responses" && dump_dir == "dumps" then
+              score = score + 10
+            end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_responses_proxy_options(
   args.prepend("--port", args.singleton("65536"))
 );
-if let `Err _ = invalid { score = score + 100 }
+if let #Err _ = invalid then
+  score = score + 100
+end;
 
 return { .score = score };

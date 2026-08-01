@@ -10,30 +10,32 @@ type FixtureFileMutation = TurnDiffFileMutation
 type FixtureTextOption = TurnDiffTextOption
 type FixtureUpdate = TurnDiffUpdate
 
-const verify_turn_diff_same_content_overwrite_fixture: () -> I32 = () => {
-  let destination: FixtureTextOption = `Some "b.txt";
-  let overwritten: FixtureTextOption = `Some "same\n";
+const verify_turn_diff_same_content_overwrite_fixture: () -> I32 = () => do
+  let destination: FixtureTextOption = #Some "b.txt";
+  let overwritten: FixtureTextOption = #Some "same\n";
   let update: FixtureUpdate = [
     .move_path = destination,
     .old_content = "same\n",
     .overwritten_move_content = overwritten,
     .new_content = "same\n",
   ];
-  let file_mutation: FixtureFileMutation = `TurnDiffUpdate update;
+  let file_mutation: FixtureFileMutation = #TurnDiffUpdate update;
   let mutation: FixtureMutation = [.path = "a.txt", .mutation = file_mutation];
   let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
 
   let score = 0;
   let changes = turn_diff_net_changes state;
-  if let `Cons node = changes {
+  if let #Cons node = changes then
     let [change, tail] = node;
-    if let `TurnDiffDeleted deleted = change {
-      if deleted.path.path == "a.txt" && deleted.content == "same\n" {
-        if let `Nil () = tail { score = score + 1 }
-      }
-    }
-  }
+    if let #TurnDiffDeleted deleted = change then
+      if deleted.path.path == "a.txt" && deleted.content == "same\n" then
+        if let #Nil = tail then
+          score = score + 1
+        end;
+      end;
+    end;
+  end;
   score
-};
+end;
 
 return { .verify_turn_diff_same_content_overwrite_fixture };

@@ -9,29 +9,30 @@ type FixtureTextOption = AgentTextOption
 type FixtureStatus = AgentStatus
 
 let score = 0;
-let completed_message: FixtureTextOption = `Some "finished";
-let completed: FixtureStatus = `Completed completed_message;
+let completed_message: FixtureTextOption = #Some "finished";
+let completed: FixtureStatus = #Completed completed_message;
 let rendered = format_inter_agent_completion_message("/root", "/root/worker", completed);
 
-if let `Some message = rendered {
-  if message == "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nfinished" {
-    score = score + 1
-  }
-}
+if let #Some message = rendered then
+  if message
+    == "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nfinished" then
+      score = score + 1
+    end;
+end;
 
-let running: FixtureStatus = `Running ();
-if let `None () = format_inter_agent_completion_message("/root", "/root/worker", running) {
+let running: FixtureStatus = #Running;
+if let #None = format_inter_agent_completion_message("/root", "/root/worker", running) then
   score = score + 10
-}
+end;
 
-let nickname: FixtureTextOption = `Some "reviewer";
-let empty_nickname: FixtureTextOption = `Some "";
+let nickname: FixtureTextOption = #Some "reviewer";
+let empty_nickname: FixtureTextOption = #Some "";
 if format_subagent_context_line("/root/worker",
   nickname) == "- /root/worker: reviewer" && format_subagent_context_line(
     "/root/worker",
     empty_nickname,
-  ) == "- /root/worker" {
+  ) == "- /root/worker" then
     score = score + 100
-  }
+  end;
 
 return { .score = score };

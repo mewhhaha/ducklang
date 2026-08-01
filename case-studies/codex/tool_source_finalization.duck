@@ -6,19 +6,19 @@ const {} = import "./tool_types.duck" ();
 type FinalizationDefinition = [ToolName, ToolExposure, ToolHandler, ToolPayloadKind, Bool, Bool]
 type FinalizationDefinitionNode = [FinalizationDefinition, FinalizationDefinitions]
 type FinalizationDefinitions =
-  | `Nil Unit
-  | `Cons FinalizationDefinitionNode
+  | #Nil
+  | #Cons FinalizationDefinitionNode
 
 type ToolSourceTextNode = [Text, ToolSourceTexts]
 type ToolSourceTexts =
-  | `Nil Unit
-  | `Cons ToolSourceTextNode
+  | #Nil
+  | #Cons ToolSourceTextNode
 
 type ToolSourceSearchName = [Text, Text]
 type ToolSourceSearchNameNode = [ToolSourceSearchName, ToolSourceSearchNames]
 type ToolSourceSearchNames =
-  | `Nil Unit
-  | `Cons ToolSourceSearchNameNode
+  | #Nil
+  | #Cons ToolSourceSearchNameNode
 
 type ToolSourceFinalizationFacts = struct {
   .search_tool_enabled = Bool,
@@ -26,73 +26,75 @@ type ToolSourceFinalizationFacts = struct {
   .direct_model_only_namespaces = ToolSourceTexts,
 }
 
-let rec append_tool_definitions: [FinalizationDefinitions, FinalizationDefinitions] ->
+let rec append_tool_definitions: (FinalizationDefinitions, FinalizationDefinitions) ->
   FinalizationDefinitions = (
     first,
     second,
-  ) => {
-    if let `Cons node = first {
+  ) => do
+    if let #Cons node = first then
       let [definition, remaining] = node;
-      `Cons ([definition, append_tool_definitions(remaining, second)])
-    } else {
+      #Cons ([definition, append_tool_definitions(remaining, second)])
+    else
       second
-    }
-  };
+    end;
+  end;
 
-const namespace_is_direct_model_only: [Text, ToolSourceTexts] -> Bool = (
+const namespace_is_direct_model_only: (Text, ToolSourceTexts) -> Bool = (
   namespace,
   direct_model_only_namespaces,
-) => {
-  if namespace == "" {
+) => do
+  if namespace == "" then
     return false;
-  }
+  end;
 
   let current = direct_model_only_namespaces;
   let found = false;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [candidate, tail] = node;
-      if candidate == namespace {
+      if candidate == namespace then
         found = true
         done = true
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
   found
-};
+end;
 
-const overridden_exposure: [ToolName, ToolExposure, ToolSourceTexts] -> ToolExposure = (
+const overridden_exposure: (ToolName, ToolExposure, ToolSourceTexts) -> ToolExposure = (
   name,
   exposure,
   direct_model_only_namespaces,
-) => {
+) => do
   let [namespace, _] = name;
-  if !(namespace_is_direct_model_only(namespace, direct_model_only_namespaces)) {
+  if !(namespace_is_direct_model_only(namespace, direct_model_only_namespaces)) then
     return exposure;
-  }
+  end;
 
-  if let `Direct () = exposure {
-    `DirectModelOnly ()
-  } else if let `Deferred () = exposure {
-    `DirectModelOnly ()
-  } else {
+  if let #Direct = exposure then
+    #DirectModelOnly
+  else let #Deferred = exposure then
+    #DirectModelOnly
+  else
     exposure
-  }
-};
+  end;
+end;
 
-let rec apply_direct_model_only_namespace_overrides: [FinalizationDefinitions, ToolSourceTexts] ->
+let rec apply_direct_model_only_namespace_overrides: (FinalizationDefinitions, ToolSourceTexts) ->
   FinalizationDefinitions = (
     definitions,
     direct_model_only_namespaces,
-  ) => {
-    if let `Cons node = definitions {
+  ) => do
+    if let #Cons node = definitions then
       let [definition, tail] = node;
       let [name, exposure, tool_handler, payload, supports_parallel, waits_for_cancellation] =
         definition;
@@ -104,97 +106,101 @@ let rec apply_direct_model_only_namespace_overrides: [FinalizationDefinitions, T
         supports_parallel,
         waits_for_cancellation,
       ];
-      `Cons (
+      #Cons (
         [
           overridden,
           apply_direct_model_only_namespace_overrides(tail, direct_model_only_namespaces),
         ]
       )
-    } else {
-      `Nil ()
-    }
-  };
+    else
+      #Nil
+    end;
+  end;
 
-const tool_name_is_searchable: [ToolName, ToolSourceSearchNames] -> Bool = (name,
-  searchable_names) => {
+const tool_name_is_searchable: (ToolName, ToolSourceSearchNames) -> Bool = (name,
+  searchable_names) => do
     let [namespace, local_name] = name;
     let current = searchable_names;
     let found = false;
     let done = false;
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [candidate, tail] = node;
         let [candidate_namespace, candidate_local_name] = candidate;
-        if candidate_namespace == namespace && candidate_local_name == local_name {
+        if candidate_namespace == namespace && candidate_local_name == local_name then
           found = true
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
     found
-  };
+  end;
 
-const has_searchable_deferred_tool: [FinalizationDefinitions, ToolSourceSearchNames] -> Bool = (
+const has_searchable_deferred_tool: (FinalizationDefinitions, ToolSourceSearchNames) -> Bool = (
   definitions,
   searchable_names,
-) => {
+) => do
   let current = definitions;
   let found = false;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [definition, tail] = node;
       let [name, exposure, _, _, _, _] = definition;
-      if let `Deferred () = exposure {
-        if tool_name_is_searchable(name, searchable_names) {
+      if let #Deferred = exposure then
+        if tool_name_is_searchable(name, searchable_names) then
           found = true
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
   found
-};
+end;
 
-let finalize_tool_sources: [FinalizationDefinitions, ToolSourceFinalizationFacts] ->
+let finalize_tool_sources: (FinalizationDefinitions, ToolSourceFinalizationFacts) ->
   FinalizationDefinitions = (
     definitions,
     facts,
-  ) => {
+  ) => do
     let overridden = apply_direct_model_only_namespace_overrides(
       definitions,
       facts.direct_model_only_namespaces,
     );
-    if !(facts.search_tool_enabled) {
+    if !(facts.search_tool_enabled) then
       return overridden;
-    }
-    if !(has_searchable_deferred_tool(overridden, facts.searchable_names)) {
+    end;
+    if !(has_searchable_deferred_tool(overridden, facts.searchable_names)) then
       return overridden;
-    }
+    end;
 
     let tool_search: FinalizationDefinition = [
       ["", "tool_search"],
-      `Direct (),
-      `ToolSearch (),
-      `ToolSearchPayload (),
+      #Direct,
+      #ToolSearch,
+      #ToolSearchPayload,
       true,
       false,
     ];
-    append_tool_definitions(overridden, `Cons ([tool_search, `Nil ()]))
-  };
+    append_tool_definitions(overridden, #Cons ([tool_search, #Nil]))
+  end;
 
 return { .finalize_tool_sources };

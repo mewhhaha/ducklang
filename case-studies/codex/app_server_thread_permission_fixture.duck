@@ -13,29 +13,33 @@ let permission: FixturePermission = [
   json_string "never",
   json_string "user",
   json_string "workspace-write",
-  `Some (json_string "workspace"),
+  #Some (json_string "workspace"),
 ];
-let resolution: FixtureResolution = `PermissionSelectionResolved permission;
+let resolution: FixtureResolution = #PermissionSelectionResolved permission;
 let selected_result: FixturePermissionResult = resolve_permission_settings(
   resolution,
-  `Some ":workspace",
+  #Some ":workspace",
 );
 let score = 0;
 
-if let `PermissionSelectionResolved selected = resolution {
-  if let `String approval = selected.approval_policy {
-    if let `String reviewer = selected.approvals_reviewer {
-      if approval == "never" && reviewer == "user" { score = score + 1 }
-    }
-  }
-}
+if let #PermissionSelectionResolved selected = resolution then
+  if let #String approval = selected.approval_policy then
+    if let #String reviewer = selected.approvals_reviewer then
+      if approval == "never" && reviewer == "user" then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
-if let `Ok selected_option = selected_result {
-  if let `Some selected = selected_option {
-    if let `String sandbox = selected.sandbox_policy {
-      if sandbox == "workspace-write" { score = score + 10 }
-    }
-  }
-}
+if let #Ok selected_option = selected_result then
+  if let #Some selected = selected_option then
+    if let #String sandbox = selected.sandbox_policy then
+      if sandbox == "workspace-write" then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

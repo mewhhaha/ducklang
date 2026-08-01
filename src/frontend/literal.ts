@@ -33,6 +33,25 @@ export function front_literal_expr(token: Token): FrontExpr | undefined {
   return undefined;
 }
 
+export function decode_literal_escape(
+  escaped: string,
+  quote: '"' | "'" | "`",
+): string | undefined {
+  if (escaped === "n") {
+    return "\n";
+  }
+  if (escaped === "t") {
+    return "\t";
+  }
+  if (escaped === "r") {
+    return "\r";
+  }
+  if (escaped === quote || escaped === "\\") {
+    return escaped;
+  }
+  return undefined;
+}
+
 export function format_character_literal(value: string): string {
   let escaped = value;
 

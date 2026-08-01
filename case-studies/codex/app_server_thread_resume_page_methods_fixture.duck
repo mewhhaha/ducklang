@@ -12,13 +12,16 @@ fields = json_object_prepend("initialTurnsPage", json_object(json_object_empty()
 fields = json_object_prepend("excludeTurns", json_bool true, fields)
 fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let decoded: FixtureResult = decode_thread_resume(json_object fields);
-let score = if let `MethodOk method = decoded {
-  if let `ThreadResume params = method {
+let score = if let #MethodOk method = decoded then
+  if let #ThreadResume params = method then
     let exclude_turns = turns_are_excluded params.turns;
-    let page_valid = if let `Some value = params.initial_turns_page { if let `Object _ = value {
-      true } else { false } } else { false };
-    if exclude_turns && page_valid { 1 } else { 0 }
-  } else { 0 }
-} else { 0 };
+    let page_valid =
+      if let #Some value = params.initial_turns_page then
+        if let #Object _ = value then
+          true else false end;
+      else false end;
+    if exclude_turns && page_valid then 1 else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

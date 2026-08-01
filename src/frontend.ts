@@ -3,8 +3,177 @@ export type {
   SourceAnalysis,
   SourceAnalyzeOptions,
 } from "./frontend/source.ts";
-export type { ParseSourceResult } from "./frontend/parser.ts";
+export type { ParseSourceResult } from "./frontend/source_parse.ts";
+export {
+  type BabaCst,
+  type BabaCstNode,
+  type BabaParseResult,
+  type BabaRecoveryInterval,
+  type BabaSourceNodeId,
+  type BabaToken,
+  parse_duck_source,
+} from "./frontend/baba_parser.ts";
 export type { SourceImportResolver } from "./frontend/import_diagnostic.ts";
+export {
+  SemanticIdentityAllocator,
+  value_id_text,
+} from "./frontend/semantic_identity.ts";
+export {
+  certificate_establishes,
+  check_certificate,
+  check_proof,
+  check_proposition_formation,
+  false_proposition,
+  format_proposition,
+  proposition_equal,
+  true_proposition,
+} from "./frontend/proof_kernel.ts";
+export {
+  check_term,
+  check_type,
+  infer_term,
+  kernel_context_equal,
+  KernelEnvironment,
+  prop_sort,
+  snapshot_kernel_context,
+  snapshot_kernel_term,
+  snapshot_kernel_type,
+  term_equal,
+  type_assignable,
+  type_equal,
+  type_sort,
+  universe_of_sort,
+} from "./frontend/kernel_terms.ts";
+export type {
+  KernelContext,
+  KernelDefinition,
+  KernelTerm,
+  KernelType,
+  Universe,
+} from "./frontend/kernel_terms.ts";
+export {
+  KernelPatternSolution,
+  unify_kernel_patterns,
+} from "./frontend/kernel_unification.ts";
+export type {
+  KernelPattern,
+  KernelUnificationOptions,
+} from "./frontend/kernel_unification.ts";
+export {
+  assume_fact,
+  assume_machine_fact,
+  assume_state,
+  assume_type_fact,
+  establish_fact,
+  exclude_fact,
+  exclude_machine_fact,
+  exclude_state,
+  exclude_type_fact,
+  fact_implies,
+  implies_fact,
+  implies_machine_fact,
+  implies_type_fact,
+  join_environments,
+  join_facts,
+  join_machine_domains,
+  join_states,
+  join_type_fact_domains,
+  machine_fact_domain,
+  machine_fact_evidence,
+  machine_range,
+  meet_facts,
+  normalize_machine_integer,
+  reachable_state,
+  transfer_type_facts,
+  type_fact_domain,
+  unknown_fact,
+  unreachable_state,
+  widen_facts,
+  widen_machine_facts,
+} from "./frontend/fact_graph.ts";
+export type {
+  FactEnvironment,
+  FactEvidence,
+  FactOrigin,
+  FactProposition,
+  FactSafety,
+  FactState,
+  MachineFactDomain,
+  MachineInteger,
+  ScalarFact,
+  TypeFact,
+  TypeFactDomain,
+} from "./frontend/fact_graph.ts";
+export type {
+  KernelCertificate,
+  KernelCertificateCheckOptions,
+  KernelCheckOptions,
+  ProofOrigin,
+  ProofSafety,
+  ProofTerm,
+  Proposition,
+  PropositionEqualityOptions,
+  PropositionFormationOptions,
+} from "./frontend/proof_kernel.ts";
+export type {
+  BindingGeneration,
+  PhiValue,
+  SemanticOrigin,
+  ValueId,
+} from "./frontend/semantic_identity.ts";
+export { SemanticCfgBuilder } from "./frontend/semantic_cfg.ts";
+export type {
+  SemanticBlock,
+  SemanticBlockId,
+  SemanticCallableControlFlow,
+  SemanticCfg,
+  SemanticExplicitOutput,
+  SemanticNode,
+  SemanticNodeId,
+  SemanticOperation,
+  SemanticPhiInput,
+  SemanticTerminator,
+  SemanticValue,
+} from "./frontend/semantic_cfg.ts";
+export {
+  computational_existential_family_type,
+  computational_existential_type,
+  decision_type,
+  erase_semantic_type,
+  erase_semantic_value,
+  logical_existential_type,
+  no_decision,
+  open_computational_existential,
+  owned_runtime_value,
+  pack_computational_existential,
+  proof_type,
+  refinement_proves,
+  refinement_type,
+  representation_type,
+  unsafe_no_decision,
+  unsafe_refinement_type,
+  unsafe_yes_decision,
+  weaken_refinement,
+  yes_decision,
+} from "./frontend/refinement.ts";
+export type {
+  ComputationalPackage,
+  ErasedDecision,
+  LogicalDecision,
+  PropositionContext,
+  PropositionContextOptions,
+  RepresentationValue,
+  SemanticType,
+} from "./frontend/refinement.ts";
+export type {
+  RepresentationEffect,
+  RepresentationOwnership,
+  RepresentationProductField,
+  RepresentationRecordField,
+  RepresentationScalar,
+  RepresentationSumCase,
+  RepresentationType,
+} from "./frontend/representation_type.ts";
 export type {
   SourceImportMeta,
   SourceImportMetaAtom,
@@ -16,6 +185,44 @@ export type {
   SourceSyntax,
   SyntaxDiagnostic,
 } from "./frontend/syntax.ts";
+export { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
+export type {
+  ComputationalPackageFact,
+  ComputationalPackageIndex,
+  DuckAnalysis,
+  DuckAnalyzeOptions,
+  DuckSemanticProgram,
+  DuckSourceAnalysis,
+  FunctionFactIndex,
+  FunctionFactSummary,
+  FunctionFactSummaryEvidence,
+  KernelCertificateIndex,
+  RefinementIndex,
+  SemanticCallableCfgIndex,
+  SemanticSymbolIndex,
+  SemanticTypeIndex,
+  SourceOriginIndex,
+} from "./semantic_program.ts";
+export { associate_prefix_signatures } from "./frontend/prefix_signature.ts";
+export type {
+  PrefixCallableType,
+  PrefixDefinition,
+  PrefixProofTerm,
+  PrefixProposition,
+  PrefixSignature,
+  PrefixSignatureAssociation,
+  PrefixSignatureBinder,
+  PrefixSignatureIndex,
+  PrefixSignatureKind,
+  PrefixSignatureParameter,
+  PrefixSignatureResult,
+  PrefixSpan,
+  PrefixTerm,
+  PrefixTermShape,
+  PrefixTypeReference,
+} from "./frontend/prefix_signature.ts";
+export { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
+export type { PrefixSourceMetadata } from "./frontend/prefix_signature_source.ts";
 
 export {
   compiler_diagnostic,

@@ -12,17 +12,17 @@ fields = json_object_prepend("sessionStartSource", json_string "clear", fields)
 fields = json_object_prepend("historyMode", json_string "paginated", fields)
 fields = json_object_prepend("ephemeral", json_bool true, fields)
 let decoded: FixtureResult = decode_thread_start(json_object fields);
-let score = if let `MethodOk method = decoded {
-  if let `ThreadStart params = method {
-    let ephemeral_valid = if let `Some value = params.ephemeral { value } else { false };
-    let history_valid = if let `Some value = params.history_mode {
-      if let `PaginatedHistory () = value { true } else { false }
-    } else { false };
-    let source_valid = if let `Some value = params.session_start_source {
-      if let `ClearSource () = value { true } else { false }
-    } else { false };
-    if ephemeral_valid && history_valid && source_valid { 1 } else { 0 }
-  } else { 0 }
-} else { 0 };
+let score = if let #MethodOk method = decoded then
+  if let #ThreadStart params = method then
+    let ephemeral_valid = if let #Some value = params.ephemeral then value else false end;
+    let history_valid = if let #Some value = params.history_mode then
+      if let #PaginatedHistory = value then true else false end;
+    else false end;
+    let source_valid = if let #Some value = params.session_start_source then
+      if let #ClearSource = value then true else false end;
+    else false end;
+    if ephemeral_valid && history_valid && source_valid then 1 else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

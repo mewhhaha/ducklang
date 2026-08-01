@@ -8,30 +8,45 @@ type FixtureGoal = AppServerThreadGoal
 let goal: FixtureGoal = [
   "thread-1",
   "Ship Codex",
-  `GoalActive (),
-  `None (),
+  #GoalActive,
+  #None,
   0i64,
   0i64,
   10i64,
   20i64,
 ];
-let updated = materialize_thread_goal_updated_notification(goal, `None ());
+let updated = materialize_thread_goal_updated_notification(goal, #None);
 let score = 0;
-if let `Object fields = updated {
+if let #Object fields = updated then
   let thread_valid = false;
   let thread_lookup = json_object_get("threadId", fields);
-  if let `Found thread_json = thread_lookup { if let `String thread_id = thread_json { thread_valid = thread_id == "thread-1" } }
+  if let #Found thread_json = thread_lookup then
+    if let #String thread_id = thread_json then
+      thread_valid = thread_id == "thread-1"
+    end;
+  end;
   let turn_valid = false;
   let turn_lookup = json_object_get("turnId", fields);
-  if let `Found turn_json = turn_lookup { if let `Null () = turn_json { turn_valid = true } }
-  if thread_valid && turn_valid { score = score + 1 }
-}
+  if let #Found turn_json = turn_lookup then
+    if let #Null = turn_json then
+      turn_valid = true
+    end;
+  end;
+  if thread_valid && turn_valid then
+    score = score + 1
+  end;
+end;
 
 let cleared = materialize_thread_goal_cleared_notification "thread-1";
-if let `Object fields = cleared {
+if let #Object fields = cleared then
   let thread_lookup = json_object_get("threadId", fields);
-  if let `Found thread_json = thread_lookup { if let `String thread_id = thread_json { if thread_id
-    == "thread-1" { score = score + 10 } } }
-}
+  if let #Found thread_json = thread_lookup then
+    if let #String thread_id = thread_json then
+      if thread_id == "thread-1" then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

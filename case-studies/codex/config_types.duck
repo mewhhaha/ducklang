@@ -6,18 +6,18 @@ type ConfigMdmSource = [Text, Text]
 type ConfigEnterpriseSource = [Text, Text]
 type ConfigUserSource = [Text, ConfigTextOption]
 type ConfigLayerSource =
-  | `Mdm ConfigMdmSource
-  | `System Text
-  | `EnterpriseManaged ConfigEnterpriseSource
-  | `User ConfigUserSource
-  | `Project Text
-  | `SessionFlags Unit
-  | `LegacyFile Text
-  | `LegacyMdm Unit
+  | #Mdm ConfigMdmSource
+  | #System Text
+  | #EnterpriseManaged ConfigEnterpriseSource
+  | #User ConfigUserSource
+  | #Project Text
+  | #SessionFlags
+  | #LegacyFile Text
+  | #LegacyMdm
 type ConfigLayer = [ConfigLayerSource, Json, ConfigTextOption]
 type ConfigLayers = List ConfigLayer
 type ConfigValidation =
-  | `Valid Unit
-  | `Invalid Text
+  | #Valid
+  | #Invalid Text
 
 return {};

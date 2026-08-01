@@ -6,22 +6,24 @@ const { .resolve_agent_path, .validate_absolute_agent_path, .valid_agent_name } 
 
 let score: I32 = 0;
 
-if valid_agent_name "researcher_2" {
+if valid_agent_name "researcher_2" then
   score = score + 1
-}
+end;
 
-if valid_agent_name "Bad" {
+if valid_agent_name "Bad" then
   ()
-} else {
+else
   score = score + 10
-}
+end;
 
-if let `Path path = resolve_agent_path("/root/researcher", "worker") {
-  if path == "/root/researcher/worker" { score = score + 100 }
-}
+if let #Path path = resolve_agent_path("/root/researcher", "worker") then
+  if path == "/root/researcher/worker" then
+    score = score + 100
+  end;
+end;
 
-if let `InvalidPath _ = validate_absolute_agent_path "/other" {
+if let #InvalidPath _ = validate_absolute_agent_path "/other" then
   score = score + 1000
-}
+end;
 
 return { .score = score };

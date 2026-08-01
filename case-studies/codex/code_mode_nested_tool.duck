@@ -9,57 +9,54 @@ type NestedPayload = CodeModeNestedToolPayload
 type NestedDispatch = CodeModeNestedToolDispatch
 type NestedPlan = CodeModeNestedToolPlan
 
-const reject_nested_tool_input: [ToolName, Text] -> NestedPlan = (tool_name, expectation) => {
+const reject_nested_tool_input: (ToolName, Text) -> NestedPlan = (tool_name, expectation) => do
   let [namespace, local_name] = tool_name;
-  let rendered_name = text_append [namespace, local_name];
-  `RejectNestedTool (
-    text_append ["tool `", text_append [rendered_name, text_append ["` expects ", expectation]]]
+  let rendered_name = text_append (namespace, local_name);
+  #RejectNestedTool (
+    text_append ("tool `", text_append (rendered_name, text_append ("` expects ", expectation)))
   )
-};
+end;
 
-const plan_code_mode_nested_tool: NestedInvocation -> NestedPlan = invocation => {
+const plan_code_mode_nested_tool: NestedInvocation -> NestedPlan = invocation => do
   let [namespace, local_name] = invocation.tool_name;
-  if namespace == "" && local_name == "exec" {
-    return `RejectNestedTool "exec cannot invoke itself";
-  }
+  if namespace == "" && local_name == "exec" then
+    return #RejectNestedTool "exec cannot invoke itself";
+  end;
 
-  let payload: NestedPayload = match invocation.tool_kind {
-    | `NestedFunction () => {
-      match invocation.input {
-        | `None () => `NestedFunctionPayload "{}"
-        | `Some input => {
-          if let `Object _ = input {
-            `NestedFunctionPayload (encode_json input)
-          } else {
+  let payload: NestedPayload = case invocation.tool_kind of
+    #NestedFunction => do
+      case invocation.input of
+        #None => #NestedFunctionPayload "{}",
+        #Some input => do
+          if let #Object _ = input then
+            #NestedFunctionPayload (encode_json input)
+          else
             return reject_nested_tool_input(invocation.tool_name, "a JSON object for arguments");
-          }
-        }
-        | _ => {
+          end;
+        end,
+        _ => do
           return reject_nested_tool_input(invocation.tool_name, "a JSON object for arguments");
-        }
-      }
-    }
-    | `NestedFreeform () => {
-      match invocation.input {
-        | `Some input => {
-          if let `String text = input {
-            `NestedCustomPayload text
-          } else {
+        end;
+    end,
+    #NestedFreeform => do
+      case invocation.input of
+        #Some input => do
+          if let #String text = input then
+            #NestedCustomPayload text
+          else
             return reject_nested_tool_input(invocation.tool_name, "a string input");
-          }
-        }
-        | `None () => {
+          end;
+        end,
+        #None => do
           return reject_nested_tool_input(invocation.tool_name, "a string input");
-        }
-        | _ => {
+        end,
+        _ => do
           return reject_nested_tool_input(invocation.tool_name, "a string input");
-        }
-      }
-    }
-    | _ => {
+        end;
+    end,
+    _ => do
       return reject_nested_tool_input(invocation.tool_name, "a supported code-mode payload");
-    }
-  };
+    end;
 
   let dispatch: NestedDispatch = [
     .cell_id = invocation.cell_id,
@@ -67,7 +64,7 @@ const plan_code_mode_nested_tool: NestedInvocation -> NestedPlan = invocation =>
     .tool_name = invocation.tool_name,
     .call_id_prefix = "exec-",
     .payload = payload];
-  `DispatchNestedTool dispatch
-};
+  #DispatchNestedTool dispatch
+end;
 
 return { .plan_code_mode_nested_tool };

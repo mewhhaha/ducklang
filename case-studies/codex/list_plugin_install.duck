@@ -1,6 +1,7 @@
 module () where
 
-const { .text_compare, .text_take_utf8_characters, .text_utf8_length } = import "duck:prelude/text" ();
+const { .text_compare, .text_take_utf8_characters, .text_utf8_length } =
+  import "duck:prelude/text" ();
 const { .encode_json } = import "duck:prelude/json/encode" ();
 const {
   .json_array,
@@ -22,54 +23,58 @@ type ListPluginPayload = ListPluginInstallPayload
 type ListPluginCallPlan = ListPluginInstallCallPlan
 type ListPluginTexts = InstallTexts
 
-let rec text_values_json: ListPluginTexts -> Json = values => {
+let rec text_values_json: ListPluginTexts -> Json = values => do
   let current = values;
   let reversed = json_array_empty();
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
       reversed = json_array_prepend(json_string value, reversed)
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   let current_reversed = reversed;
   let ordered = json_array_empty();
   done = false
-  loop {
-    if let `Cons node = current_reversed {
+  loop do
+    if let #Cons node = current_reversed then
       let [value, tail] = node;
       ordered = json_array_prepend(value, ordered)
       current_reversed = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   json_array ordered
-};
+end;
 
-const candidate_tool_type = (candidate: ListPluginCandidate) => {
-  if let `Connector () = candidate.tool_type { "connector" } else { "plugin" }
-};
+const candidate_tool_type = (candidate: ListPluginCandidate) => do
+  if let #Connector = candidate.tool_type then "connector" else "plugin" end;
+end;
 
-const candidate_description_json = (candidate: ListPluginCandidate) => {
-  if let `InstallTextPresent description = candidate.description {
-    if text_utf8_length description > 240 {
+const candidate_description_json = (candidate: ListPluginCandidate) => do
+  if let #InstallTextPresent description = candidate.description then
+    if text_utf8_length description > 240 then
       json_string(text_take_utf8_characters(description, 240))
-    } else {
+    else
       json_string description
-    }
-  } else {
+    end;
+  else
     json_null()
-  }
-};
+  end;
+end;
 
-let candidate_json: ListPluginCandidate -> Json = candidate => {
+let candidate_json: ListPluginCandidate -> Json = candidate => do
   json_object(
     json_object_prepend("id", json_string candidate.id,
       json_object_prepend("name", json_string candidate.name,
@@ -83,102 +88,110 @@ let candidate_json: ListPluginCandidate -> Json = candidate => {
                   json_object_empty(),
                 )))))))
   )
-};
+end;
 
-let list_available_plugins_to_install_output: ListPluginCandidates -> Text = values => {
+let list_available_plugins_to_install_output: ListPluginCandidates -> Text = values => do
   let current_candidates = values;
-  let sorted: ListPluginCandidates = `Nil ();
+  let sorted: ListPluginCandidates = #Nil;
   let candidates_done = false;
-  loop {
-    if let `Cons node = current_candidates {
+  loop do
+    if let #Cons node = current_candidates then
       let [candidate, tail] = node;
       let remaining = sorted;
-      let prefix_reversed: ListPluginCandidates = `Nil ();
+      let prefix_reversed: ListPluginCandidates = #Nil;
 
-      loop {
-        if let `Cons sorted_node = remaining {
+      loop do
+        if let #Cons sorted_node = remaining then
           let [sorted_candidate, sorted_tail] = sorted_node;
-          let name_order = text_compare [candidate.name, sorted_candidate.name];
-          let candidate_before = if name_order == 0 {
-            text_compare [candidate.id, sorted_candidate.id] < 0
-          } else {
+          let name_order = text_compare (candidate.name, sorted_candidate.name);
+          let candidate_before = if name_order == 0 then
+            text_compare (candidate.id, sorted_candidate.id) < 0
+          else
             name_order < 0
-          };
-          if candidate_before {
-            let restored_sorted: ListPluginCandidates = `Cons (
+          end;
+          if candidate_before then
+            let restored_sorted: ListPluginCandidates = #Cons (
               [sorted_candidate, sorted_tail] as ListPluginCandidateNode
             );
-            remaining = `Cons ([candidate, restored_sorted] as ListPluginCandidateNode)
+            remaining = #Cons ([candidate, restored_sorted] as ListPluginCandidateNode)
             break;
-          }
-          prefix_reversed = `Cons ([sorted_candidate, prefix_reversed] as ListPluginCandidateNode)
+          end;
+          prefix_reversed = #Cons (
+            [sorted_candidate, prefix_reversed] as ListPluginCandidateNode
+          )
           remaining = sorted_tail
-        } else {
-          remaining = `Cons ([candidate, `Nil ()] as ListPluginCandidateNode)
+        else
+          remaining = #Cons ([candidate, #Nil] as ListPluginCandidateNode)
           break;
-        }
-      }
+        end;
+      end;
 
-      loop {
-        if let `Cons prefix_node = prefix_reversed {
+      loop do
+        if let #Cons prefix_node = prefix_reversed then
           let [prefix_candidate, prefix_tail] = prefix_node;
-          remaining = `Cons ([prefix_candidate, remaining] as ListPluginCandidateNode)
+          remaining = #Cons ([prefix_candidate, remaining] as ListPluginCandidateNode)
           prefix_reversed = prefix_tail
-        } else {
+        else
           break;
-        }
-      }
+        end;
+      end;
 
       sorted = remaining
       current_candidates = tail
-    } else {
+    else
       candidates_done = true
-    }
-    if candidates_done { break; }
-  }
+    end;
+    if candidates_done then
+      break;
+    end;
+  end;
 
   let reversed = json_array_empty();
   let current = sorted;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [candidate, tail] = node;
       reversed = json_array_prepend(candidate_json candidate, reversed)
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   let ordered = json_array_empty();
   let current_reversed = reversed;
   done = false
-  loop {
-    if let `Cons node = current_reversed {
+  loop do
+    if let #Cons node = current_reversed then
       let [value, tail] = node;
       ordered = json_array_prepend(value, ordered)
       current_reversed = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   encode_json(json_object(json_object_prepend("tools", json_array ordered, json_object_empty())))
-};
+end;
 
-let plan_list_available_plugins_to_install: [ListPluginPayload, ListPluginCandidates] ->
+let plan_list_available_plugins_to_install: (ListPluginPayload, ListPluginCandidates) ->
   ListPluginCallPlan = (
     payload: ListPluginPayload,
     values: ListPluginCandidates,
-  ) => {
-    if payload {
-      `ReturnCandidates (list_available_plugins_to_install_output values)
-    } else {
-      `RejectRequest "list_available_plugins_to_install handler received unsupported payload"
-    }
-  };
+  ) => do
+    if payload then
+      #ReturnCandidates (list_available_plugins_to_install_output values)
+    else
+      #RejectRequest "list_available_plugins_to_install handler received unsupported payload"
+    end;
+  end;
 
 return {
   .list_available_plugins_to_install_output,

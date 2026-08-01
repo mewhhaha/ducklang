@@ -9,9 +9,9 @@ declare Init { input: Input }
 let total = 0;
 step <- Input.step()
 
-for value in 0..10 by step {
+for value in 0..10 by step do
   total = total + value
-}
+end
 
 let result = total;
 return { .result = result };

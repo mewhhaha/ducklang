@@ -10,24 +10,24 @@ type FixtureFileMutation = TurnDiffFileMutation
 type FixtureTextOption = TurnDiffTextOption
 type FixtureUpdate = TurnDiffUpdate
 
-const verify_turn_diff_pure_rename_fixture: () -> I32 = () => {
-  let none: FixtureTextOption = `None ();
-  let destination: FixtureTextOption = `Some "dst.txt";
+const verify_turn_diff_pure_rename_fixture: () -> I32 = () => do
+  let none: FixtureTextOption = #None;
+  let destination: FixtureTextOption = #Some "dst.txt";
   let update: FixtureUpdate = [
     .move_path = destination,
     .old_content = "same\n",
     .overwritten_move_content = none,
     .new_content = "same\n",
   ];
-  let file_mutation: FixtureFileMutation = `TurnDiffUpdate update;
+  let file_mutation: FixtureFileMutation = #TurnDiffUpdate update;
   let mutation: FixtureMutation = [.path = "src.txt", .mutation = file_mutation];
   let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
 
   let score = 0;
-  if let `Nil () = turn_diff_net_changes state {
+  if let #Nil = turn_diff_net_changes state then
     score = score + 1
-  }
+  end;
   score
-};
+end;
 
 return { .verify_turn_diff_pure_rename_fixture };

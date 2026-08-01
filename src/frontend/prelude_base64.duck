@@ -8,14 +8,14 @@ type Base64InvalidByte = struct {
 }
 
 type Base64DecodeError =
-  | `InvalidLength I32
-  | `InvalidByte Base64InvalidByte
-  | `InvalidPadding I32
-  | `NonzeroTrailingBits I32
+  | #InvalidLength I32
+  | #InvalidByte Base64InvalidByte
+  | #InvalidPadding I32
+  | #NonzeroTrailingBits I32
 
 type Base64DecodedLengthResult =
-  | `Ok I32
-  | `Err Base64DecodeError
+  | #Ok I32
+  | #Err Base64DecodeError
 
 // Error kinds 0 through 4 mean valid, invalid length, invalid byte,
 // invalid padding, and nonzero trailing bits.
@@ -26,83 +26,84 @@ type Base64Inspection = struct {
   .decoded_length = I32,
 }
 
-const base64_value: I32 -> I32 = byte => {
-  if byte >= 65 && byte <= 90 {
+const base64_value: I32 -> I32 = byte => do
+  if byte >= 65 && byte <= 90 then
     byte - 65
-  } else if byte >= 97 && byte <= 122 {
+  else byte >= 97 && byte <= 122 then
     byte - 71
-  } else if byte >= 48 && byte <= 57 {
+  else byte >= 48 && byte <= 57 then
     byte + 4
-  } else if byte == 43 {
+  else byte == 43 then
     62
-  } else if byte == 47 {
+  else byte == 47 then
     63
-  } else {
-    -1
-  }
-};
+  else -1
+  end;
+end;
 
-const inspect_standard_base64: Text -> Base64Inspection = encoded => {
+const inspect_standard_base64: Text -> Base64Inspection = encoded => do
   let encoded_length = @len encoded;
   let error_kind = 0;
   let error_byte = 0;
   let error_index = 0;
   let padding = 0;
 
-  if encoded_length % 4 != 0 {
+  if encoded_length % 4 != 0 then
     error_kind = 1
     error_index = encoded_length
-  }
+  end;
 
-  if error_kind == 0 {
-    if encoded_length > 0 && @get(encoded, encoded_length - 1) == 61 {
+  if error_kind == 0 then
+    if encoded_length > 0 && @get(encoded, encoded_length - 1) == 61 then
       padding = 1
-      if encoded_length > 1 && @get(encoded, encoded_length - 2) == 61 {
+      if encoded_length > 1 && @get(encoded, encoded_length - 2) == 61 then
         padding = 2
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
   let index = 0;
-  loop {
-    if index >= encoded_length || error_kind != 0 { break; }
+  loop do
+    if index >= encoded_length || error_kind != 0 then
+      break;
+    end;
     let byte = @get(encoded, index);
     let padding_start = encoded_length - padding;
 
-    if byte == 61 {
-      if index < padding_start {
+    if byte == 61 then
+      if index < padding_start then
         error_kind = 3
         error_index = index
-      }
-    } else if base64_value byte < 0 {
+      end;
+    else base64_value byte < 0 then
       error_kind = 2
       error_byte = byte
       error_index = index
-    }
+    end;
 
     index = index + 1
-  }
+  end;
 
-  if error_kind == 0 {
-    if padding == 2 {
+  if error_kind == 0 then
+    if padding == 2 then
       let trailing_value = base64_value(@get(encoded, encoded_length - 3));
-      if trailing_value % 16 != 0 {
+      if trailing_value % 16 != 0 then
         error_kind = 4
         error_index = encoded_length - 3
-      }
-    } else if padding == 1 {
+      end;
+    else padding == 1 then
       let trailing_value = base64_value(@get(encoded, encoded_length - 2));
-      if trailing_value % 4 != 0 {
+      if trailing_value % 4 != 0 then
         error_kind = 4
         error_index = encoded_length - 2
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
   let decoded_length = 0;
-  if error_kind == 0 {
+  if error_kind == 0 then
     decoded_length = (encoded_length / 4) * 3 - padding
-  }
+  end;
 
   [
     .error_kind = error_kind,
@@ -110,25 +111,25 @@ const inspect_standard_base64: Text -> Base64Inspection = encoded => {
     .error_index = error_index,
     .decoded_length = decoded_length,
   ]
-};
+end;
 
-const base64_decoded_length: Text -> Base64DecodedLengthResult = encoded => {
+const base64_decoded_length: Text -> Base64DecodedLengthResult = encoded => do
   let inspection = inspect_standard_base64 encoded;
-  if inspection.error_kind == 0 {
-    `Ok inspection.decoded_length
-  } else if inspection.error_kind == 1 {
-    `Err (`InvalidLength inspection.error_index)
-  } else if inspection.error_kind == 2 {
+  if inspection.error_kind == 0 then
+    #Ok inspection.decoded_length
+  else inspection.error_kind == 1 then
+    #Err (#InvalidLength inspection.error_index)
+  else inspection.error_kind == 2 then
     let evidence: Base64InvalidByte = [
       .byte = inspection.error_byte,
       .index = inspection.error_index,
     ];
-    `Err (`InvalidByte evidence)
-  } else if inspection.error_kind == 3 {
-    `Err (`InvalidPadding inspection.error_index)
-  } else {
-    `Err (`NonzeroTrailingBits inspection.error_index)
-  }
-};
+    #Err (#InvalidByte evidence)
+  else inspection.error_kind == 3 then
+    #Err (#InvalidPadding inspection.error_index)
+  else
+    #Err (#NonzeroTrailingBits inspection.error_index)
+  end;
+end;
 
 return { .base64_decoded_length, .inspect_standard_base64 };

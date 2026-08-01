@@ -1,105 +1,69 @@
 const { .struct } = import "duck:prelude" ();
-const { .length } = import "duck:prelude/runtime" ();
-
 type Point = struct { .x = Int, .y = Int }
 type Pixels = [Int; 2]
-type Shape = | `Point Point | `Code Int
+type Shape = | #Point Point | #Code Int
 
-const fold = rec (values, index, state, next) => {
-  if index == length values {
-    state
-  } else {
-    rec(values, index + 1, next(state, values[index]), next)
-  }
-};
-
-const range = rec (index, length) => {
-  if index == length {
-    []
-  } else {
-    [index, ...rec(index + 1, length)]
-  }
-};
-
-const derive_equal = rec (const target) => {
+const derive_equal = rec (const target) => do
   const description = @describe_type target;
 
-  if description.kind == #record {
-    const add_field = (const equal, const field) => {
-      const field_equal = derive_equal field.type;
-
-      const compare = (left, right) => {
-        if equal(left, right) {
-          field_equal(@project(left, field), @project(right, field))
-        } else {
-          false
-        }
-      };
-
-      compare
-    };
-
-    fold(@describe_fields target, 0, (left, right) => true, add_field)
-  } else {
-    if description.kind == #array {
+  if description.kind == #record then
+    const [first, second] = @describe_fields target;
+    const first_equal = derive_equal first.type;
+    const second_equal = derive_equal second.type;
+    (left, right) =>
+      first_equal(@project(left, first), @project(right, first)) &&
+      second_equal(@project(left, second), @project(right, second))
+  else
+    if description.kind == #array then
       const element_equal = derive_equal description.element;
-      const indices = range(0, description.length);
-
-      const add_index = (const equal, const index) => {
-        const compare = (left, right) => {
-          if equal(left, right) {
-            element_equal(left[index], right[index])
-          } else {
-            false
-          }
-        };
-
-        compare
-      };
-
-      fold(indices, 0, (left, right) => true, add_index)
-    } else {
-      if description.kind == #sum {
-        const add_case = (const equal, const case) => {
-          const payload_equal = derive_equal case.type;
-
-          const compare = (left, right) => {
-            if @is_case(left, case) {
-              if @is_case(right, case) {
-                payload_equal(@project(left, case), @project(right, case))
-              } else {
-                false
-              }
-            } else {
-              equal(left, right)
-            }
-          };
-
-          compare
-        };
-
-        fold(@describe_cases target, 0, (left, right) => false, add_case)
-      } else {
+      (left, right) => do
+        let [left_first, left_second] = left;
+        let [right_first, right_second] = right;
+        element_equal(left_first, right_first) &&
+          element_equal(left_second, right_second)
+      end
+    else
+      if description.kind == #sum then
+        const [first, second] = @describe_cases target;
+        const first_equal = derive_equal first.type;
+        const second_equal = derive_equal second.type;
+        (left, right) => do
+          if @is_case(left, first) then
+            @is_case(right, first) &&
+              first_equal(
+                @project(left, first),
+                @project(right, first),
+              )
+          else
+            @is_case(left, second) &&
+              @is_case(right, second) &&
+              second_equal(
+                @project(left, second),
+                @project(right, second),
+              )
+          end
+        end
+      else
         (left, right) => left == right
-      }
-    }
-  }
-};
+      end;
+    end;
+  end;
+end;
 
 const equal_shape = comptime derive_equal Shape;
 const equal_pixels = comptime derive_equal Pixels;
 
-let left: Shape = `Point [.x = 20, .y = 22];
-let right: Shape = `Point [.x = 20, .y = 22];
+let left: Shape = #Point [.x = 20, .y = 22];
+let right: Shape = #Point [.x = 20, .y = 22];
 let pixel_left: Pixels = [20, 22];
 let pixel_right: Pixels = [20, 22];
 
-if equal_shape(left, right) {
-  if equal_pixels(pixel_left, pixel_right) {
+if equal_shape(left, right) then
+  if equal_pixels(pixel_left, pixel_right) then
     42
-  } else {
+  else
     0
-  }
-} else {
+  end;
+else
   0
-}
+end;

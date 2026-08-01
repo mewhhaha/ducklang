@@ -10,17 +10,17 @@ const { .tool_search_parameters, .tool_search_tool_specs } = import "./tool_sear
 type SearchRegistrationDefinition = ToolDefinition
 type SearchRegistrationDefinitions = ToolDefinitions
 
-const tool_search_tool_definitions: () -> SearchRegistrationDefinitions = () => {
+const tool_search_tool_definitions: () -> SearchRegistrationDefinitions = () => do
   let definition: SearchRegistrationDefinition = [
     tool_search_tool_name(),
-    `Direct (),
-    `ToolSearch (),
-    `ToolSearchPayload (),
+    #Direct,
+    #ToolSearch,
+    #ToolSearchPayload,
     true,
     false,
   ];
-  `Cons ([definition, `Nil ()])
-};
+  #Cons ([definition, #Nil])
+end;
 
 return {
   .merge_search_sources,

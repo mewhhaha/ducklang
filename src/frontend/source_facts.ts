@@ -20,14 +20,23 @@ import {
 import {
   format_type,
   scalar_representation_compatible,
-  type Type,
   TypeEngine,
 } from "./type_engine.ts";
+import type {
+  RepresentationProductField,
+  RepresentationRecordField,
+  RepresentationSumCase,
+  RepresentationType as Type,
+} from "./representation_type.ts";
 import { is_builtin_type_name } from "./types.ts";
 import {
   integer_literal_fits,
+  integer_maximum,
+  integer_minimum,
   integer_type_from_name,
   integer_type_name,
+  integer_val_type,
+  type IntegerType,
 } from "../integer.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import {
@@ -208,7 +217,9 @@ export type SourceTypeFact = {
   name: string;
   resolved_name: string;
   nominal: string | undefined;
+  duck_member?: { declaration: string; member: string };
   type_arguments?: SourceTypeFact[];
+  fixed_array?: { length: number; element: SourceTypeFact };
   call_params: (SourceTypeFact | undefined)[] | undefined;
   call_result: SourceTypeFact | undefined;
   fields: SourceFieldTypeFact[] | undefined;
@@ -261,6 +272,40 @@ export function source_facts(source: Source): SourceFacts {
   const facts = recorder.record();
   cached_source_facts.set(source, facts);
   return facts;
+}
+
+export function resolved_name_of_source_type(
+  source: Source,
+  type: TypeExpr,
+  type_parameters: ReadonlySet<string> = new Set(),
+): string {
+  const recorder = new SourceFactRecorder(source);
+  const substitutions = new Map<string, SourceTypeFact>();
+  for (const parameter of type_parameters) {
+    substitutions.set(
+      parameter,
+      recorder.type_from_type_expr({ tag: "name", name: "I32" }),
+    );
+  }
+  return recorder.resolve_type_expr(type, substitutions, new Set())
+    .resolved_name;
+}
+
+export function representation_type_of_source_type(
+  source: Source,
+  type: TypeExpr,
+  type_parameters: ReadonlySet<string> = new Set(),
+): Type | undefined {
+  const recorder = new SourceFactRecorder(source);
+  const substitutions = new Map<string, SourceTypeFact>();
+  for (const parameter of type_parameters) {
+    substitutions.set(
+      parameter,
+      recorder.type_from_type_expr({ tag: "name", name: "I32" }),
+    );
+  }
+  return recorder.resolve_type_expr(type, substitutions, new Set())
+    .canonical_type();
 }
 
 export function invalidate_source_facts(source: Source): void {
@@ -487,7 +532,10 @@ function collect_unresolved_annotation_names(
   }
 
   if (annotation.tag === "name") {
-    if (!known_names.has(annotation.name)) {
+    if (
+      !known_names.has(annotation.name) &&
+      !is_builtin_type_name(annotation.name)
+    ) {
       unresolved_names.add(annotation.name);
     }
 
@@ -588,6 +636,8 @@ function runtime_prelude_intrinsic(name: string): string | undefined {
     case "cast":
       return "@cast";
     case "append":
+      return "@append";
+    case "append_bytes":
       return "@append";
     case "length":
       return "@len";
@@ -1722,7 +1772,8 @@ class SourceFactRecorder {
         expr.func.tag === "var" &&
         (expr.func.name === "@cast" || expr.func.name === "@seal" ||
           expr.func.name === "@representation" ||
-          expr.func.name === "@integer.wrap") &&
+          expr.func.name === "@integer.wrap" ||
+          expr.func.name === "@integer.narrow") &&
         !scope.has(expr.func.name)
       ) {
         cast_name = expr.func.name;
@@ -1761,11 +1812,21 @@ class SourceFactRecorder {
           );
           this.record_expr(target, scope, named_type("Type"), break_types);
           let target_type: SourceTypeFact | undefined;
+          let target_integer: IntegerType | undefined;
 
           if (target.tag === "var" || target.tag === "type_name") {
             target_type = this.type_from_name(target.name);
           } else if (target.tag === "set_type") {
             target_type = this.type_from_type_expr(target.type_expr);
+          }
+          if (
+            target_type !== undefined &&
+            (cast_name === "@integer.wrap" ||
+              cast_name === "@integer.narrow")
+          ) {
+            target_integer = integer_type_from_name(
+              target_type.resolved_name,
+            );
           }
 
           if (
@@ -1781,17 +1842,77 @@ class SourceFactRecorder {
 
             type = named_type("unknown");
           } else if (
-            cast_name === "@integer.wrap" &&
-            !integer_type_from_name(target_type.resolved_name)
+            (cast_name === "@integer.wrap" ||
+              cast_name === "@integer.narrow") &&
+            target_integer === undefined
           ) {
             this.facts.inference_diagnostics.push(source_diagnostic(
               diagnostic_codes.unresolved_call_type,
-              "@integer.wrap target must be an I<N> or U<N> type",
+              cast_name + " target must be an I<N> or U<N> type",
+              target,
+            ));
+            type = named_type("unknown");
+          } else if (
+            cast_name === "@integer.narrow" &&
+            target_integer !== undefined &&
+            integer_val_type(target_integer) === undefined
+          ) {
+            this.facts.inference_diagnostics.push(source_diagnostic(
+              diagnostic_codes.unresolved_call_type,
+              "@integer.narrow target must be no wider than 64 bits, got " +
+                integer_type_name(target_integer),
               target,
             ));
             type = named_type("unknown");
           } else if (value_type === undefined) {
             type = target_type;
+          } else if (cast_name === "@integer.narrow") {
+            const source_representation = source_representation_type(
+              value_type,
+            );
+            const source_integer = integer_type_from_name(
+              source_representation.resolved_name,
+            );
+            expect(
+              target_integer !== undefined,
+              "@integer.narrow lost its checked target integer type.",
+            );
+            if (source_integer === undefined) {
+              if (source_representation.resolved_name !== "unknown") {
+                this.facts.inference_diagnostics.push(source_diagnostic(
+                  diagnostic_codes.unresolved_call_type,
+                  "@integer.narrow value must have an I<N> or U<N> type, got " +
+                    source_representation.resolved_name,
+                  value,
+                ));
+              }
+              type = named_type("unknown");
+            } else if (integer_val_type(source_integer) === undefined) {
+              this.facts.inference_diagnostics.push(source_diagnostic(
+                diagnostic_codes.unresolved_call_type,
+                "@integer.narrow value must be no wider than 64 bits, got " +
+                  integer_type_name(source_integer),
+                value,
+              ));
+              type = named_type("unknown");
+            } else if (
+              integer_minimum(target_integer) <=
+                integer_minimum(source_integer) &&
+              integer_maximum(target_integer) >=
+                integer_maximum(source_integer)
+            ) {
+              this.facts.inference_diagnostics.push(source_diagnostic(
+                diagnostic_codes.unresolved_call_type,
+                "@integer.narrow target " +
+                  integer_type_name(target_integer) +
+                  " does not narrow source " +
+                  integer_type_name(source_integer),
+                target,
+              ));
+              type = named_type("unknown");
+            } else {
+              type = target_type;
+            }
           } else if (cast_name === "@integer.wrap") {
             type = target_type;
           } else {
@@ -1988,7 +2109,7 @@ class SourceFactRecorder {
             type = this.type_from_name(result_name);
           }
         } else if (func !== undefined) {
-          type = this.specialize_call_result(func, args, expr);
+          type = this.specialize_call_result(func, args, expr, expected);
         }
       } else if (func !== undefined) {
         let inferred_callable = false;
@@ -2005,7 +2126,7 @@ class SourceFactRecorder {
         if (inferred_callable) {
           type = func.call_result;
         } else {
-          type = this.specialize_call_result(func, args, expr);
+          type = this.specialize_call_result(func, args, expr, expected);
         }
       }
     } else if (expr.tag === "block") {
@@ -2168,6 +2289,7 @@ class SourceFactRecorder {
     func: SourceTypeFact,
     args: (SourceTypeFact | undefined)[],
     subject: object,
+    expected?: SourceTypeFact,
   ): SourceTypeFact | undefined {
     const exact_error = exact_call_constraint_error(func, args);
 
@@ -2185,7 +2307,7 @@ class SourceFactRecorder {
       return undefined;
     }
 
-    return specialize_call_result(func, args);
+    return specialize_call_result(func, args, expected);
   }
 
   builtin_call_name(
@@ -2222,8 +2344,10 @@ class SourceFactRecorder {
       expr.func.name === "@cast" || expr.func.name === "@seal" ||
       expr.func.name === "@representation" ||
       expr.func.name === "@integer.wrap" ||
+      expr.func.name === "@integer.narrow" ||
       expr.func.name === "@len" || expr.func.name === "@get" ||
       expr.func.name === "@slice" || expr.func.name === "@append" ||
+      expr.func.name === "@panic" ||
       expr.func.name === "@Bytes.generate" ||
       expr.func.name === "@Utf8.encode" ||
       expr.func.name === "@Utf8.decode" ||
@@ -2285,7 +2409,10 @@ class SourceFactRecorder {
 
       if (imported_runtime || bundled_prelude) {
         intrinsic = runtime_prelude_intrinsic(entry.label);
-      } else if (entry.label === "cast" || entry.label === "slice") {
+      } else if (
+        entry.label === "append_bytes" || entry.label === "cast" ||
+        entry.label === "slice"
+      ) {
         intrinsic = runtime_prelude_intrinsic(entry.label);
       }
 
@@ -3142,6 +3269,18 @@ class SourceFactRecorder {
       return named_type("I32");
     }
 
+    const canonical_object = object.canonical_type();
+    if (canonical_object?.tag === "fixed_array") {
+      if (index === undefined || !is_i32_family(index)) {
+        return undefined;
+      }
+
+      return source_type_from_canonical(
+        canonical_object.element,
+        new Map(),
+      );
+    }
+
     const fields = source_fields(object);
 
     if (fields === undefined) {
@@ -3152,10 +3291,11 @@ class SourceFactRecorder {
       const numeric_index = Number(expr.index.value);
 
       if (Number.isInteger(numeric_index) && numeric_index >= 0) {
-        return projected_source_type(object, fields[numeric_index]?.type);
+        const field = fields[numeric_index];
+        if (field !== undefined) {
+          return projected_source_type(object, field.type);
+        }
       }
-
-      return undefined;
     }
 
     if (index === undefined || !is_i32_family(index)) {
@@ -3904,7 +4044,12 @@ class SourceFactRecorder {
       }
     } else if (declaration.tag === "duck") {
       for (const member of declaration.members) {
-        members.set(member.name, named_type("unknown"));
+        const member_type = named_type("unknown");
+        member_type.duck_member = {
+          declaration: declaration.name,
+          member: member.name,
+        };
+        members.set(member.name, member_type);
       }
     } else if (declaration.tag === "record") {
       for (const field of declaration.fields) {
@@ -4350,7 +4495,10 @@ class SourceFactRecorder {
         for (const item of type_expr.param.items) {
           params.push(this.resolve_type_expr(item, substitutions, resolving));
         }
-      } else if (type_expr.param.tag === "product") {
+      } else if (
+        type_expr.param.tag === "product" &&
+        type_expr.param.value_pack === true
+      ) {
         for (const entry of this.type_product_entries(type_expr.param)) {
           params.push(
             this.resolve_type_expr(entry.type_expr, substitutions, resolving),
@@ -4490,7 +4638,14 @@ class SourceFactRecorder {
         return named_type("unknown");
       }
 
-      return named_type(format_type_expr(type_expr));
+      const type = named_type(format_type_expr(type_expr));
+      if (type_expr.length.tag === "number") {
+        type.fixed_array = {
+          length: type_expr.length.value,
+          element,
+        };
+      }
+      return type;
     }
 
     if (
@@ -4944,6 +5099,10 @@ function builtin_call_result(
   name: string,
   args: (SourceTypeFact | undefined)[],
 ): SourceTypeFact | undefined {
+  if (name === "@panic" && args.length === 1) {
+    return named_type("Never");
+  }
+
   if (name === "@type_of" && args.length === 1) {
     const represented = args[0];
 
@@ -5244,6 +5403,25 @@ function builtin_call_result(
       args[1] !== undefined && is_i32_family(args[1])
     ) {
       return named_type("I32");
+    }
+
+    const object = args[0];
+    const index = args[1];
+    if (
+      args.length === 2 && object !== undefined && index !== undefined &&
+      is_i32_family(index)
+    ) {
+      const canonical_object = object.canonical_type();
+      if (canonical_object?.tag === "fixed_array") {
+        return source_type_from_canonical(
+          canonical_object.element,
+          new Map(),
+        );
+      }
+      const fields = source_fields(object);
+      if (fields !== undefined) {
+        return common_type_facts(fields.map((field) => field.type));
+      }
     }
 
     return undefined;
@@ -5629,6 +5807,14 @@ function collect_source_inference_variables(
     }
   }
 
+  if (type.fixed_array !== undefined) {
+    collect_source_inference_variables(
+      type.fixed_array.element,
+      variables,
+      visited,
+    );
+  }
+
   if (type.cases !== undefined) {
     for (const payload of type.cases.values()) {
       collect_source_inference_variables(payload, variables, visited);
@@ -5766,6 +5952,23 @@ function canonical_type_from_source_fact(
   }
 
   if (
+    source.alias_target !== undefined &&
+    !source_is_opaque_alias(source)
+  ) {
+    if (visiting.has(source)) return undefined;
+    const next = new Set(visiting);
+    next.add(source);
+    return canonical_type_from_source_fact(
+      source.alias_target,
+      engine,
+      variables,
+      next,
+      unwrapped_quantifiers,
+      variable_kind,
+    );
+  }
+
+  if (
     source.quantified_variables !== undefined &&
     !unwrapped_quantifiers.has(source)
   ) {
@@ -5810,11 +6013,14 @@ function canonical_type_from_source_fact(
   const canonical_type_set = source_type_set(source);
 
   if (canonical_type_set !== undefined) {
+    if (visiting.has(source)) return undefined;
+    const next = new Set(visiting);
+    next.add(source);
     const left = canonical_type_from_source_fact(
       canonical_type_set.left,
       engine,
       variables,
-      visiting,
+      next,
       unwrapped_quantifiers,
       variable_kind,
     );
@@ -5822,7 +6028,7 @@ function canonical_type_from_source_fact(
       canonical_type_set.right,
       engine,
       variables,
-      visiting,
+      next,
       unwrapped_quantifiers,
       variable_kind,
     );
@@ -5953,6 +6159,23 @@ function canonical_type_from_source_fact(
     return { tag: "function", params, effects: [], result };
   }
 
+  if (source.fixed_array !== undefined) {
+    const element = canonical_type_from_source_fact(
+      source.fixed_array.element,
+      engine,
+      variables,
+      visiting,
+      unwrapped_quantifiers,
+      variable_kind,
+    );
+    if (element === undefined) return undefined;
+    return {
+      tag: "fixed_array",
+      length: source.fixed_array.length,
+      element,
+    };
+  }
+
   if (source.nominal !== undefined) {
     const args: Type[] = [];
 
@@ -5983,10 +6206,7 @@ function canonical_type_from_source_fact(
     next.add(source);
 
     if (source_fields_are_positional(source)) {
-      const product_fields: Extract<
-        Type,
-        { tag: "product" }
-      >["fields"] = [];
+      const product_fields: RepresentationProductField[] = [];
 
       for (const field of fields) {
         if (field.type === undefined) {
@@ -6018,7 +6238,7 @@ function canonical_type_from_source_fact(
       return { tag: "product", fields: product_fields };
     }
 
-    const record_fields: Extract<Type, { tag: "record" }>["fields"] = [];
+    const record_fields: RepresentationRecordField[] = [];
 
     for (const field of fields) {
       if (field.type === undefined) {
@@ -6049,7 +6269,7 @@ function canonical_type_from_source_fact(
   if (cases !== undefined) {
     const next = new Set(visiting);
     next.add(source);
-    const sum_cases: Extract<Type, { tag: "sum" }>["cases"] = [];
+    const sum_cases: RepresentationSumCase[] = [];
 
     for (const [label, payload] of cases) {
       const payload_type = canonical_type_from_source_fact(
@@ -6111,6 +6331,7 @@ function source_type_literal(
 function specialize_call_result(
   func: SourceTypeFact,
   args: (SourceTypeFact | undefined)[],
+  expected?: SourceTypeFact,
 ): SourceTypeFact | undefined {
   if (func.call_params === undefined || func.call_result === undefined) {
     return undefined;
@@ -6166,6 +6387,29 @@ function specialize_call_result(
       }
 
       return undefined;
+    }
+  }
+
+  if (expected !== undefined) {
+    const result_type = canonical_type_from_source_fact(
+      func.call_result,
+      engine,
+      expected_variables,
+      new Set(),
+    );
+    const expected_type = canonical_type_from_source_fact(
+      expected,
+      engine,
+      actual_variables,
+      new Set(),
+    );
+    if (result_type !== undefined && expected_type !== undefined) {
+      try {
+        engine.unify(result_type, expected_type, "call result");
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        return undefined;
+      }
     }
   }
 
@@ -6260,12 +6504,24 @@ function clone_source_type(
   result.modality = source.modality;
   result.recursive_inference = source.recursive_inference;
   result.positional_fields = source.positional_fields;
+  result.duck_member = source.duck_member;
   copied.set(source, result);
 
   if (source.type_arguments !== undefined) {
     result.type_arguments = source.type_arguments.map((argument) =>
       clone_source_type(argument, replacements, copied)
     );
+  }
+
+  if (source.fixed_array !== undefined) {
+    result.fixed_array = {
+      length: source.fixed_array.length,
+      element: clone_source_type(
+        source.fixed_array.element,
+        replacements,
+        copied,
+      ),
+    };
   }
 
   if (source.quantified_variables !== undefined) {
@@ -6433,6 +6689,18 @@ function materialize_source_type_from_engine(
       result.type_arguments,
     );
     result.resolved_name = result.name;
+  }
+
+  if (source.fixed_array !== undefined) {
+    result.fixed_array = {
+      length: source.fixed_array.length,
+      element: materialize_source_type_from_engine(
+        source.fixed_array.element,
+        engine,
+        variables,
+        copied,
+      ),
+    };
   }
 
   if (source.quantified_variables !== undefined) {
@@ -6662,8 +6930,14 @@ function source_type_from_canonical(
         false,
       );
 
-    case "fixed_array":
-      return named_type(format_type(type));
+    case "fixed_array": {
+      const result = named_type(format_type(type));
+      result.fixed_array = {
+        length: type.length,
+        element: source_type_from_canonical(type.element, variables),
+      };
+      return result;
+    }
 
     case "sum": {
       const cases = new Map<string, SourceTypeFact>();
@@ -7122,6 +7396,13 @@ function source_type_fact_is_resolved(
     }
   }
 
+  if (
+    type.fixed_array !== undefined &&
+    !source_type_fact_is_resolved(type.fixed_array.element, visiting)
+  ) {
+    return false;
+  }
+
   if (type.cases !== undefined) {
     for (const payload of type.cases.values()) {
       if (!source_type_fact_is_resolved(payload, visiting)) {
@@ -7241,8 +7522,16 @@ function compatible_equality_operands(
   }
 
   if (is_numeric_type(left)) {
-    if (left.resolved_name === "I64") {
-      return prim.startsWith("i64.");
+    const integer = integer_type_from_name(left.resolved_name);
+
+    if (integer !== undefined) {
+      const value_type = integer_val_type(integer);
+
+      if (value_type === undefined) {
+        return false;
+      }
+
+      return prim.startsWith(value_type + ".");
     }
 
     if (left.resolved_name === "F32") {

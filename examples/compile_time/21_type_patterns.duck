@@ -4,10 +4,9 @@ type Player = struct { .name = Text, .score = I32 }
 
 let struct { .name = Text, ..} = Player;
 
-const classify = target => match target {
-  | struct { .name = Text, ..} => 40
-  | union { ..} => 0
-  | _ => 1
-};
+const classify = target => case target of
+  struct { .name = Text, ..} => 40,
+  union { ..} => 0,
+  _ => 1;
 
 classify Player + 2

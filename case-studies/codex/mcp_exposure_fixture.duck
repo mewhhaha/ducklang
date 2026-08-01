@@ -20,11 +20,11 @@ const texts = comptime list Text;
 const tools = comptime list FixtureTool;
 const runtimes = comptime list FixtureRuntime;
 
-let no_text: FixtureTextOption = `None ();
-let no_bool: FixtureBoolOption = `None ();
+let no_text: FixtureTextOption = #None;
+let no_bool: FixtureBoolOption = #None;
 let annotations: FixtureAnnotations = [no_bool, no_bool, no_bool];
-let visible: FixtureVisibility = `Model ();
-let hidden: FixtureVisibility = `App ();
+let visible: FixtureVisibility = #Model;
+let hidden: FixtureVisibility = #App;
 let custom: FixtureTool = [
   "docs",
   "search",
@@ -52,8 +52,8 @@ let calendar: FixtureTool = [
   "events/list",
   "mcp__codex_apps__calendar",
   "list",
-  `Some "calendar",
-  `Some "Calendar",
+  #Some "calendar",
+  #Some "Calendar",
   visible,
   true,
   annotations,
@@ -63,8 +63,8 @@ let drive: FixtureTool = [
   "files/list",
   "mcp__codex_apps__drive",
   "list",
-  `Some "drive",
-  `Some "Drive",
+  #Some "drive",
+  #Some "Drive",
   visible,
   true,
   annotations,
@@ -78,23 +78,27 @@ let direct: FixtureRuntimes = build_mcp_tool_runtimes(available, allowed, false)
 let deferred: FixtureRuntimes = build_mcp_tool_runtimes(available, allowed, true);
 let score = 0;
 
-if runtimes.length(direct) == 2 && runtimes.length(deferred) == 2 {
+if runtimes.length(direct) == 2 && runtimes.length(deferred) == 2 then
   score = score + 1
-}
+end;
 
-if let `Cons node = direct {
+if let #Cons node = direct then
   let [runtime, _] = node;
   let [tool, exposure] = runtime;
   let [server_name, remote_name, _, _, _, _, _, _, _] = tool;
-  if server_name == "docs" && remote_name == "search" {
-    if let `Direct () = exposure { score = score + 1 }
-  }
-}
+  if server_name == "docs" && remote_name == "search" then
+    if let #Direct = exposure then
+      score = score + 1
+    end;
+  end;
+end;
 
-if let `Cons node = deferred {
+if let #Cons node = deferred then
   let [runtime, _] = node;
   let [_, exposure] = runtime;
-  if let `Deferred () = exposure { score = score + 1 }
-}
+  if let #Deferred = exposure then
+    score = score + 1
+  end;
+end;
 
 return { .score = score };

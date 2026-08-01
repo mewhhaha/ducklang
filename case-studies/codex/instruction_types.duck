@@ -2,9 +2,9 @@ module () where
 
 type InstructionDocument = [Text, Text]
 type InstructionSnapshotEntry =
-  | `File InstructionDocument
-  | `Directory Text
-  | `Other Text
+  | #File InstructionDocument
+  | #Directory Text
+  | #Other Text
 
 type InstructionSnapshot = List InstructionSnapshotEntry
 type InstructionDocuments = List InstructionDocument
@@ -16,7 +16,7 @@ type InstructionDiscoveryConfig = [
   I32,
   InstructionTexts,
   InstructionTexts,
-  InstructionDocumentOption ]
+  InstructionDocumentOption]
 type LoadedInstructions = [InstructionTextOption, InstructionTexts]
 
 return {};

@@ -1,0 +1,22 @@
+module () where
+
+const { .is_standard_contextual_user_text } =
+  import "./contextual_user_fragment.duck" ();
+
+let score = 0;
+
+if is_standard_contextual_user_text(
+  "<apps_instructions>Apps</apps_instructions>",
+) then
+  score = score + 1
+end
+
+if is_standard_contextual_user_text(
+  "<realtime_conversation>Live</realtime_conversation>",
+) && is_standard_contextual_user_text(
+  "<realtime_delegation>Work</realtime_delegation>",
+) then
+  score = score + 10
+end
+
+return { .score = score };

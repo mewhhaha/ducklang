@@ -1,20 +1,24 @@
-const derive_scaled_area = (const scale) => (const target) => `Replace (comptime {
+const derive_scaled_area = (const scale) => (const target) => #Replace (comptime do
   target :+ {
-    .scaled_area = (shape: target) => match shape {
-      | `Square side => side * side * scale
-      | `Sides pair => pair[0] * pair[1] * scale
-      | _ => 0
-    },
+    .scaled_area = (shape: target) => do
+      case shape of
+        #Square side => side * side * scale,
+        #Sides pair => do
+          let [width, height] = pair;
+          width * height * scale
+        end,
+        _ => 0;
+    end,
   }
-});
+end);
 
-@[derive_scaled_area(7)]
+@[derive_scaled_area 7]
 type Shape =
-  | `Square I32
-  | `Sides ShapeSides
+  | #Square I32
+  | #Sides ShapeSides
 
 type ShapeSides = [I32, I32]
 
-let shape: Shape = `Sides [2, 3];
+let shape: Shape = #Sides [2, 3];
 
 Shape.scaled_area shape

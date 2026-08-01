@@ -14,10 +14,10 @@ type FixtureEndPlan = ExecEndPlan
 
 let score = 0;
 let initial: FixtureState = initial_lifecycle_state();
-let process_id: FixtureI32Option = `Some 1000;
-let no_input: FixtureTextOption = `None ();
+let process_id: FixtureI32Option = #Some 1000;
+let no_input: FixtureTextOption = #None;
 let command: FixtureCommand = ["/bin/zsh", "-c", "printf hello", "", 3];
-let source: FixtureSource = `UnifiedExecStartup ();
+let source: FixtureSource = #UnifiedExecStartup;
 let begin: FixtureBeginPlan = plan_exec_begin(
   initial,
   "call-1",
@@ -31,20 +31,22 @@ let begin: FixtureBeginPlan = plan_exec_begin(
 );
 let began: FixtureState = initial;
 
-if let `EmitBegin emission = begin {
+if let #EmitBegin emission = begin then
   let [next, event] = emission;
   let [call_id, event_process_id, turn_id, _, _, cwd, _, _] = event;
 
-  if call_id == "call-1" && turn_id == "turn-1" && cwd == "/repo" {
-    if let `Some value = event_process_id {
-      if value == 1000 { score = score + 1 }
-    }
-  }
+  if call_id == "call-1" && turn_id == "turn-1" && cwd == "/repo" then
+    if let #Some value = event_process_id then
+      if value == 1000 then
+        score = score + 1
+      end;
+    end;
+  end;
 
   began = next
-}
+end;
 
-if let `SuppressBegin _ = plan_exec_begin(
+if let #SuppressBegin _ = plan_exec_begin(
   began,
   "call-1",
   process_id,
@@ -54,9 +56,9 @@ if let `SuppressBegin _ = plan_exec_begin(
   "/repo",
   source,
   no_input,
-) {
+) then
   score = score + 1
-}
+end;
 
 let ended: FixtureEndPlan = plan_exec_end(
   began,
@@ -78,7 +80,7 @@ let ended: FixtureEndPlan = plan_exec_end(
 );
 let completed: FixtureState = began;
 
-if let `EmitEnd emission = ended {
+if let #EmitEnd emission = ended then
   let [next, event] = emission;
   let [
     call_id,
@@ -98,14 +100,17 @@ if let `EmitEnd emission = ended {
     status,
   ] = event;
 
-  if call_id == "call-1" && stdout == "hello" && stderr == "" && aggregated == "hello" && exit_code == 0 && duration_ms == 100 && formatted == "hello" {
-    if let `Completed () = status { score = score + 1 }
-  }
+  if call_id == "call-1" && stdout == "hello" && stderr == "" && aggregated == "hello" && exit_code
+    == 0 && duration_ms == 100 && formatted == "hello" then
+      if let #Completed = status then
+        score = score + 1
+      end;
+    end;
 
   completed = next
-}
+end;
 
-if let `SuppressEnd _ = plan_exec_end(
+if let #SuppressEnd _ = plan_exec_end(
   completed,
   "call-1",
   process_id,
@@ -122,14 +127,14 @@ if let `SuppressEnd _ = plan_exec_end(
   0,
   "",
   false,
-) {
+) then
   score = score + 1
-}
+end;
 
-if let `MissingBegin () = plan_exec_end(
+if let #MissingBegin = plan_exec_end(
   initial,
   "call-2",
-  `None (),
+  #None,
   "turn-1",
   202i64,
   command,
@@ -138,13 +143,12 @@ if let `MissingBegin () = plan_exec_end(
   no_input,
   "",
   "failed",
-  "failed",
-  -1,
+  "failed", -1,
   0,
   "failed",
   false,
-) {
+) then
   score = score + 1
-}
+end;
 
 return { .score = score };

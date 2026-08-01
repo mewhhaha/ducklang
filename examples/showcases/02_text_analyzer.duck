@@ -6,12 +6,12 @@ let tail = slice(source, 3, length source);
 let rebuilt = append(head, tail);
 let checksum = 0;
 
-for byte in rebuilt {
+for byte in rebuilt do
   checksum = checksum + byte
-}
+end
 
-if rebuilt == source {
+if rebuilt == source then
   checksum - 567
-} else {
+else
   0
-}
+end;

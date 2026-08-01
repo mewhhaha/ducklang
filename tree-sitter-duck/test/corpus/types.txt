@@ -145,13 +145,14 @@ const apply: (forall value. value -> value) -> I32 =
       (parameter_list
         (parameter
           (identifier)))
-      (application_expression
-        (postfix_expression
-          (identifier))
-        (parenthesized_or_product
-          (parenthesized_expression
-            (postfix_expression
-              (number))))))))
+      (postfix_expression
+        (call_expression
+          (postfix_expression
+            (identifier))
+          (parenthesized_or_product
+            (parenthesized_expression
+              (postfix_expression
+                (number)))))))))
 
 ==================
 Surface function types
@@ -191,7 +192,8 @@ let unit: () -> Text = () => ();
                             left: (effect_family_reference
                               effect: (effect_identifier))
                             right: (effect_row_variable
-                              name: (row_variable)))))
+                              name: (row_variable
+                                (lowercase_identifier))))))
                       result: (type_union
                         (type_intersection
                           (type_difference
@@ -199,7 +201,8 @@ let unit: () -> Text = () => ();
         effects: (latent_effect_row
           row: (effect_row
             (effect_row_variable
-              name: (row_variable))))
+              name: (row_variable
+                (lowercase_identifier)))))
         result: (type_union
           (type_intersection
             (type_difference
@@ -251,11 +254,11 @@ let unit: () -> Text = () => ();
 ==================
 Inline and multiline type sums
 ==================
-type Maybe a = | `Just a | `Nothing Unit
+type Maybe a = | #Just a | #Nothing
 type Maybe2 a =
-  | `Just a
-  | `Nothing Unit
-type X = `X I32
+  | #Just a
+  | #Nothing
+type X = #X I32
 
 ---
 
@@ -270,10 +273,7 @@ type X = `X I32
           (type_difference
             (identifier))))
       (type_case
-        name: (constructor_identifier)
-        payload: (type_reference
-          (type_difference
-            (identifier))))))
+        name: (constructor_identifier))))
   (type_declaration_statement
     name: (identifier)
     parameter: (identifier)
@@ -284,10 +284,7 @@ type X = `X I32
           (type_difference
             (identifier))))
       (type_case
-        name: (constructor_identifier)
-        payload: (type_reference
-          (type_difference
-            (identifier))))))
+        name: (constructor_identifier))))
   (type_declaration_statement
     name: (identifier)
     definition: (type_sum
@@ -426,10 +423,14 @@ Type sets, atoms, and modalities
 ==================
 type Choice = #ready :| Int :- Never
 type Any = _
-type Frozen = #(List a)
+type Frozen = freeze (List a)
 let marker: #ready :| #waiting = #ready;
 let view: &Text = &text;
-if marker is #ready { 1 } else { 0 }
+if marker is #ready then
+  1
+else
+  0
+end;
 
 ---
 
@@ -442,7 +443,8 @@ if marker is #ready { 1 } else { 0 }
           (type_intersection
             (type_difference
               (atom_type
-                (identifier)))))
+                (identifier
+                  (lowercase_identifier))))))
         (type_intersection
           (type_difference
             (type_difference
@@ -477,14 +479,17 @@ if marker is #ready { 1 } else { 0 }
           (type_intersection
             (type_difference
               (atom_type
-                (identifier)))))
+                (identifier
+                  (lowercase_identifier))))))
         (type_intersection
           (type_difference
             (atom_type
-              (identifier))))))
+              (identifier
+                (lowercase_identifier)))))))
     (postfix_expression
       (atom_expression
-        (identifier))))
+        (identifier
+          (lowercase_identifier)))))
   (binding_statement
     (identifier)
     (type_reference
@@ -501,21 +506,24 @@ if marker is #ready { 1 } else { 0 }
       (condition_expression
         (condition_is_expression
           (condition_expression
-            (identifier))
+            (condition_postfix_expression
+              (identifier)))
           (type_reference
             (type_union
               (type_intersection
                 (type_difference
                   (atom_type
-                    (identifier))))))))
-      (block
+                    (identifier
+                      (lowercase_identifier)))))))))
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      (block
-        (expression_statement
-          (postfix_expression
-            (number)))))))
+      (else_clause
+        (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (number))))))))
 
 ==================
 Literal types

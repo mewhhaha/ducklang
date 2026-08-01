@@ -13,8 +13,8 @@ type AutoCompactWindowIds = struct {
 }
 
 type AutoCompactWindowPrefill =
-  | `ServerObserved I64
-  | `Estimated I64
+  | #ServerObserved I64
+  | #Estimated I64
 
 type AutoCompactWindowPrefillOption = Option AutoCompactWindowPrefill
 type AutoCompactWindowTokenOption = ContextWindowI64Option

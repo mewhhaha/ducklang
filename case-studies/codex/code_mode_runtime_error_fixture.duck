@@ -7,42 +7,44 @@ type FixtureRuntimeItem = CodeModeRuntimeContentItem
 type FixtureRuntimeItemNode = CodeModeRuntimeContentItemNode
 type FixtureResponse = CodeModeRuntimeResponse
 
-let runtime_item: FixtureRuntimeItem = `RuntimeInputText "partial";
-let runtime_node: FixtureRuntimeItemNode = [runtime_item, `RuntimeItemsNil ()];
-let response: FixtureResponse = `RuntimeResult (
-  ["cell-1", `RuntimeItemsCons runtime_node, `RuntimeErrorPresent "boom"]
+let runtime_item: FixtureRuntimeItem = #RuntimeInputText "partial";
+let runtime_node: FixtureRuntimeItemNode = [runtime_item, #RuntimeItemsNil];
+let response: FixtureResponse = #RuntimeResult (
+  ["cell-1", #RuntimeItemsCons runtime_node, #RuntimeErrorPresent "boom"]
 );
 let failed = handle_code_mode_runtime_response(
   response,
-  `OriginalDetailUnsupported (),
-  `WaitLimitPresent (`U64Decimal "100"),
-  `ElapsedMicroseconds 940000i64,
+  #OriginalDetailUnsupported,
+  #WaitLimitPresent (#U64Decimal "100"),
+  #ElapsedMicroseconds 940000i64,
 );
 let score = 0;
 
-if !(failed.success) {
-  if let `Cons header_node = failed.content_items {
+if !(failed.success) then
+  if let #Cons header_node = failed.content_items then
     let [header_item, header_tail] = header_node;
-    if let `InputText header = header_item {
-      if header == "Script failed\nWall time 0.9 seconds\nOutput:\n" {
-        if let `Cons partial_node = header_tail {
+    if let #InputText header = header_item then
+      if header == "Script failed\nWall time 0.9 seconds\nOutput:\n" then
+        if let #Cons partial_node = header_tail then
           let [partial_item, partial_tail] = partial_node;
-          if let `InputText partial = partial_item {
-            if partial == "partial" {
-              if let `Cons error_node = partial_tail {
+          if let #InputText partial = partial_item then
+            if partial == "partial" then
+              if let #Cons error_node = partial_tail then
                 let [error_item, error_tail] = error_node;
-                if let `InputText error = error_item {
-                  if error == "Script error:\nboom" {
-                    if let `Nil () = error_tail { score = 1 }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+                if let #InputText error = error_item then
+                  if error == "Script error:\nboom" then
+                    if let #Nil = error_tail then
+                      score = 1
+                    end;
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

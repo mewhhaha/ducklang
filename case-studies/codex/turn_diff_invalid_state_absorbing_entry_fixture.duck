@@ -12,9 +12,9 @@ type FixtureAdd = TurnDiffAdd
 type FixtureFileMutation = TurnDiffFileMutation
 type FixtureMutation = TurnDiffMutation
 
-let baseline: FixtureContentEntries = `Nil ();
-let current: FixtureContentEntries = `Nil ();
-let origins: FixtureOriginEntries = `Nil ();
+let baseline: FixtureContentEntries = #Nil;
+let current: FixtureContentEntries = #Nil;
+let origins: FixtureOriginEntries = #Nil;
 let state: FixtureState = [
   .valid = false,
   .baseline = baseline,
@@ -23,15 +23,15 @@ let state: FixtureState = [
   .next_revision = 0,
 ];
 
-let none: FixtureTextOption = `None ();
+let none: FixtureTextOption = #None;
 let addition: FixtureAdd = [.content = "ignored\n", .overwritten_content = none];
-let file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
+let file_mutation: FixtureFileMutation = #TurnDiffAdd addition;
 let mutation: FixtureMutation = [.path = "ignored.txt", .mutation = file_mutation];
 state = track_turn_diff_delta(state, "", turn_diff_fixture_exact_delta mutation)
 
 let score: I32 = 0;
-if !(state.valid) && state.next_revision == 0 {
+if !(state.valid) && state.next_revision == 0 then
   score = score + 1
-}
+end;
 
 return { .score = score };

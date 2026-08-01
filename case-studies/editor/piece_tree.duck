@@ -1,0 +1,386 @@
+module () where
+
+const { .struct } = import "duck:prelude" ();
+
+type PieceSpan = struct {
+  .buffer = Bytes,
+  .buffer_id = I32,
+  .start = I32,
+  .length = I32,
+}
+type PieceTree = | #Empty | #Leaf PieceSpan | #Branch PieceBranch
+type PieceBranch = struct {
+  .left = PieceTree,
+  .right = PieceTree,
+  .length = I32,
+  .height = I32,
+}
+type PieceTable = struct {
+  .root = PieceTree,
+  .next_buffer_id = I32,
+}
+type PieceStack =
+  | #NoPendingPieces
+  | #PendingPiece PieceStackNode
+type PieceStackNode = [PieceTree, PieceStack]
+type PieceTraversal = struct { .pending = PieceStack }
+type PieceVisit = struct {
+  .piece = PieceSpan,
+  .remaining = PieceTraversal,
+}
+type PieceTraversalStep =
+  | #TraversalEnd
+  | #TraversalPiece PieceVisit
+type PieceByteCursor = struct {
+  .pieces = PieceTraversal,
+  .piece = PieceSpan,
+  .offset = I32,
+}
+type PieceByteTraversal =
+  | #NoMorePieceBytes
+  | #PieceBytes PieceByteCursor
+
+const empty_piece_tree = () => #Empty;
+
+let piece_tree_length = (tree: PieceTree) => case tree of
+  #Empty => 0,
+  #Leaf span => span.length,
+  #Branch branch => branch.length;
+
+let piece_tree_height = (tree: PieceTree) => case tree of
+  #Empty => 0,
+  #Leaf _ => 1,
+  #Branch branch => branch.height;
+
+let piece_tree_leaf = (span: PieceSpan) => do
+  if span.length == 0 then
+    empty_piece_tree()
+  else
+    let leaf = #Leaf span;
+    leaf
+  end;
+end;
+
+let piece_tree_node: (PieceTree, PieceTree) -> PieceTree = (left, right) => do
+  let left_height = piece_tree_height left;
+  let right_height = piece_tree_height right;
+
+  if left_height > right_height + 1 || right_height > left_height + 1 then
+    @panic "Piece tree branch children differ in height by more than one";
+  end;
+
+  let height =
+    if left_height > right_height then left_height + 1 else right_height
+        + 1 end;
+  let branch = #Branch (PieceBranch.new {
+    .left = left,
+    .right = right,
+    .length = piece_tree_length left + piece_tree_length right,
+    .height = height,
+  });
+  branch
+end;
+
+let piece_tree_branch: (PieceTree, PieceTree) -> PieceTree = case => of
+  (#Empty, tree) => tree,
+  (tree, #Empty) => tree,
+  (#Leaf left_span, #Leaf right_span) => do
+    let contiguous =
+      left_span.buffer_id == right_span.buffer_id && left_span.start
+      + left_span.length == right_span.start;
+
+    if contiguous then
+      piece_tree_leaf(PieceSpan.new {
+        .buffer = left_span.buffer,
+        .buffer_id = left_span.buffer_id,
+        .start = left_span.start,
+        .length = left_span.length + right_span.length,
+      })
+    else
+      piece_tree_node(#Leaf left_span, #Leaf right_span)
+    end;
+  end,
+  (left, right) => piece_tree_node(left, right);
+
+let rec append_piece_trees: (PieceTree, PieceTree) -> PieceTree =
+  (left, right) => do
+    let left_height = piece_tree_height left;
+    let right_height = piece_tree_height right;
+
+    if left_height > right_height + 1 then
+      case left of
+        #Branch branch => piece_tree_branch(
+          branch.left,
+          append_piece_trees(branch.right, right),
+        ),
+        #Empty => do
+          @panic "Piece tree left height exceeded right height but the left tree was empty";
+          empty_piece_tree()
+        end,
+        #Leaf _ => do
+          @panic "Piece tree left height exceeded right height but the left tree was not a branch";
+          empty_piece_tree()
+        end;
+    else right_height > left_height + 1 then
+      case right of
+        #Branch branch => piece_tree_branch(
+          append_piece_trees(left, branch.left),
+          branch.right,
+        ),
+        #Empty => do
+          @panic "Piece tree right height exceeded left height but the right tree was empty";
+          empty_piece_tree()
+        end,
+        #Leaf _ => do
+          @panic "Piece tree right height exceeded left height but the right tree was not a branch";
+          empty_piece_tree()
+        end;
+    else
+      piece_tree_branch(left, right)
+    end;
+  end;
+
+// : (PieceTable, PieceTree) -> PieceTable
+let piece_table_from_root = (table, root) => do
+  PieceTable.new {
+    .root = root,
+    .next_buffer_id = table.next_buffer_id,
+  }
+end;
+
+let rec piece_tree_byte_at: (PieceTree, I32) -> I32 =
+  (tree, wanted) => case tree of
+    #Leaf span => span.buffer[span.start + wanted],
+    #Branch branch => do
+      let left_length = piece_tree_length branch.left;
+
+      if wanted < left_length then
+        piece_tree_byte_at(branch.left, wanted)
+      else
+        piece_tree_byte_at(branch.right, wanted - left_length)
+      end;
+    end,
+    #Empty => @panic "Piece tree lookup reached an empty node";
+
+let piece_table: Bytes -> PieceTable = bytes => do
+  let original = PieceSpan.new {
+    .buffer = bytes,
+    .buffer_id = 0,
+    .start = 0,
+    .length = bytes.length(),
+  };
+  PieceTable.new {
+    .root = piece_tree_leaf original,
+    .next_buffer_id = 1,
+  }
+end;
+
+let piece_table_length: PieceTable -> I32 =
+  table => piece_tree_length table.root;
+
+let byte_at: (PieceTable, I32) -> I32 = (table, wanted) => do
+  let length = piece_table_length table;
+
+  if wanted < 0 || wanted >= length then
+    @panic "Piece table byte index is outside document bounds"
+  else
+    piece_tree_byte_at(table.root, wanted)
+  end;
+end;
+
+let rec split_piece_tree = (tree: PieceTree, position: I32) => do
+  let length = piece_tree_length tree;
+
+  if position <= 0 then
+    (empty_piece_tree(), tree)
+  else position >= length then
+    (tree, empty_piece_tree())
+  else
+    case tree of
+      #Empty => (empty_piece_tree(), empty_piece_tree()),
+      #Leaf span => do
+        let left_span = PieceSpan.new {
+          .buffer = span.buffer,
+          .buffer_id = span.buffer_id,
+          .start = span.start,
+          .length = position,
+        };
+        let right_span = PieceSpan.new {
+          .buffer = span.buffer,
+          .buffer_id = span.buffer_id,
+          .start = span.start + position,
+          .length = span.length - position,
+        };
+        (piece_tree_leaf left_span, piece_tree_leaf right_span)
+      end,
+      #Branch branch => do
+        let left = branch.left;
+        let right = branch.right;
+        let left_length = piece_tree_length left;
+
+        if position < left_length then
+          let (prefix, suffix) = split_piece_tree(left, position);
+          (prefix, append_piece_trees(suffix, right))
+        else
+          let (prefix, suffix) =
+            split_piece_tree(right, position - left_length);
+          (append_piece_trees(left, prefix), suffix)
+        end;
+      end;
+  end;
+end;
+
+let insert_bytes: (PieceTable, I32, Bytes) -> PieceTable =
+  (table, position, bytes) => do
+    let inserted_length = bytes.length();
+
+    if inserted_length == 0 then
+      table
+    else
+      let (left, right) = split_piece_tree(table.root, position);
+      let inserted_span = PieceSpan.new {
+        .buffer = bytes,
+        .buffer_id = table.next_buffer_id,
+        .start = 0,
+        .length = inserted_length,
+      };
+      let inserted = piece_tree_leaf inserted_span;
+      let root = append_piece_trees(
+        append_piece_trees(left, inserted),
+        right,
+      );
+      PieceTable.new {
+        .root = root,
+        .next_buffer_id = table.next_buffer_id + 1,
+      }
+    end;
+  end;
+
+let delete_bytes: (PieceTable, I32, I32) -> PieceTable =
+  (table, start, finish) => do
+    if start >= finish then
+      table
+    else
+      let (prefix, suffix) = split_piece_tree(table.root, finish);
+      let (left, _) = split_piece_tree(prefix, start);
+      let root = append_piece_trees(left, suffix);
+      piece_table_from_root(table, root)
+    end;
+  end;
+
+let piece_tree_traversal: PieceTree -> PieceTraversal = tree => do
+  let empty_stack = #NoPendingPieces;
+  PieceTraversal.new { .pending = #PendingPiece [tree, empty_stack] }
+end;
+
+let next_piece: PieceTraversal -> PieceTraversalStep = traversal => do
+  let rec next_pending: PieceStack -> PieceTraversalStep =
+    pending => case pending of
+      #NoPendingPieces => #TraversalEnd,
+      #PendingPiece node => do
+        let [tree, tail] = node;
+
+        case tree of
+          #Empty => next_pending tail,
+          #Leaf span => do
+            let remaining = PieceTraversal.new { .pending = tail };
+            #TraversalPiece (PieceVisit.new {
+              .piece = span,
+              .remaining = remaining,
+            })
+          end,
+          #Branch branch => do
+            let right = #PendingPiece [branch.right, tail];
+            next_pending(#PendingPiece [branch.left, right])
+          end;
+      end;
+  next_pending traversal.pending
+end;
+
+let piece_bytes_from: PieceTraversal -> PieceByteTraversal = pieces => do
+  let step: PieceTraversalStep = next_piece pieces;
+
+  case step of
+    #TraversalEnd => #NoMorePieceBytes,
+    #TraversalPiece visit => do
+      #PieceBytes (PieceByteCursor.new {
+        .pieces = visit.remaining,
+        .piece = visit.piece,
+        .offset = 0,
+      })
+    end;
+end;
+
+let piece_byte_traversal: PieceTable -> PieceByteTraversal = table => do
+  piece_bytes_from(piece_tree_traversal table.root)
+end;
+
+extend PieceByteTraversal {
+  type Item = I32,
+  .has_next = traversal => if let #PieceBytes _ = traversal then
+    true
+  else
+    false
+  end,
+  .next = traversal => do
+    let #PieceBytes cursor = traversal else do
+      @panic "Cannot advance an exhausted piece-byte iterator";
+      [0, traversal]
+    end;
+    let rec remaining_piece_bytes: PieceStack -> PieceByteTraversal =
+      pending => case pending of
+        #NoPendingPieces => #NoMorePieceBytes,
+        #PendingPiece node => do
+          let [tree, tail] = node;
+
+          case tree of
+            #Empty => remaining_piece_bytes tail,
+            #Leaf span => do
+              let pieces = PieceTraversal.new { .pending = tail };
+              #PieceBytes (PieceByteCursor.new {
+                .pieces = pieces,
+                .piece = span,
+                .offset = 0,
+              })
+            end,
+            #Branch branch => do
+              let right = #PendingPiece [branch.right, tail];
+              remaining_piece_bytes(#PendingPiece [branch.left, right])
+            end;
+        end;
+    let byte = cursor.piece.buffer[cursor.piece.start + cursor.offset];
+    let next_offset = cursor.offset + 1;
+    let remaining = if next_offset < cursor.piece.length then
+      #PieceBytes (PieceByteCursor.new {
+        .pieces = cursor.pieces,
+        .piece = cursor.piece,
+        .offset = next_offset,
+      })
+    else
+      remaining_piece_bytes cursor.pieces.pending
+    end;
+    [byte, remaining]
+  end,
+}
+
+let materialize: PieceTable -> Bytes = table => do
+  let output = Bytes.generate(piece_table_length table, _ => 0);
+  let output_offset = 0;
+
+  for byte in piece_byte_traversal table do
+    output[output_offset] = byte
+    output_offset = output_offset + 1
+  end
+
+  output
+end;
+
+return {
+  .piece_table,
+  .piece_table_length,
+  .byte_at,
+  .insert_bytes,
+  .delete_bytes,
+  .piece_byte_traversal,
+  .materialize,
+};

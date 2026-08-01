@@ -13,11 +13,11 @@ declare Init {
   stdout: Stdout
 }
 
-let echo: () -> <Stdin :| Stdout> Text = () => {
+let echo: () -> <Stdin :| Stdout> Text = () => do
   input <- Stdin.read_line()
   _ <- Stdout.write_line(&input)
   input
-};
+end;
 
 result <- echo();
 return { .result = result };

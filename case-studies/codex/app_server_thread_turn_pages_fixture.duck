@@ -13,44 +13,51 @@ type FixturePageResult = AppServerThreadTurnsPageResult
 const turn: Text -> FixtureTurn = (id: Text) => [
   id,
   json_array_empty(),
-  `Full (),
-  `Completed (),
-  `None (),
-  `None (),
-  `None (),
-  `None (),
+  #Full,
+  #Completed,
+  #None,
+  #None,
+  #None,
+  #None,
 ];
 
 let first: FixtureTurn = turn "turn-1";
 let second: FixtureTurn = turn "turn-2";
 let third: FixtureTurn = turn "turn-3";
-let history: FixtureTurns = `Cons ([first, `Cons ([second, `Cons ([third, `Nil ()])])]);
+let history: FixtureTurns = #Cons ([first, #Cons ([second, #Cons ([third, #Nil])])]);
 let params: FixtureParams = [
   "thread-1",
-  `Some "{\"turnId\":\"turn-1\",\"includeAnchor\":false}",
+  #Some "{\"turnId\":\"turn-1\",\"includeAnchor\":false}",
   1,
-  `Ascending (),
-  `Full (),
+  #Ascending,
+  #Full,
 ];
 let page: FixturePageResult = list_legacy_thread_turns(history, params);
 let score = 0;
 
-if let `Ok value = page {
+if let #Ok value = page then
   let [turns, next, backwards] = value;
-  if let `Cons node = turns {
+  if let #Cons node = turns then
     let [only_turn, tail] = node;
     let [turn_id, _, _, _, _, _, _, _] = only_turn;
-    let tail_valid = if let `Nil () = tail { true } else { false };
-    let next_valid = if let `Some cursor = next { cursor == "{\"turnId\":\"turn-2\",\"includeAnchor\":false}" } else { false };
-    let backwards_valid = if let `Some cursor = backwards { cursor == "{\"turnId\":\"turn-2\",\"includeAnchor\":true}" } else { false };
-    if turn_id == "turn-2" && tail_valid && next_valid && backwards_valid { score = score + 1 }
-  }
-}
+    let tail_valid = if let #Nil = tail then true else false end;
+    let next_valid =
+      if let #Some cursor = next then cursor
+          == "{\"turnId\":\"turn-2\",\"includeAnchor\":false}" else false end;
+    let backwards_valid =
+      if let #Some cursor = backwards then cursor
+          == "{\"turnId\":\"turn-2\",\"includeAnchor\":true}" else false end;
+    if turn_id == "turn-2" && tail_valid && next_valid && backwards_valid then
+      score = score + 1 end;
+  end;
+end;
 
-let invalid_params: FixtureParams = ["thread-1", `Some "bad", 1, `Ascending (), `Full ()];
+let invalid_params: FixtureParams = ["thread-1", #Some "bad", 1, #Ascending, #Full];
 let invalid: FixturePageResult = list_legacy_thread_turns(history, invalid_params);
-if let `Err reason = invalid {
-  if reason == "invalid cursor: bad" { score = score + 10 }
-}
+if let #Err reason = invalid then
+  if reason == "invalid cursor: bad" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

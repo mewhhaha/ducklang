@@ -1,11 +1,11 @@
 import { assert_equals, assert_includes } from "../assert.ts";
 import { LspTestClient } from "../lsp/test_harness.ts";
 
-const entry = new URL("../../duck.ts", import.meta.url).pathname;
+const entry = new URL("../../duck.ts", import.meta.url).href;
 
 Deno.test("duck fmt --stdin formats a program", async () => {
   const command = new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "fmt", "--stdin"],
+    args: ["run", "--no-check", "--allow-read", entry, "fmt", "--stdin"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -21,7 +21,7 @@ Deno.test("duck fmt --stdin formats a program", async () => {
 
 Deno.test("duck lsp answers an initialize and formatting round trip", async () => {
   const command = new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -173,7 +173,7 @@ Deno.test("duck test reports a failing source assertion", async () => {
     );
     assert_includes(
       new TextDecoder().decode(output.stderr),
-      "Duck program called @panic",
+      "Test failed",
     );
   } finally {
     await Deno.remove(directory, { recursive: true });
@@ -228,6 +228,52 @@ Deno.test("duck check resolves imports before reporting diagnostics", async () =
     "error[DUCK2501]: Import ./missing_import_dependency.duck " +
       "does not export missing",
   );
+});
+
+Deno.test("duck check locates imported syntax errors in their source file", async () => {
+  const directory = await Deno.makeTempDir({
+    prefix: "duck check import syntax ",
+  });
+
+  try {
+    const main = directory + "/main.duck";
+    const dependency = directory + "/dep.duck";
+    await Deno.writeTextFile(
+      main,
+      'const dependency = import "./dep.duck";\ndependency\n',
+    );
+    await Deno.writeTextFile(
+      dependency,
+      "module () where\nlet value = ;\nreturn {};\n",
+    );
+    const command = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-check",
+        "--allow-read",
+        entry,
+        "check",
+        main,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const output = await command.output();
+    const stderr = new TextDecoder().decode(output.stderr);
+
+    assert_equals(output.success, false);
+    assert_includes(
+      stderr,
+      dependency + ":2:13: error[DUCK1001]: " +
+        "Baba parser rejected MISSING",
+    );
+    assert_includes(
+      stderr,
+      main + ":1:20: note: Imported here.",
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
 });
 
 Deno.test("duck build emits runnable gpufuck Wasm", async () => {

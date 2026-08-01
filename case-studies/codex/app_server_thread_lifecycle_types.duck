@@ -12,8 +12,8 @@ type AppServerLoadedThread = struct {
 type AppServerLoadedThreads = List AppServerLoadedThread
 
 type AppServerThreadInitialHistory =
-  | `NewHistory Unit
-  | `ClearedHistory Unit
+  | #NewHistory
+  | #ClearedHistory
 
 type AppServerThreadStartPlan = struct {
   .history_mode = AppServerThreadHistoryMode,
@@ -38,10 +38,10 @@ type AppServerDecodedThreadStartPlanInput = struct {
 type AppServerThreadStartPlanResult = Result Text AppServerThreadStartPlan
 
 type AppServerThreadResumeSource =
-  | `RejoinThread AppServerLoadedThread
-  | `ResumeHistory AppServerJson
-  | `ResumePath Text
-  | `ResumeThreadId Text
+  | #RejoinThread AppServerLoadedThread
+  | #ResumeHistory AppServerJson
+  | #ResumePath Text
+  | #ResumeThreadId Text
 
 type AppServerThreadResumePlan = struct {
   .source = AppServerThreadResumeSource,
@@ -66,13 +66,13 @@ type AppServerDecodedThreadResumePlanInput = struct {
 type AppServerThreadResumePlanResult = Result Text AppServerThreadResumePlan
 
 type AppServerThreadForkSource =
-  | `ForkPath Text
-  | `ForkThreadId Text
+  | #ForkPath Text
+  | #ForkThreadId Text
 
 type AppServerThreadForkBoundary =
-  | `ForkAllTurns Unit
-  | `ForkThroughTurn Text
-  | `ForkBeforeTurn Text
+  | #ForkAllTurns
+  | #ForkThroughTurn Text
+  | #ForkBeforeTurn Text
 
 type AppServerThreadForkPlan = struct {
   .source = AppServerThreadForkSource,

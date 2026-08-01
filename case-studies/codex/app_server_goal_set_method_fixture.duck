@@ -12,17 +12,23 @@ fields = json_object_prepend("objective", json_string "Ship Codex", fields)
 fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let result: FixtureResult = decode_thread_goal_set(json_object fields);
 let score = 0;
-if let `MethodOk method = result {
-  if let `ThreadGoal goal_method = method {
-    if let `ThreadGoalSet params = goal_method {
-      let objective_valid = if let `Some value = params.objective { value == "Ship Codex" } else {
-        false };
-      let status_valid = if let `Some status = params.status { if let `GoalBudgetLimited () = status { true } else { false } } else { false };
-      let budget_valid = if let `Set value = params.token_budget { value == 9223372036854775807i64
-      } else { false };
-      if params.thread_id == "thread-1" && objective_valid && status_valid && budget_valid { score = score + 1 }
-    }
-  }
-}
+if let #MethodOk method = result then
+  if let #ThreadGoal goal_method = method then
+    if let #ThreadGoalSet params = goal_method then
+      let objective_valid = if let #Some value = params.objective then value == "Ship Codex" else
+        false end;
+      let status_valid =
+        if let #Some status = params.status then
+          if let #GoalBudgetLimited = status then true else false end;
+        else false end;
+      let budget_valid =
+        if let #Set value = params.token_budget then value == 9223372036854775807i64
+        else false end;
+      if params.thread_id == "thread-1" && objective_valid && status_valid && budget_valid then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

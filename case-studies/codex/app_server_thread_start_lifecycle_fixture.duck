@@ -8,20 +8,20 @@ type FixtureResult = AppServerThreadStartPlanResult
 type FixtureInput = AppServerThreadStartPlanInput
 
 let input: FixtureInput = [
-  `None (),
-  `None (),
-  `PersistentThread (),
-  `RawEventsDisabled (),
-  `PaginatedListsSupported (),
+  #None,
+  #None,
+  #PersistentThread,
+  #RawEventsDisabled,
+  #PaginatedListsSupported,
 ];
 let planned: FixtureResult = plan_thread_start input;
-let score = if let `Ok plan = planned {
+let score = if let #Ok plan = planned then
   let [history_mode, initial_history, persistence, raw_events] = plan;
-  let history_valid = if let `LegacyHistory () = history_mode { true } else { false };
-  let initial_valid = if let `NewHistory () = initial_history { true } else { false };
-  let persistence_valid = if let `PersistentThread () = persistence { true } else { false };
-  let raw_events_valid = if let `RawEventsDisabled () = raw_events { true } else { false };
-  if history_valid && initial_valid && persistence_valid && raw_events_valid { 1 } else { 0 }
-} else { 0 };
+  let history_valid = if let #LegacyHistory = history_mode then true else false end;
+  let initial_valid = if let #NewHistory = initial_history then true else false end;
+  let persistence_valid = if let #PersistentThread = persistence then true else false end;
+  let raw_events_valid = if let #RawEventsDisabled = raw_events then true else false end;
+  if history_valid && initial_valid && persistence_valid && raw_events_valid then 1 else 0 end;
+else 0 end;
 
 return { .score = score };

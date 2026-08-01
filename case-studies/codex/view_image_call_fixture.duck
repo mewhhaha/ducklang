@@ -7,30 +7,36 @@ type FixtureEnvironment = ViewImageEnvironment
 type FixtureEnvironmentNode = ViewImageEnvironmentNode
 type FixtureEnvironments = ViewImageEnvironments
 
-let local: FixtureEnvironment = [.environment_id = "local", .cwd = "/workspace", .is_primary = true];
-let environments: FixtureEnvironments = `Cons ([local, `Nil ()] as FixtureEnvironmentNode);
+let local: FixtureEnvironment =
+  [.environment_id = "local", .cwd = "/workspace", .is_primary = true];
+let environments: FixtureEnvironments = #Cons ([local, #Nil] as FixtureEnvironmentNode);
 let score = 0;
 
-let unsupported_model = plan_view_image_call("call-1", `Unsupported (), environments, false, false);
-if let `RejectRequest message = unsupported_model {
-  if message == "view_image is not allowed because you do not support image inputs" { score = score
-    + 1 }
-}
+let unsupported_model = plan_view_image_call("call-1", #Unsupported, environments, false, false);
+if let #RejectRequest message = unsupported_model then
+  if message == "view_image is not allowed because you do not support image inputs" then
+    score = score + 1 end;
+end;
 
-let unsupported_payload = plan_view_image_call("call-2", `Unsupported (), environments, true, false);
-if let `Fatal message = unsupported_payload {
-  if message == "view_image handler received unsupported payload" { score = score + 10 }
-}
+let unsupported_payload =
+  plan_view_image_call("call-2", #Unsupported, environments, true, false);
+if let #Fatal message = unsupported_payload then
+  if message == "view_image handler received unsupported payload" then
+    score = score + 10
+  end;
+end;
 
 let valid = plan_view_image_call(
   "call-3",
-  `Function "{\"path\":\"image.png\"}",
+  #Function "{\"path\":\"image.png\"}",
   environments,
   true,
   true,
 );
-if let `ReadImage prepared = valid {
-  if prepared.path == "/workspace/image.png" { score = score + 100 }
-}
+if let #ReadImage prepared = valid then
+  if prepared.path == "/workspace/image.png" then
+    score = score + 100
+  end;
+end;
 
 return { .score = score };

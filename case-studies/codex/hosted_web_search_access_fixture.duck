@@ -4,35 +4,40 @@ const { .hosted_web_search_external_access, .hosted_web_search_indexed_access } 
 type FixtureConfigOption = HostedSpecConfigOption
 type FixtureSpec = HostedSpec
 
-let missing_config: FixtureConfigOption = `SearchConfigMissing ();
-let live: FixtureSpec = `LiveTextAndImage missing_config;
-let cached: FixtureSpec = `CachedText missing_config;
-let indexed: FixtureSpec = `IndexedText missing_config;
-let missing: FixtureSpec = `HostedSpecMissing ();
+let missing_config: FixtureConfigOption = #SearchConfigMissing;
+let live: FixtureSpec = #LiveTextAndImage missing_config;
+let cached: FixtureSpec = #CachedText missing_config;
+let indexed: FixtureSpec = #IndexedText missing_config;
+let missing: FixtureSpec = #HostedSpecMissing;
 let score = 0;
 
-if let `HostedBoolPresent external = hosted_web_search_external_access live {
-  if external {
-    if let `HostedBoolMissing () = hosted_web_search_indexed_access live { score = score + 1 }
-  }
-}
+if let #HostedBoolPresent external = hosted_web_search_external_access live then
+  if external then
+    if let #HostedBoolMissing = hosted_web_search_indexed_access live then
+      score = score + 1 end;
+  end;
+end;
 
-if let `HostedBoolPresent external = hosted_web_search_external_access cached {
-  if !(external) {
-    if let `HostedBoolMissing () = hosted_web_search_indexed_access cached { score = score + 10 }
-  }
-}
+if let #HostedBoolPresent external = hosted_web_search_external_access cached then
+  if !(external) then
+    if let #HostedBoolMissing = hosted_web_search_indexed_access cached then
+      score = score + 10 end;
+  end;
+end;
 
-if let `HostedBoolPresent external = hosted_web_search_external_access indexed {
-  if external {
-    if let `HostedBoolPresent indexed_access = hosted_web_search_indexed_access indexed {
-      if indexed_access { score = score + 100 }
-    }
-  }
-}
+if let #HostedBoolPresent external = hosted_web_search_external_access indexed then
+  if external then
+    if let #HostedBoolPresent indexed_access = hosted_web_search_indexed_access indexed then
+      if indexed_access then
+        score = score + 100
+      end;
+    end;
+  end;
+end;
 
-if let `HostedBoolMissing () = hosted_web_search_external_access missing {
-  if let `HostedBoolMissing () = hosted_web_search_indexed_access missing { score = score + 1000 }
-}
+if let #HostedBoolMissing = hosted_web_search_external_access missing then
+  if let #HostedBoolMissing = hosted_web_search_indexed_access missing then
+    score = score + 1000 end;
+end;
 
 return { .score = score };

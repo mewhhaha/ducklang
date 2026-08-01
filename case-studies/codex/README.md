@@ -1054,21 +1054,30 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   handling, `exec`/`wait` ordering, exposure and namespace exclusions, nested
   runtime retention, enabled and deferred prompt sets, namespace ordering and
   description upgrades, direct-mode absence, and deferred-guidance gating. The
-  collaboration fixtures verify V2 and feature gating, namespace and exposure
-  policy, the official six-tool order, schemas, canonical task paths, depth and
-  capacity errors, message and follow-up distinction, normalized fork modes,
-  root/self target rejections, interrupt targets, wait bounds, list prefixes,
-  agent-status encoding, metadata-sensitive spawn schemas and output,
-  requested/default/inherited spawn overrides, bounded model errors, unsupported
-  reasoning-effort errors, and exact interrupt, wait, and list output;
-  `agent.test.ts` verifies the legacy live typed mechanics boundary, while
-  `agent_tool_spawn.test.ts` and `agent_tool_control.test.ts` verify all six V2
-  host operations, retained policy and output stages, pre-spawn rejection,
-  successful-spawn telemetry, final client text, and lifecycle ordering. The 17
-  agent-job fixtures verify exact registration, typed argument decoding,
-  local-environment and concurrency policy, CSV preparation, runner transitions,
-  result aggregation, CSV output, and report validation; the live agent fixtures
-  verify the typed host boundaries through the same backend.
+  apps fixtures verify connector visibility, exact model guidance, legacy
+  recognition, and retained world-state restoration. The user-shell fixture
+  verifies aggregated output, timeout context, and exact contextual record
+  formatting. The elicitation fixture verifies that concurrent prompts retain
+  the paused state until every registration completes. The realtime fixtures
+  verify exact start/end guidance, custom starts, active-state diffs, delegation
+  sources, transcript tails, and XML escaping. The patch-safety fixture mirrors
+  upstream writable roots, explicit deny/read-only subpaths, approval policy,
+  and rejection diagnostics. The collaboration fixtures verify
+  V2 and feature gating, namespace and exposure policy, the official six-tool
+  order, schemas, canonical task paths, depth and capacity errors, message and
+  follow-up distinction, normalized fork modes, root/self target rejections,
+  interrupt targets, wait bounds, list prefixes, agent-status encoding,
+  metadata-sensitive spawn schemas and output, requested/default/inherited spawn
+  overrides, bounded model errors, unsupported reasoning-effort errors, and
+  exact interrupt, wait, and list output; `agent.test.ts` verifies the legacy
+  live typed mechanics boundary, while `agent_tool_spawn.test.ts` and
+  `agent_tool_control.test.ts` verify all six V2 host operations, retained
+  policy and output stages, pre-spawn rejection, successful-spawn telemetry,
+  final client text, and lifecycle ordering. The 18 agent-job fixtures verify
+  exact registration, typed argument decoding, local-environment and concurrency
+  policy, CSV preparation, runner transitions, result aggregation, CSV output,
+  and report validation; the live agent fixtures verify the typed host
+  boundaries through the same backend.
 
 ## Port order
 

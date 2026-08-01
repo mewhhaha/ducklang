@@ -12,35 +12,35 @@ type ToolSearchSourceInfo = struct {
 }
 type ToolSearchSourceInfoNode = [ToolSearchSourceInfo, ToolSearchSourceInfos]
 type ToolSearchSourceInfos =
-  | `Nil Unit
-  | `Cons ToolSearchSourceInfoNode
+  | #Nil
+  | #Cons ToolSearchSourceInfoNode
 type ToolSearchSourceInfoOption =
-  | `SearchSourceMissing Unit
-  | `SearchSourcePresent ToolSearchSourceInfo
+  | #SearchSourceMissing
+  | #SearchSourcePresent ToolSearchSourceInfo
 
 type ToolSearchFunction = [ToolSpec, Bool]
 type ToolSearchFunctionNode = [ToolSearchFunction, ToolSearchFunctions]
 type ToolSearchFunctions =
-  | `Nil Unit
-  | `Cons ToolSearchFunctionNode
+  | #Nil
+  | #Cons ToolSearchFunctionNode
 
 type ToolSearchNamespace = [Text, Text, ToolSearchFunctions]
 
 type ToolSearchLoadableSpec =
-  | `Function ToolSearchFunction
-  | `Namespace ToolSearchNamespace
+  | #Function ToolSearchFunction
+  | #Namespace ToolSearchNamespace
 type ToolSearchLoadableSpecNode = [ToolSearchLoadableSpec, ToolSearchLoadableSpecs]
 type ToolSearchLoadableSpecs =
-  | `Nil Unit
-  | `Cons ToolSearchLoadableSpecNode
+  | #Nil
+  | #Cons ToolSearchLoadableSpecNode
 
 type ToolSearchEntry = [Text, ToolSearchLoadableSpec]
 
 type ToolSearchInfo = [ToolSearchEntry, ToolSearchSourceInfoOption]
 type ToolSearchInfoNode = [ToolSearchInfo, ToolSearchInfos]
 type ToolSearchInfos =
-  | `Nil Unit
-  | `Cons ToolSearchInfoNode
+  | #Nil
+  | #Cons ToolSearchInfoNode
 
 type ToolSearchOutput = struct {
   .status = Text,
@@ -49,14 +49,14 @@ type ToolSearchOutput = struct {
 }
 
 type ToolSearchCallPlan =
-  | `ReturnTools ToolSearchOutput
-  | `RejectRequest Text
-  | `Fatal Text
+  | #ReturnTools ToolSearchOutput
+  | #RejectRequest Text
+  | #Fatal Text
 
 type ToolSearchRankedEntry = [I32, I32, ToolSearchEntry]
 type ToolSearchRankedEntryNode = [ToolSearchRankedEntry, ToolSearchRankedEntries]
 type ToolSearchRankedEntries =
-  | `Nil Unit
-  | `Cons ToolSearchRankedEntryNode
+  | #Nil
+  | #Cons ToolSearchRankedEntryNode
 
 return {};

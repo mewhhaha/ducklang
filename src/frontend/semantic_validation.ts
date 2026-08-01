@@ -67,6 +67,7 @@ import {
   value_pack_length,
 } from "./fixed_array_type.ts";
 import { integer_type_from_name } from "../integer.ts";
+import { is_irrefutable_binding_pattern } from "./pattern.ts";
 
 type SemanticBinding = {
   type: FrontType;
@@ -121,7 +122,10 @@ export function validate_frontend_semantics(
   const const_env = create_env();
 
   for (const declaration of declarations) {
-    if (declaration.tag !== "type" && declaration.tag !== "record") {
+    if (
+      declaration.tag !== "duck" &&
+      declaration.tag !== "type" && declaration.tag !== "record"
+    ) {
       continue;
     }
 
@@ -338,6 +342,30 @@ function validate_statement(
   if (stmt.tag === "bind") {
     validate_attribute_groups(stmt.attribute_groups, env, diagnostics);
     mark_annotation_use(stmt.annotation, stmt.type_annotation, env);
+    if (
+      stmt.pattern !== undefined &&
+      !is_irrefutable_binding_pattern(stmt.pattern) &&
+      stmt.else_branch === undefined
+    ) {
+      diagnostics.push(
+        source_diagnostic(
+          "DUCK2315",
+          "Binding pattern may fail; use `let ... else` or `match`",
+          stmt.pattern,
+        ),
+      );
+    }
+    if (
+      stmt.pattern !== undefined &&
+      stmt.pattern.tag !== "binding"
+    ) {
+      validate_binding_pattern_shape(
+        stmt.pattern,
+        stmt.value,
+        env,
+        diagnostics,
+      );
+    }
     let binding: SemanticBinding | undefined;
 
     if (
@@ -428,6 +456,28 @@ function validate_statement(
 
     if (diagnostics.length === before) {
       type = infer_type(stmt.value, env);
+    }
+
+    if (
+      stmt.pattern !== undefined &&
+      stmt.pattern.tag !== "binding"
+    ) {
+      const resolved_pattern_source = resolve_binding_pattern_source(
+        stmt.value,
+        env,
+        new Set(),
+      );
+      if (
+        binding_source_arity(resolved_pattern_source) === undefined &&
+        !binding_source_is_definitely_nonaggregate(resolved_pattern_source)
+      ) {
+        validate_binding_pattern_representation(
+          stmt.pattern,
+          type,
+          env,
+          diagnostics,
+        );
+      }
     }
 
     validate_basic_annotation(stmt, type, env, diagnostics);
@@ -687,7 +737,7 @@ function validate_statement(
     mark_binding_used(stmt.name, env);
     validate_expr(stmt.index, env, diagnostics);
     validate_expr(stmt.value, env, diagnostics);
-    validate_numeric_boundary(stmt.index, "Index", env, diagnostics);
+    validate_index_boundary(stmt.index, "Index", env, diagnostics);
 
     const binding = env.bindings.get(stmt.name);
 
@@ -761,6 +811,15 @@ function validate_statement(
     }
 
     const actual = infer_type(stmt.value, env);
+    if (!same_type(expected, actual)) {
+      diagnostics.push(source_diagnostic(
+        "DUCK2306",
+        "Struct index update expects " + type_name(expected) + ", got " +
+          type_name(actual),
+        stmt.value,
+      ));
+      return;
+    }
 
     const representation_diagnostic = value_representation_diagnostic(
       "DUCK2306",
@@ -933,6 +992,536 @@ function validate_statement(
       false,
     );
   }
+}
+
+function validate_binding_pattern_shape(
+  pattern: Pattern,
+  source: FrontExpr,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  const resolved_source = resolve_binding_pattern_source(
+    source,
+    env,
+    new Set(),
+  );
+  if (pattern.tag === "binding") {
+    const projected_binding: Extract<Stmt, { tag: "bind" }> = {
+      tag: "bind",
+      kind: "let",
+      pattern,
+      name: pattern.name,
+      is_linear: pattern.mode === "linear",
+      annotation: pattern.annotation,
+      value: resolved_source,
+    };
+    if (pattern.type_annotation !== undefined) {
+      projected_binding.type_annotation = pattern.type_annotation;
+    }
+    validate_basic_annotation(
+      projected_binding,
+      infer_type(resolved_source, env),
+      env,
+      diagnostics,
+    );
+    return;
+  }
+  if (pattern.tag === "or") {
+    const failures: SourceDiagnostic[][] = [];
+    for (const alternative of pattern.alternatives) {
+      const alternative_diagnostics: SourceDiagnostic[] = [];
+      validate_binding_pattern_shape(
+        alternative,
+        resolved_source,
+        env,
+        alternative_diagnostics,
+      );
+      if (alternative_diagnostics.length === 0) return;
+      failures.push(alternative_diagnostics);
+    }
+    const first_failure = failures[0];
+    if (first_failure !== undefined) {
+      diagnostics.push(...first_failure);
+    }
+    return;
+  }
+  if (pattern.tag === "product") {
+    const labeled = pattern.entries.every((entry) => entry.label !== undefined);
+    if (labeled) {
+      const available = binding_source_field_names(resolved_source);
+      if (available !== undefined) {
+        for (const entry of pattern.entries) {
+          expect(entry.label, "Labeled binding pattern lost its field name");
+          if (available.includes(entry.label)) continue;
+          diagnostics.push(
+            source_diagnostic(
+              "DUCK2316",
+              "Binding pattern field " + entry.label +
+                " is missing; available fields: " + available.join(", "),
+              entry,
+            ),
+          );
+        }
+      } else if (binding_source_is_definitely_nonaggregate(resolved_source)) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Named binding pattern requires an aggregate source",
+            pattern,
+          ),
+        );
+      }
+    } else {
+      const arity = binding_source_arity(resolved_source);
+      if (
+        arity !== undefined && pattern.rest === undefined &&
+        arity !== pattern.entries.length
+      ) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Binding pattern expects " + pattern.entries.length.toString() +
+              " entries, got " + arity.toString(),
+            pattern,
+          ),
+        );
+      }
+      if (
+        arity === undefined &&
+        binding_source_is_definitely_nonaggregate(resolved_source)
+      ) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Positional binding pattern requires an aggregate source",
+            pattern,
+          ),
+        );
+      }
+      if (
+        arity !== undefined && pattern.rest !== undefined &&
+        arity < pattern.entries.length
+      ) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Binding pattern expects at least " +
+              pattern.entries.length.toString() + " entries, got " +
+              arity.toString(),
+            pattern,
+          ),
+        );
+      }
+    }
+    if (
+      pattern.value_pack === true && pattern.rest !== undefined &&
+      resolved_source.tag !== "product"
+    ) {
+      diagnostics.push(
+        source_diagnostic(
+          "DUCK2316",
+          "Value-pack rest binding requires a compile-time product value",
+          pattern.rest,
+        ),
+      );
+    }
+    for (let index = 0; index < pattern.entries.length; index += 1) {
+      const entry = pattern.entries[index];
+      expect(entry, "Binding pattern entry disappeared");
+      const child_source = binding_source_entry(
+        resolved_source,
+        entry.label,
+        index,
+      );
+      if (child_source === undefined) continue;
+      validate_binding_pattern_shape(
+        entry.pattern,
+        child_source,
+        env,
+        diagnostics,
+      );
+    }
+    return;
+  }
+  if (pattern.tag === "record") {
+    const available = binding_source_field_names(resolved_source);
+    if (available === undefined) {
+      if (binding_source_is_definitely_nonaggregate(resolved_source)) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Named binding pattern requires an aggregate source",
+            pattern,
+          ),
+        );
+        return;
+      }
+      let typed_source = false;
+      if (
+        resolved_source.tag === "var" || resolved_source.tag === "linear"
+      ) {
+        typed_source = infer_type(resolved_source, env).tag === "struct";
+      }
+      if (
+        pattern.rest !== undefined && pattern.rest.tag !== "wildcard" &&
+        !typed_source
+      ) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Record rest binding requires a statically known source shape",
+            pattern.rest,
+          ),
+        );
+      }
+      return;
+    }
+    for (const field of pattern.fields) {
+      if (available.includes(field.name)) continue;
+      diagnostics.push(
+        source_diagnostic(
+          "DUCK2316",
+          "Binding pattern field " + field.name +
+            " is missing; available fields: " + available.join(", "),
+          field,
+        ),
+      );
+    }
+    return;
+  }
+  if (pattern.tag !== "array") return;
+  const length = binding_source_arity(resolved_source);
+  if (length === undefined) {
+    if (binding_source_is_definitely_nonaggregate(resolved_source)) {
+      diagnostics.push(
+        source_diagnostic(
+          "DUCK2316",
+          "Array binding pattern requires an aggregate source",
+          pattern,
+        ),
+      );
+      return;
+    }
+    let typed_source = false;
+    if (
+      resolved_source.tag === "var" || resolved_source.tag === "linear"
+    ) {
+      typed_source = infer_type(resolved_source, env).tag === "struct";
+    }
+    if (
+      pattern.rest !== undefined && pattern.rest.tag !== "wildcard" &&
+      !typed_source
+    ) {
+      diagnostics.push(
+        source_diagnostic(
+          "DUCK2316",
+          "Array rest binding requires a statically known source length",
+          pattern.rest,
+        ),
+      );
+    }
+    return;
+  }
+  if (pattern.rest === undefined && length !== pattern.items.length) {
+    diagnostics.push(
+      source_diagnostic(
+        "DUCK2316",
+        "Array binding pattern expects " + pattern.items.length.toString() +
+          " items, got " + length.toString(),
+        pattern,
+      ),
+    );
+  }
+  if (
+    pattern.rest !== undefined && length < pattern.items.length
+  ) {
+    diagnostics.push(
+      source_diagnostic(
+        "DUCK2316",
+        "Array binding pattern requires at least " +
+          pattern.items.length.toString() + " items, got " +
+          length.toString(),
+        pattern,
+      ),
+    );
+  }
+  for (let index = 0; index < pattern.items.length; index += 1) {
+    const item = pattern.items[index];
+    const child_source = binding_source_entry(
+      resolved_source,
+      undefined,
+      index,
+    );
+    if (item === undefined || child_source === undefined) continue;
+    validate_binding_pattern_shape(
+      item,
+      child_source,
+      env,
+      diagnostics,
+    );
+  }
+}
+
+function resolve_binding_pattern_source(
+  source: FrontExpr,
+  env: SemanticEnv,
+  resolving: Set<string>,
+): FrontExpr {
+  if (source.tag === "comptime" || source.tag === "captured") {
+    return resolve_binding_pattern_source(source.expr, env, resolving);
+  }
+  if (source.tag !== "var" || resolving.has(source.name)) return source;
+  const binding = env.bindings.get(source.name);
+  if (binding?.value === undefined) return source;
+  const next = new Set(resolving);
+  next.add(source.name);
+  return resolve_binding_pattern_source(binding.value, env, next);
+}
+
+function binding_source_arity(source: FrontExpr): number | undefined {
+  if (source.tag === "product" || source.tag === "shape") {
+    return source.entries.length;
+  }
+  if (source.tag === "array" && source.rest === undefined) {
+    return source.items.length;
+  }
+  if (source.tag === "struct_value") return source.fields.length;
+  return undefined;
+}
+
+function binding_source_field_names(
+  source: FrontExpr,
+): string[] | undefined {
+  if (source.tag === "struct_value") {
+    return source.fields.map((field) => field.name);
+  }
+  if (source.tag !== "product" && source.tag !== "shape") return undefined;
+  const names: string[] = [];
+  for (let index = 0; index < source.entries.length; index += 1) {
+    const entry = source.entries[index];
+    expect(entry !== undefined, "Binding source entry disappeared");
+    if (entry.label === undefined) {
+      names.push("item_" + index.toString());
+    } else {
+      names.push(entry.label);
+    }
+  }
+  return names;
+}
+
+function binding_source_entry(
+  source: FrontExpr,
+  label: string | undefined,
+  index: number,
+): FrontExpr | undefined {
+  if (source.tag === "product" || source.tag === "shape") {
+    if (label !== undefined) {
+      return source.entries.find((entry) => entry.label === label)?.value;
+    }
+    return source.entries[index]?.value;
+  }
+  if (source.tag === "array") return source.items[index];
+  if (source.tag !== "struct_value") return undefined;
+  if (label !== undefined) {
+    return source.fields.find((field) => field.name === label)?.value;
+  }
+  return source.fields[index]?.value;
+}
+
+function binding_source_is_definitely_nonaggregate(
+  source: FrontExpr,
+): boolean {
+  return source.tag === "bool" || source.tag === "num" ||
+    source.tag === "atom" || source.tag === "unit" ||
+    source.tag === "text" || source.tag === "type_name" ||
+    source.tag === "set_type" || source.tag === "lam" ||
+    source.tag === "rec" || source.tag === "union_case" ||
+    source.tag === "struct_type" || source.tag === "union_type";
+}
+
+function validate_binding_pattern_representation(
+  pattern: Pattern,
+  source_type: FrontType,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  if (source_type.tag === "unknown" || source_type.tag === "never") return;
+  if (pattern.tag === "binding") {
+    mark_annotation_use(pattern.annotation, pattern.type_annotation, env);
+    let expected: FrontType = { tag: "unknown" };
+    let annotation = pattern.annotation;
+    if (pattern.type_annotation !== undefined) {
+      expected = type_from_type_expr(pattern.type_annotation, env);
+      annotation = format_type_expr(pattern.type_annotation);
+    } else if (pattern.annotation !== undefined) {
+      expected = resolve_type_name(pattern.annotation, env);
+    }
+    if (
+      annotation === undefined || expected.tag === "unknown" ||
+      same_type(expected, source_type)
+    ) {
+      return;
+    }
+    diagnostics.push(
+      source_diagnostic(
+        "DUCK2306",
+        "Binding annotation expects " + annotation + ", got " +
+          type_name(source_type),
+        pattern,
+      ),
+    );
+    return;
+  }
+  if (pattern.tag === "or") {
+    const failures: SourceDiagnostic[][] = [];
+    for (const alternative of pattern.alternatives) {
+      const alternative_diagnostics: SourceDiagnostic[] = [];
+      validate_binding_pattern_representation(
+        alternative,
+        source_type,
+        env,
+        alternative_diagnostics,
+      );
+      if (alternative_diagnostics.length === 0) return;
+      failures.push(alternative_diagnostics);
+    }
+    const first_failure = failures[0];
+    if (first_failure !== undefined) diagnostics.push(...first_failure);
+    return;
+  }
+  if (
+    pattern.tag !== "product" && pattern.tag !== "record" &&
+    pattern.tag !== "array"
+  ) {
+    return;
+  }
+  if (source_type.tag !== "struct") {
+    let message = "Positional binding pattern requires an aggregate source";
+    if (pattern.tag === "record") {
+      message = "Named binding pattern requires an aggregate source";
+    } else if (pattern.tag === "array") {
+      message = "Array binding pattern requires an aggregate source";
+    }
+    diagnostics.push(source_diagnostic("DUCK2316", message, pattern));
+    return;
+  }
+  if (pattern.tag === "record") {
+    for (const field of pattern.fields) {
+      const index = source_type.fields.indexOf(field.name);
+      if (index < 0) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Binding pattern field " + field.name +
+              " is missing; available fields: " +
+              source_type.fields.join(", "),
+            field,
+          ),
+        );
+        continue;
+      }
+      const projected_type = struct_field_front_type(source_type, index, env);
+      if (projected_type === undefined) continue;
+      validate_binding_pattern_representation(
+        field.pattern,
+        projected_type,
+        env,
+        diagnostics,
+      );
+    }
+    return;
+  }
+  if (
+    pattern.tag === "product" &&
+    pattern.entries.every((entry) => entry.label !== undefined)
+  ) {
+    for (const entry of pattern.entries) {
+      expect(entry.label, "Labeled binding pattern lost its field name");
+      const index = source_type.fields.indexOf(entry.label);
+      if (index < 0) {
+        diagnostics.push(
+          source_diagnostic(
+            "DUCK2316",
+            "Binding pattern field " + entry.label +
+              " is missing; available fields: " +
+              source_type.fields.join(", "),
+            entry,
+          ),
+        );
+        continue;
+      }
+      const projected_type = struct_field_front_type(source_type, index, env);
+      if (projected_type === undefined) continue;
+      validate_binding_pattern_representation(
+        entry.pattern,
+        projected_type,
+        env,
+        diagnostics,
+      );
+    }
+    return;
+  }
+  let entries: number;
+  if (pattern.tag === "product") {
+    entries = pattern.entries.length;
+  } else {
+    entries = pattern.items.length;
+  }
+  if (pattern.rest === undefined && entries !== source_type.fields.length) {
+    diagnostics.push(
+      source_diagnostic(
+        "DUCK2316",
+        "Binding pattern expects " + entries.toString() + " entries, got " +
+          source_type.fields.length.toString(),
+        pattern,
+      ),
+    );
+    return;
+  }
+  if (
+    pattern.rest !== undefined && entries > source_type.fields.length
+  ) {
+    diagnostics.push(
+      source_diagnostic(
+        "DUCK2316",
+        "Binding pattern expects at least " + entries.toString() +
+          " entries, got " + source_type.fields.length.toString(),
+        pattern,
+      ),
+    );
+  }
+  let children: Pattern[];
+  if (pattern.tag === "product") {
+    children = pattern.entries.map((entry) => entry.pattern);
+  } else {
+    children = pattern.items;
+  }
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index];
+    const projected_type = struct_field_front_type(source_type, index, env);
+    if (child === undefined || projected_type === undefined) continue;
+    validate_binding_pattern_representation(
+      child,
+      projected_type,
+      env,
+      diagnostics,
+    );
+  }
+}
+
+function struct_field_front_type(
+  type: Extract<FrontType, { tag: "struct" }>,
+  index: number,
+  env: SemanticEnv,
+): FrontType | undefined {
+  const cached = type.field_value_types?.[index];
+  if (cached !== undefined) return cached;
+  const field = type.field_types?.[index];
+  if (field === undefined) return undefined;
+  const named = resolve_type_name(field.type_name, env);
+  if (named.tag !== "unknown") return named;
+  const parsed = parse_type_expr(tokenize(field.type_name));
+  return type_from_type_expr(parsed, env);
 }
 
 function validate_attribute_groups(
@@ -1181,7 +1770,7 @@ function validate_expr(
           if (guard_type.tag !== "unknown" && guard_type.tag !== "bool") {
             diagnostics.push(source_diagnostic(
               "DUCK2303",
-              "Match guard expects Bool, got " + type_name(guard_type),
+              "Case guard expects Bool, got " + type_name(guard_type),
               arm.guard,
             ));
           }
@@ -1269,19 +1858,19 @@ function validate_expr(
         subject = final_arm;
       }
 
-      let message = "Non-exhaustive match requires a wildcard or binding arm";
+      let message = "Non-exhaustive case requires a wildcard or binding arm";
 
       if (target_type.tag === "union_value") {
         const missing = target_type.cases.filter((union_case) =>
           !covered_union_cases.has(union_case.name)
         ).map((union_case) => {
           if (union_case.type_name === "Unit") {
-            return "`" + union_case.name + " ()";
+            return "#" + union_case.name;
           }
 
-          return "`" + union_case.name + " _";
+          return "#" + union_case.name + " _";
         });
-        message = "Non-exhaustive match, missing " + missing.join(", ");
+        message = "Non-exhaustive case, missing " + missing.join(", ");
       }
 
       diagnostics.push(source_diagnostic("DUCK2314", message, subject));
@@ -1397,7 +1986,7 @@ function validate_expr(
         const index = expr.args[1];
 
         if (index !== undefined) {
-          validate_numeric_boundary(index, "get index", env, diagnostics);
+          validate_index_boundary(index, "get index", env, diagnostics);
         }
       }
 
@@ -1406,11 +1995,11 @@ function validate_expr(
         const end = expr.args[2];
 
         if (start !== undefined) {
-          validate_numeric_boundary(start, "slice start", env, diagnostics);
+          validate_index_boundary(start, "slice start", env, diagnostics);
         }
 
         if (end !== undefined) {
-          validate_numeric_boundary(end, "slice end", env, diagnostics);
+          validate_index_boundary(end, "slice end", env, diagnostics);
         }
       }
     }
@@ -1724,17 +2313,6 @@ function validate_expr(
   }
 
   if (expr.tag === "product" || expr.tag === "shape") {
-    if (
-      expr.tag === "product" && expr.value_pack === true &&
-      !accepts_value_pack
-    ) {
-      diagnostics.push(source_diagnostic(
-        "DUCK2307",
-        "Value packs may only be passed, returned, or destructured immediately; use `[...]` to store a tuple",
-        expr,
-      ));
-    }
-
     for (const entry of expr.entries) {
       validate_expr(entry.value, env, diagnostics, check_comptime);
     }
@@ -1766,7 +2344,7 @@ function validate_expr(
       return;
     }
 
-    validate_numeric_boundary(expr.index, "Index", env, diagnostics);
+    validate_index_boundary(expr.index, "Index", env, diagnostics);
 
     if (diagnostics.length !== before) {
       return;
@@ -2347,10 +2925,10 @@ function validate_call_arguments(
       expr.arg.value_pack === true;
 
     if (expects_pack !== received_pack) {
-      let expected_syntax = "a tuple argument written `f([a, b])`";
+      let expected_syntax = "a stored product `[a, b]`, as in `f [a, b]`";
 
       if (expects_pack) {
-        expected_syntax = "an argument pack written `f(a, b)`";
+        expected_syntax = "a transient pack `(a, b)`, as in `f (a, b)`";
       }
 
       diagnostics.push(source_diagnostic(
@@ -2482,6 +3060,19 @@ function validate_call_arguments(
 
     if (representation_diagnostic) {
       diagnostics.push(representation_diagnostic);
+      continue;
+    }
+
+    if (
+      expected.tag === "struct" && actual.tag === "struct" &&
+      !same_type(expected, actual)
+    ) {
+      diagnostics.push(source_diagnostic(
+        "DUCK2307",
+        message_prefix + parameter_label + " expects " + type_name(expected) +
+          ", got " + type_name(actual),
+        arg,
+      ));
     }
   }
 
@@ -2990,6 +3581,26 @@ function validate_numeric_boundary(
   diagnostics.push(gpufuck_representation_diagnostic(
     "DUCK2302",
     label + " expects numeric value, got " + name,
+    expr,
+  ));
+}
+
+function validate_index_boundary(
+  expr: FrontExpr,
+  label: string,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  const type = infer_type(expr, env);
+  if (type.tag === "unknown") return;
+  if (type.tag === "int" && type.type === "i32") {
+    if (type.integer === undefined || type.integer.width <= 32) return;
+  }
+
+  diagnostics.push(source_diagnostic(
+    "DUCK2302",
+    label + " expects an integer no wider than 32 bits, got " +
+      type_name(type),
     expr,
   ));
 }
@@ -3563,10 +4174,18 @@ function infer_type(
 
   if (expr.tag === "app") {
     if (
+      expr.func.tag === "var" && expr.func.name === "@panic" &&
+      !env.bindings.has(expr.func.name)
+    ) {
+      return { tag: "never" };
+    }
+
+    if (
       expr.func.tag === "var" &&
       (expr.func.name === "@cast" || expr.func.name === "@seal" ||
         expr.func.name === "@representation" ||
-        expr.func.name === "@integer.wrap") &&
+        expr.func.name === "@integer.wrap" ||
+        expr.func.name === "@integer.narrow") &&
       !env.bindings.has(expr.func.name)
     ) {
       const args = compiler_builtin_args(expr);
@@ -4421,9 +5040,16 @@ function infer_struct_value_type(
   }
 
   const field_types: TypeField[] = [];
+  const field_value_types: FrontType[] = [];
 
   for (const field of expr.fields) {
-    const field_type = infer_type(field.value, env, active_calls);
+    let field_type = infer_type(field.value, env, active_calls);
+
+    if (field.value.tag === "text" && field.value.encoding !== "bytes") {
+      field_type = { tag: "text", literal: field.value.value };
+    }
+
+    field_value_types.push(field_type);
     let field_type_name: string | undefined;
 
     if (field_type.tag === "bool") {
@@ -4449,6 +5075,11 @@ function infer_struct_value_type(
 
       if (field_type.encoding === "bytes") {
         field_type_name = "Bytes";
+      } else if (field_type.literal !== undefined) {
+        field_type_name = format_type_expr({
+          tag: "literal",
+          value: { tag: "text", value: field_type.literal },
+        });
       }
     }
 
@@ -4457,6 +5088,7 @@ function infer_struct_value_type(
         tag: "struct",
         fields: expr.fields.map((candidate) => candidate.name),
         field_types: undefined,
+        field_value_types,
       };
     }
 
@@ -4467,6 +5099,7 @@ function infer_struct_value_type(
     tag: "struct",
     fields: expr.fields.map((field) => field.name),
     field_types,
+    field_value_types,
   };
 }
 
@@ -4878,7 +5511,10 @@ function arrow_parameter_types(
     return annotation.param.items;
   }
 
-  if (annotation.param.tag === "product") {
+  if (
+    annotation.param.tag === "product" &&
+    annotation.param.value_pack === true
+  ) {
     try {
       return expanded_type_product_entries(
         annotation.param,
@@ -4918,7 +5554,7 @@ function type_from_type_expr(
     }
 
     if (type.value.tag === "text") {
-      return { tag: "text" };
+      return { tag: "text", literal: type.value.value };
     }
 
     if (type.value.character !== undefined) {
@@ -4945,6 +5581,46 @@ function type_from_type_expr(
     (type.tag === "product" && type.entries.length === 0)
   ) {
     return { tag: "atom", name: semantic_unit_atom_name };
+  }
+
+  if (type.tag === "tuple") {
+    const fields = type.items.map((_item, index) => "item_" + index.toString());
+
+    return {
+      tag: "struct",
+      fields,
+      field_types: type.items.map((item, index) => {
+        const name = fields[index];
+        expect(name, "Missing tuple type field " + index.toString());
+        return { name, type_name: format_type_expr(item) };
+      }),
+      field_value_types: type.items.map((item) =>
+        type_from_type_expr(item, env)
+      ),
+    };
+  }
+
+  if (type.tag === "product" && type.repeat === undefined) {
+    const fields = type.entries.map((entry, index) => {
+      if (entry.label !== undefined) {
+        return entry.label;
+      }
+
+      return "item_" + index.toString();
+    });
+
+    return {
+      tag: "struct",
+      fields,
+      field_types: type.entries.map((entry, index) => {
+        const name = fields[index];
+        expect(name, "Missing product type field " + index.toString());
+        return { name, type_name: format_type_expr(entry.type_expr) };
+      }),
+      field_value_types: type.entries.map((entry) =>
+        type_from_type_expr(entry.type_expr, env)
+      ),
+    };
   }
 
   if (type.tag === "frozen" || type.tag === "borrow") {
@@ -5729,10 +6405,10 @@ function bind_params(env: SemanticEnv, params: Param[]): void {
     mark_annotation_use(param.annotation, param.type_annotation, env);
     let type: FrontType = { tag: "unknown" };
 
-    if (param.annotation !== undefined) {
-      type = resolve_type_name(param.annotation, env);
-    } else if (param.type_annotation !== undefined) {
+    if (param.type_annotation !== undefined) {
       type = type_from_type_expr(param.type_annotation, env);
+    } else if (param.annotation !== undefined) {
+      type = resolve_type_name(param.annotation, env);
     }
 
     bind_local(
@@ -5999,6 +6675,10 @@ function resolve_type_name(
 
   if (name.startsWith("#")) {
     return { tag: "atom", name: name.slice(1) };
+  }
+
+  if (name.startsWith("freeze ") || name.startsWith("&")) {
+    return type_from_type_expr(parse_type_expr(tokenize(name)), env);
   }
 
   const builtin = front_type_from_type_name(name);
@@ -6592,6 +7272,13 @@ function type_name(type: FrontType): string {
       return "Bytes";
     }
 
+    if (type.literal !== undefined) {
+      return format_type_expr({
+        tag: "literal",
+        value: { tag: "text", value: type.literal },
+      });
+    }
+
     return "Text";
   }
 
@@ -6617,6 +7304,29 @@ function type_name(type: FrontType): string {
 
   if (type.tag === "int") {
     return "I32";
+  }
+
+  if (type.tag === "struct") {
+    for (let index = 0; index < type.fields.length; index += 1) {
+      if (type.fields[index] !== "item_" + index.toString()) {
+        if (type.nominal_name !== undefined) {
+          return type.nominal_name;
+        }
+
+        return "struct";
+      }
+    }
+
+    if (type.field_value_types !== undefined) {
+      return "[" + type.field_value_types.map(type_name).join(", ") + "]";
+    }
+
+    if (type.field_types !== undefined) {
+      return "[" + type.field_types.map((field) => field.type_name).join(", ") +
+        "]";
+    }
+
+    return "struct";
   }
 
   return type.tag;

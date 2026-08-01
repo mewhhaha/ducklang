@@ -1,8 +1,8 @@
 module () where
 
-type ReadResult = | `Keys Bytes | `End Unit
+type ReadResult = | #Keys Bytes | #End
 
-type SaveResult = | `Ok Unit | `Err Unit
+type SaveResult = | #Ok | #Err Text
 
 declare effect Terminal {
   load: () => Bytes

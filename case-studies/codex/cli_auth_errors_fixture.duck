@@ -8,24 +8,30 @@ type FixtureNode = ListNode Text
 type FixtureLoginResult = CodexLoginActionResult
 type FixtureLogoutResult = CodexLogoutResult
 
-const prepend = (value: Text, values: FixtureArgs) => {
+const prepend = (value: Text, values: FixtureArgs) => do
   let node: FixtureNode = [value, values];
-  let result: FixtureArgs = `Cons node;
+  let result: FixtureArgs = #Cons node;
   result
-};
+end;
 
-let empty: FixtureArgs = `Nil ();
+let empty: FixtureArgs = #Nil;
 let score = 0;
 
 let conflict_args = prepend("--with-api-key", prepend("--with-access-token", empty));
 let conflict: FixtureLoginResult = parse_login_options conflict_args;
-if let `Err _ = conflict { score = score + 1 }
+if let #Err _ = conflict then
+  score = score + 1
+end;
 
 let deprecated_args = prepend("--api-key", prepend("secret", empty));
 let deprecated: FixtureLoginResult = parse_login_options deprecated_args;
-if let `Err _ = deprecated { score = score + 10 }
+if let #Err _ = deprecated then
+  score = score + 10
+end;
 
 let logout: FixtureLogoutResult = parse_logout_options empty;
-if let `Ok () = logout { score = score + 100 }
+if let #Ok = logout then
+  score = score + 100
+end;
 
 return { .score = score };

@@ -10,52 +10,52 @@ type AgentControlExecutionTextOption = AgentTextOption
 type AgentControlExecutionWaitRequest = AgentToolWaitRequest
 type AgentControlExecutionEvent = AgentToolLifecycleEvent
 
-let run_send_message = (call_id: Text, request: AgentControlExecutionSendRequest) => {
+let run_send_message = (call_id: Text, request: AgentControlExecutionSendRequest) => do
   _ <- AgentCollaborationHost.send(&request)
   let [target, _] = request;
-  let interacted: AgentControlExecutionEvent = `AgentInteracted [call_id, target];
+  let interacted: AgentControlExecutionEvent = #AgentInteracted [call_id, target];
   _ <- AgentCollaborationHost.event(&interacted)
   ""
-};
+end;
 
-let run_followup_task = (call_id: Text, request: AgentControlExecutionSendRequest) => {
+let run_followup_task = (call_id: Text, request: AgentControlExecutionSendRequest) => do
   _ <- AgentCollaborationHost.followup(&request)
   let [target, _] = request;
-  let interacted: AgentControlExecutionEvent = `AgentInteracted [call_id, target];
+  let interacted: AgentControlExecutionEvent = #AgentInteracted [call_id, target];
   _ <- AgentCollaborationHost.event(&interacted)
   ""
-};
+end;
 
-let run_interrupt_agent = (call_id: Text, target: Text) => {
+let run_interrupt_agent = (call_id: Text, target: Text) => do
   interrupted <- AgentCollaborationHost.interrupt(&target)
   let status: AgentControlExecutionStatus = interrupted;
-  let activity: AgentControlExecutionEvent = `AgentInterrupted [call_id, target];
+  let activity: AgentControlExecutionEvent = #AgentInterrupted [call_id, target];
   _ <- AgentCollaborationHost.event(&activity)
   output <- AgentCollaborationStages.interrupt_output(&status)
   let text: Text = output;
   text
-};
+end;
 
-let run_wait_agent = (call_id: Text, timeout_ms: I64) => {
+let run_wait_agent = (call_id: Text, timeout_ms: I64) => do
   let request: AgentControlExecutionWaitRequest = [.timeout_ms = timeout_ms];
-  let started: AgentControlExecutionEvent = `WaitStarted call_id;
+  let started: AgentControlExecutionEvent = #WaitStarted call_id;
   _ <- AgentCollaborationHost.event(&started)
   observed <- AgentCollaborationHost.wait(&request)
   let snapshot: AgentControlExecutionMailbox = observed;
-  let completed: AgentControlExecutionEvent = `WaitCompleted call_id;
+  let completed: AgentControlExecutionEvent = #WaitCompleted call_id;
   _ <- AgentCollaborationHost.event(&completed)
   output <- AgentCollaborationStages.wait_output(&snapshot)
   let text: Text = output;
   text
-};
+end;
 
-let run_list_agents = (path_prefix: AgentControlExecutionTextOption) => {
+let run_list_agents = (path_prefix: AgentControlExecutionTextOption) => do
   observed <- AgentCollaborationHost.list(&path_prefix)
   let statuses: AgentControlExecutionStatuses = observed;
   output <- AgentCollaborationStages.list_output(&statuses)
   let text: Text = output;
   text
-};
+end;
 
 return {
   .run_followup_task,

@@ -174,16 +174,16 @@ let user: User = [.name = "Ada", .age = 0];
 user.age
 `,
   );
-  const union_before = "type Result = | `Ok Int | `Err Text\n" +
-    'let result = `Ok ("wrong");\n';
+  const union_before = "type Result = | #Ok Int | #Err Text\n" +
+    'let result = #Ok ("wrong");\n';
   const union_action = actions(union_before).actions.find((candidate) =>
     candidate.title === "Replace union payload with I32 value"
   );
   expect(union_action !== undefined, "Expected union payload quick fix");
   assert_equals(
     apply(union_before, union_action),
-    "type Result = | `Ok Int | `Err Text\n" +
-      "let result = `Ok (0);\n",
+    "type Result = | #Ok Int | #Err Text\n" +
+      "let result = #Ok (0);\n",
   );
   assert_equals(
     Source.analyze(apply(struct_before, struct_action)).diagnostics,
@@ -196,8 +196,8 @@ user.age
 });
 
 Deno.test("code actions use false for a missing Bool union payload", () => {
-  const before = "type Result = | `Ok Bool | `Err Text\n" +
-    "let result = `Ok (1);\n";
+  const before = "type Result = | #Ok Bool | #Err Text\n" +
+    "let result = #Ok (1);\n";
   const result = actions(before);
   const replacement = result.actions.find((candidate) =>
     candidate.title === "Replace union payload with Bool value"
@@ -207,8 +207,8 @@ Deno.test("code actions use false for a missing Bool union payload", () => {
   const after = apply(before, replacement);
   assert_equals(
     after,
-    "type Result = | `Ok Bool | `Err Text\n" +
-      "let result = `Ok (false);\n",
+    "type Result = | #Ok Bool | #Err Text\n" +
+      "let result = #Ok (false);\n",
   );
   assert_equals(Source.analyze(after).diagnostics, []);
 });
@@ -292,20 +292,21 @@ let choice = handler Choice { decide: (!resume) => !resume false, return: value 
 });
 
 Deno.test("code actions add an explicit missing if-let case", () => {
-  const before = "type Result = | `Ok Int | `Err Text\n" +
-    "let result = `Ok (1);\n" +
-    "if let `Ok value = result { value } else { 0 }\n";
+  const before = "type Result = | #Ok Int | #Err Text\n" +
+    "let result = #Ok (1);\n" +
+    "if let #Ok value = result then value else 0 end\n";
   const result = actions(before);
   const branch = result.actions.find((candidate) =>
-    candidate.title === "Add explicit `Err branch"
+    candidate.title === "Add explicit #Err branch"
   );
   expect(branch !== undefined, "Expected missing-case assist");
   const after = apply(before, branch);
   assert_equals(
     after,
-    "type Result = | `Ok Int | `Err Text\n" +
-      "let result = `Ok (1);\n" +
-      "if let `Ok value = result { value } else if let `Err value = result { 0 } else { 0 }\n",
+    "type Result = | #Ok Int | #Err Text\n" +
+      "let result = #Ok (1);\n" +
+      "if let #Ok value = result then value else " +
+      "if let #Err value = result then 0 else 0 end end\n",
   );
   assert_equals(Source.analyze(after).diagnostics, []);
 });

@@ -7,25 +7,34 @@ type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexResumeOptionsResult
 type FixtureNode = ListNode Text
 
-const prepend_arg = (value: Text, values: FixtureArgs) => {
+const prepend_arg = (value: Text, values: FixtureArgs) => do
   let node: FixtureNode = [value, values];
-  let result: FixtureArgs = `Cons node;
+  let result: FixtureArgs = #Cons node;
   result
-};
-const singleton_arg = (value: Text) => {
-  let empty: FixtureArgs = `Nil ();
+end;
+const singleton_arg = (value: Text) => do
+  let empty: FixtureArgs = #Nil;
   prepend_arg(value, empty)
-};
+end;
 let input: FixtureArgs = prepend_arg("--last", singleton_arg "/compact focus on auth");
 let parsed: FixtureResult = parse_resume_options input;
 let score = 0;
 
-if let `Ok options = parsed {
+if let #Ok options = parsed then
   let valid = options.last && !options.picker;
-  if let `None () = options.session_id { () } else { valid = false }
-  if let `Some prompt = options.prompt { if prompt != "/compact focus on auth" { valid = false }
-  } else { valid = false }
-  if valid { score = 1 }
-}
+  if let #None = options.session_id then () else
+    valid = false
+  end;
+  if let #Some prompt = options.prompt then
+    if prompt != "/compact focus on auth" then
+      valid = false
+    end;
+  else
+    valid = false
+  end;
+  if valid then
+    score = 1
+  end;
+end;
 
 return { .score = score };

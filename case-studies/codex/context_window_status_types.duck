@@ -3,8 +3,8 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type ContextWindowTokenLimitScope =
-  | `Total Unit
-  | `BodyAfterPrefix Unit
+  | #Total
+  | #BodyAfterPrefix
 
 type ContextWindowI64Option = Option I64
 

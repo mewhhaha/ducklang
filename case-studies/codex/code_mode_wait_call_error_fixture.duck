@@ -7,14 +7,17 @@ type FixtureCallPlan = CodeModeWaitCallPlan
 
 let score = 0;
 
-let rejected: FixtureCallPlan = plan_code_mode_wait_call(`Function "{}");
-if let `RejectRequest message = rejected {
-  if message == "failed to parse function arguments: missing field `cell_id`" { score = score + 1 }
-}
+let rejected: FixtureCallPlan = plan_code_mode_wait_call(#Function "{}");
+if let #RejectRequest message = rejected then
+  if message == "failed to parse function arguments: missing field `cell_id`" then
+    score = score + 1 end;
+end;
 
-let unsupported: FixtureCallPlan = plan_code_mode_wait_call(`Unsupported ());
-if let `Fatal message = unsupported {
-  if message == "wait expects JSON arguments" { score = score + 10 }
-}
+let unsupported: FixtureCallPlan = plan_code_mode_wait_call(#Unsupported);
+if let #Fatal message = unsupported then
+  if message == "wait expects JSON arguments" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

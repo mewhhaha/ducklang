@@ -9,16 +9,16 @@ let parsed =
   parse_permission_output "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{}}}}";
 let score: I32 = 0;
 
-if let `PermissionOk output = parsed {
+if let #PermissionOk output = parsed then
   let [_, decision, invalid] = output;
 
-  if let `None () = decision {
-    if let `Some message = invalid {
-      if message == "PermissionRequest hook returned unsupported updatedInput" {
+  if let #None = decision then
+    if let #Some message = invalid then
+      if message == "PermissionRequest hook returned unsupported updatedInput" then
         score = 1
-      }
-    }
-  }
-}
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

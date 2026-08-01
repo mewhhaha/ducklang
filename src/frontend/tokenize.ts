@@ -1,5 +1,6 @@
 import { expect } from "../expect.ts";
 import type { Token, TokenKind } from "./ast.ts";
+import { decode_literal_escape } from "./literal.ts";
 import { is_digit, is_name_continue, is_name_start } from "./names.ts";
 import {
   make_source_syntax,
@@ -8,6 +9,7 @@ import {
   type SyntaxDiagnostic,
   type Trivia,
 } from "./syntax.ts";
+import { scan_template_literal } from "./template_literal.ts";
 
 export type TokenizeOptions = {
   comments?: boolean;
@@ -36,7 +38,11 @@ export function source_tokens(
 
   for (const piece of syntax.pieces) {
     if (piece.tag === "token") {
-      tokens.push(piece.token);
+      if (piece.token.kind === "template") {
+        tokens.push(...template_tokens(piece.token, options));
+      } else {
+        tokens.push(piece.token);
+      }
     } else if (piece.tag === "trivia" && piece.trivia.kind === "comment") {
       if (options?.comments) {
         tokens.push({
@@ -157,6 +163,48 @@ export function scan_source(text: string): SourceSyntax {
         advance();
       }
       add_trivia("comment", start, start_line, start_column);
+    } else if (char === "`") {
+      const template = scan_template_literal(text, start);
+
+      while (index < template.end) {
+        advance();
+      }
+
+      if (!template.ok) {
+        add_invalid(
+          start,
+          start_line,
+          start_column,
+          template.message,
+        );
+        continue;
+      }
+
+      add_token(
+        "template",
+        text.slice(start, index),
+        start,
+        start_line,
+        start_column,
+      );
+
+      for (const part of template.parts) {
+        if (part.tag !== "interpolation") {
+          continue;
+        }
+
+        const nested = scan_source(part.source);
+
+        for (const diagnostic of nested.diagnostics) {
+          diagnostics.push({
+            message: diagnostic.message,
+            span: {
+              start: part.span.start + diagnostic.span.start,
+              end: part.span.start + diagnostic.span.end,
+            },
+          });
+        }
+      }
     } else if (is_digit(char)) {
       const hexadecimal = char === "0" &&
         (text[index + 1] === "x" || text[index + 1] === "X");
@@ -468,21 +516,117 @@ function scan_literal(
   }
 }
 
-function decode_literal_escape(
-  escaped: string,
-  quote: '"' | "'",
-): string | undefined {
-  if (escaped === "n") {
-    return "\n";
+function template_tokens(
+  token: Token,
+  options?: TokenizeOptions,
+): Token[] {
+  const template = scan_template_literal(token.raw, 0);
+  expect(template.ok, "Invalid template token reached token expansion");
+  const tokens: Token[] = [
+    template_token(token, "template_start", "`", "`", 0, 1),
+  ];
+
+  for (const part of template.parts) {
+    if (part.tag === "text") {
+      tokens.push(template_token(
+        token,
+        "template_text",
+        part.value,
+        part.raw,
+        part.span.start,
+        part.span.end,
+      ));
+      continue;
+    }
+
+    tokens.push(template_token(
+      token,
+      "template_interpolation_start",
+      "{",
+      "{",
+      part.span.start - 1,
+      part.span.start,
+    ));
+    const nested = source_tokens(scan_source(part.source), options);
+
+    for (const nested_token of nested) {
+      if (nested_token.kind === "eof") {
+        continue;
+      }
+
+      const local_start = part.span.start + nested_token.span.start;
+      const local_end = part.span.start + nested_token.span.end;
+      const position = template_position(token, local_start);
+      tokens.push({
+        ...nested_token,
+        span: {
+          start: token.span.start + local_start,
+          end: token.span.start + local_end,
+        },
+        line: position.line,
+        column: position.column,
+      });
+    }
+
+    tokens.push(template_token(
+      token,
+      "template_interpolation_end",
+      "}",
+      "}",
+      part.span.end,
+      part.span.end + 1,
+    ));
   }
-  if (escaped === "t") {
-    return "\t";
+
+  const end = token.raw.length;
+  tokens.push(template_token(
+    token,
+    "template_end",
+    "`",
+    "`",
+    end - 1,
+    end,
+  ));
+  return tokens;
+}
+
+function template_token(
+  template: Token,
+  kind: TokenKind,
+  text: string,
+  raw: string,
+  local_start: number,
+  local_end: number,
+): Token {
+  const position = template_position(template, local_start);
+  return {
+    kind,
+    text,
+    raw,
+    span: {
+      start: template.span.start + local_start,
+      end: template.span.start + local_end,
+    },
+    line: position.line,
+    column: position.column,
+  };
+}
+
+function template_position(
+  template: Token,
+  local_offset: number,
+): { line: number; column: number } {
+  let line = template.line;
+  let column = template.column;
+
+  for (let index = 0; index < local_offset; index += 1) {
+    if (template.raw[index] === "\n") {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
   }
-  if (escaped === "r") {
-    return "\r";
-  }
-  if (escaped === quote || escaped === "\\") {
-    return escaped;
-  }
-  return undefined;
+
+  return { line, column };
 }

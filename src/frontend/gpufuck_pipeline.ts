@@ -1,5 +1,7 @@
 import { diagnostic_codes } from "../diagnostic.ts";
+import { expect } from "../expect.ts";
 import type { Source } from "./ast.ts";
+import { validate_resolved_array_spreads } from "./array_spread_validation.ts";
 import { validate_atom_identities } from "./atom.ts";
 import { source_with_expanded_attributes } from "./attribute_expand.ts";
 import { infer_default_effect_handlers } from "./default_handler.ts";
@@ -17,22 +19,45 @@ import { infer_front_function_signatures } from "./signature_inference.ts";
 import { source_facts, source_inference_diagnostics } from "./source_facts.ts";
 import { derive_missing_source_spans } from "./syntax.ts";
 import { elaborate_front_type_sets } from "./type_set_elaborate.ts";
+import { type Checked, checked_value, diagnostics_of } from "./checked.ts";
 import {
   elaborate_front_loops,
   elaborate_front_ranges,
 } from "./loop_elaborate.ts";
 
 export function source_for_gpufuck(source: Source): Source {
+  const checked = check_source_for_gpufuck(source);
+  const value = checked_value(checked);
+  if (value !== undefined) return value;
+  const diagnostic = diagnostics_of(checked)[0];
+  expect(diagnostic !== undefined, "Gpufuck source check failed silently.");
+  throw new SourceDiagnosticError(diagnostic);
+}
+
+export function check_source_for_gpufuck(source: Source): Checked<Source> {
   source = source_with_expanded_attributes(source);
-  return expanded_source_for_gpufuck(source);
+  return check_expanded_source_for_gpufuck(source);
 }
 
 export function expanded_source_for_gpufuck(source: Source): Source {
+  const checked = check_expanded_source_for_gpufuck(source);
+  const value = checked_value(checked);
+  if (value !== undefined) return value;
+  const diagnostic = diagnostics_of(checked)[0];
+  expect(diagnostic !== undefined, "Expanded source check failed silently.");
+  throw new SourceDiagnosticError(diagnostic);
+}
+
+export function check_expanded_source_for_gpufuck(
+  source: Source,
+): Checked<Source> {
   source = elaborate_source_for_gpufuck(source);
-  source = erase_undemanded_front_bindings(source);
-  validate_atom_identities(source);
-  validate_source_linear(source);
-  return source;
+  return validate_resolved_array_spreads(source).map(() => {
+    source = erase_undemanded_front_bindings(source);
+    validate_atom_identities(source);
+    validate_source_linear(source);
+    return source;
+  });
 }
 
 function elaborate_source_for_gpufuck(source: Source): Source {

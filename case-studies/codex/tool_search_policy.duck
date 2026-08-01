@@ -8,27 +8,29 @@ type SearchPolicyValidatedQuery = ToolSearchValidatedQuery
 type SearchPolicyValidation = ToolSearchValidation
 
 const validate_tool_search_invocation: SearchPolicyInvocation -> SearchPolicyValidation =
-  invocation => {
-    if let `UnsupportedToolSearchPayload () = invocation {
-      `SearchFatal "tool_search handler received unsupported payload"
-    } else if let `SearchToolRequest arguments = invocation {
+  invocation => do
+    if let #UnsupportedToolSearchPayload = invocation then
+      #SearchFatal "tool_search handler received unsupported payload"
+    else let #SearchToolRequest arguments = invocation then
       let query = text_trim_ascii_whitespace arguments.query;
-      if query == "" {
-        `SearchRejected "query must not be empty"
-      } else {
+      if query == "" then
+        #SearchRejected "query must not be empty"
+      else
         let limit = 8;
-        if let `SearchLimitPresent requested_limit = arguments.limit { limit = requested_limit }
+        if let #SearchLimitPresent requested_limit = arguments.limit then
+          limit = requested_limit
+        end;
 
-        if limit <= 0 {
-          `SearchRejected "limit must be greater than zero"
-        } else {
+        if limit <= 0 then
+          #SearchRejected "limit must be greater than zero"
+        else
           let validated: SearchPolicyValidatedQuery = [.query = query, .limit = limit];
-          `SearchValidated validated
-        }
-      }
-    } else {
-      `SearchFatal "tool_search handler received unsupported payload"
-    }
-  };
+          #SearchValidated validated
+        end;
+      end;
+    else
+      #SearchFatal "tool_search handler received unsupported payload"
+    end;
+  end;
 
 return { .validate_tool_search_invocation };

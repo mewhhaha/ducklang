@@ -24,54 +24,58 @@ type TurnError = AppServerTurnError
 type TurnErrorOption = AppServerTurnErrorOption
 type Turn = AppServerTurn
 
-const optional_json = (value: TurnJsonOption) => {
-  if let `Some json = value { json } else { json_null() }
-};
+const optional_json = (value: TurnJsonOption) => do
+  if let #Some json = value then json else json_null() end;
+end;
 
-const optional_text_json = (value: TurnTextOption) => {
-  if let `Some text = value { json_string text } else { json_null() }
-};
+const optional_text_json = (value: TurnTextOption) => do
+  if let #Some text = value then json_string text else json_null() end;
+end;
 
-const optional_i64_json = (value: TurnI64Option) => {
-  if let `Some number = value { json_number(format_i64 number) } else { json_null() }
-};
+const optional_i64_json = (value: TurnI64Option) => do
+  if let #Some number = value then json_number(format_i64 number) else json_null() end;
+end;
 
-const turn_status_text = (status: TurnStatus) => {
-  if let `Completed () = status {
+const turn_status_text = (status: TurnStatus) => do
+  if let #Completed = status then
     "completed"
-  } else if let `Interrupted () = status {
+  else let #Interrupted = status then
     "interrupted"
-  } else if let `Failed () = status {
+  else let #Failed = status then
     "failed"
-  } else {
+  else
     "inProgress"
-  }
-};
+  end;
+end;
 
-const turn_items_view_text = (view: TurnItemsView) => {
-  if let `NotLoaded () = view {
+const turn_items_view_text = (view: TurnItemsView) => do
+  if let #NotLoaded = view then
     "notLoaded"
-  } else if let `Summary () = view {
+  else let #Summary = view then
     "summary"
-  } else {
+  else
     "full"
-  }
-};
+  end;
+end;
 
-const turn_error_json = (error: TurnErrorOption) => {
-  if let `Some details = error {
+const turn_error_json = (error: TurnErrorOption) => do
+  if let #Some details = error then
     let [message, codex_error_info, additional_details] = details;
     let fields = json_object_empty();
-    fields = json_object_prepend("additionalDetails", optional_text_json additional_details, fields)
+    fields = json_object_prepend(
+      "additionalDetails",
+      optional_text_json additional_details,
+      fields,
+    )
     fields = json_object_prepend("codexErrorInfo", optional_json codex_error_info, fields)
     fields = json_object_prepend("message", json_string message, fields)
     json_object fields
-  } else {
+  else
     json_null()
-  }
-};
+  end;
+end;
 
-const materialize_turn: Turn -> TurnJson = (turn: Turn) => {
+const materialize_turn: Turn -> TurnJson = (turn: Turn) => do
   let [id, items, items_view, status, error, started_at, completed_at, duration_ms] = turn;
   let fields = json_object_empty();
   fields = json_object_prepend("durationMs", optional_i64_json duration_ms, fields)
@@ -79,15 +83,19 @@ const materialize_turn: Turn -> TurnJson = (turn: Turn) => {
   fields = json_object_prepend("startedAt", optional_i64_json started_at, fields)
   fields = json_object_prepend("error", turn_error_json error, fields)
   fields = json_object_prepend("status", json_string(turn_status_text status), fields)
-  fields = json_object_prepend("itemsView", json_string(turn_items_view_text items_view), fields)
+  fields = json_object_prepend(
+    "itemsView",
+    json_string(turn_items_view_text items_view),
+    fields,
+  )
   fields = json_object_prepend("items", json_array items, fields)
   fields = json_object_prepend("id", json_string id, fields)
   json_object fields
-};
+end;
 
-const single_field_object = (name: Text, value: TurnJson) => {
+const single_field_object = (name: Text, value: TurnJson) => do
   json_object(json_object_prepend(name, value, json_object_empty()))
-};
+end;
 
 const materialize_turn_start_response = (turn: Turn) => single_field_object(
   "turn",
@@ -99,12 +107,12 @@ const materialize_turn_steer_response = (turn_id: Text) => single_field_object(
   json_string turn_id,
 );
 
-const materialize_turn_notification = (thread_id: Text, turn: Turn) => {
+const materialize_turn_notification = (thread_id: Text, turn: Turn) => do
   let fields = json_object_empty();
   fields = json_object_prepend("turn", materialize_turn turn, fields)
   fields = json_object_prepend("threadId", json_string thread_id, fields)
   json_object fields
-};
+end;
 
 return {
   .materialize_turn,

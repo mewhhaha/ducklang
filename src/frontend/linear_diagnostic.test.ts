@@ -36,17 +36,17 @@ Deno.test("linear consumption without rebinding reports the consumed expression"
 
 Deno.test("linear branch mismatch reports the complete conditional", () => {
   const diagnostics = linear_diagnostics(
-    "let main = (!x, flag) => if flag { !x } else { 0 };\nmain(1, 1)",
+    "let main = (!x, flag) => if flag then !x else 0 end;\nmain(1, 1)",
   );
 
   assert_equals(diagnostics, [{
     code: "DUCK2205",
     severity: "error",
     message: "Linear branches must consume the same values",
-    span: { start: 25, end: 50 },
+    span: { start: 25, end: 51 },
     related: [{
       message: "First consumed here",
-      span: { start: 35, end: 37 },
+      span: { start: 38, end: 40 },
     }, {
       message: "Linear value declared here",
       span: { start: 12, end: 14 },
@@ -56,17 +56,17 @@ Deno.test("linear branch mismatch reports the complete conditional", () => {
 
 Deno.test("linear fallthrough mismatch reports the branch statement", () => {
   const diagnostics = linear_diagnostics(
-    "let bad = (!x) => {\n  if true {\n    !x\n  }\n  x\n};\nbad(41)",
+    "let bad = (!x) => do\n  if true then\n    !x\n  end\n  x\nend;\nbad(41)",
   );
 
   assert_equals(diagnostics, [{
     code: "DUCK2205",
     severity: "error",
     message: "Linear loop if fallthrough changes carried values",
-    span: { start: 22, end: 42 },
+    span: { start: 23, end: 48 },
     related: [{
       message: "First consumed here",
-      span: { start: 36, end: 38 },
+      span: { start: 40, end: 42 },
     }, {
       message: "Linear value declared here",
       span: { start: 11, end: 13 },
@@ -96,25 +96,25 @@ Deno.test("linear closure reuse reports both calls and its declaration", () => {
 
 Deno.test("static conditions select linear closures for Bool and I32 literals", () => {
   const static_linear_closures = [
-    `let main = (!x) => {
-  let consume = if true { () => !x } else { () => 0 };
+    `let main = (!x) => do
+  let consume = if true then () => !x  else  () => 0 end;
   consume()
-};
+end;
 main(1)`,
-    `let main = (!x) => {
-  let consume = if false { () => 0 } else { () => !x };
+    `let main = (!x) => do
+  let consume = if false then () => 0  else  () => !x end;
   consume()
-};
+end;
 main(1)`,
-    `let main = (!x) => {
-  let consume = if true { () => !x } else { () => 0 };
+    `let main = (!x) => do
+  let consume = if true then () => !x  else  () => 0 end;
   consume()
-};
+end;
 main(1)`,
-    `let main = (!x) => {
-  let consume = if false { () => 0 } else { () => !x };
+    `let main = (!x) => do
+  let consume = if false then () => 0  else  () => !x end;
   consume()
-};
+end;
 main(1)`,
   ];
 
@@ -125,14 +125,14 @@ main(1)`,
 
 Deno.test("linear diagnostics retain spans through synthesized closure branches", () => {
   const diagnostics = linear_diagnostics(
-    `let main = (!x, flag) => {
-  let f = if flag {
+    `let main = (!x, flag) => do
+  let f = if flag then
     () => !x
-  } else {
+   else
     () => 0
-  };
+  end;
   f()
-};
+end;
 main(1, 1)`,
   );
 
@@ -140,10 +140,10 @@ main(1, 1)`,
     code: "DUCK2205",
     severity: "error",
     message: "Linear branches must consume the same values",
-    span: { start: 37, end: 86 },
+    span: { start: 38, end: 89 },
     related: [{
       message: "First consumed here",
-      span: { start: 57, end: 59 },
+      span: { start: 61, end: 63 },
     }, {
       message: "Linear value declared here",
       span: { start: 12, end: 14 },
@@ -153,17 +153,17 @@ main(1, 1)`,
 
 Deno.test("linear loop state mismatch reports the loop and moved declaration", () => {
   const diagnostics = linear_diagnostics(
-    "let main = (!x) => {\n  for i in 0..2 {\n    let !y = !x;\n  }\n  !x\n};\nmain(1)",
+    "let main = (!x) => do\n  for i in 0..2 do\n    let !y = !x;\n  end\n  !x\nend;\nmain(1)",
   );
 
   assert_equals(diagnostics, [{
     code: "DUCK2205",
     severity: "error",
     message: "Linear loop fallthrough changes carried values",
-    span: { start: 23, end: 59 },
+    span: { start: 24, end: 63 },
     related: [{
       message: "First consumed here",
-      span: { start: 52, end: 54 },
+      span: { start: 54, end: 56 },
     }, {
       message: "Linear value declared here",
       span: { start: 12, end: 14 },
@@ -171,32 +171,30 @@ Deno.test("linear loop state mismatch reports the loop and moved declaration", (
   }]);
 });
 
-Deno.test("linear match loop arms validate terminal and fallthrough paths", () => {
+Deno.test("linear case loop arms validate terminal and fallthrough paths", () => {
   const valid = linear_diagnostics(`
-let main = (!x, flag) => {
-  for i in 0..2 {
-    match flag {
-      | 1 => { x = !x + 1; break; }
-      | _ => { x = !x + 1 }
-    }
-  }
+let main = (!x, flag) => do
+  for i in 0..2 do
+    case flag of
+      1 => do x = !x + 1; break; end,
+      _ => do x = !x + 1 end;
+  end
   x
-};
+end;
 main(40, 1)
 `);
 
   assert_equals(valid, []);
 
   const invalid = linear_diagnostics(`
-let main = (!x, flag) => {
-  for i in 0..2 {
-    match flag {
-      | 1 => { !x; break; }
-      | _ => { x = !x + 1 }
-    }
-  }
+let main = (!x, flag) => do
+  for i in 0..2 do
+    case flag of
+      1 => do !x; break; end,
+      _ => do x = !x + 1 end;
+  end
   x
-};
+end;
 main(40, 1)
 `);
 
@@ -237,11 +235,11 @@ Deno.test("implicit linear use reports the exact variable reference", () => {
 
 Deno.test("recursive linear closure validation reports the recursive call", () => {
   const diagnostics = linear_diagnostics(
-    `let main = (!x) => {
+    `let main = (!x) => do
   let recurse = () => recurse();
   recurse()
   !x
-};
+end;
 main(1)`,
   );
 
@@ -249,7 +247,7 @@ main(1)`,
     code: "DUCK2290",
     severity: "error",
     message: "Cannot validate recursive linear closure call yet: recurse",
-    span: { start: 43, end: 52 },
+    span: { start: 44, end: 53 },
   }]);
 });
 

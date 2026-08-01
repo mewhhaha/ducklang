@@ -14,30 +14,40 @@ type FixtureJsonObject = JsonObject
 
 let score = 0;
 
-let message_content: FixtureContent = `InputText "message";
-let message_node: FixtureContentNode = [message_content, `Nil ()];
-let message_contents: FixtureContents = `Cons message_node;
-let message_input: FixtureInput = `ResultMessage message_contents;
-if encode_json(code_mode_result message_input) == "\"message\"" { score = score + 1 }
+let message_content: FixtureContent = #InputText "message";
+let message_node: FixtureContentNode = [message_content, #Nil];
+let message_contents: FixtureContents = #Cons message_node;
+let message_input: FixtureInput = #ResultMessage message_contents;
+if encode_json(code_mode_result message_input) == "\"message\"" then
+  score = score + 1
+end;
 
-let text_input: FixtureInput = `ResultFunctionCall (`ResultTextBody "  ");
-if encode_json(code_mode_result text_input) == "\"  \"" { score = score + 10 }
+let text_input: FixtureInput = #ResultFunctionCall (#ResultTextBody "  ");
+if encode_json(code_mode_result text_input) == "\"  \"" then
+  score = score + 10
+end;
 
-let content_input: FixtureInput = `ResultCustomCall (`ResultContentBody message_contents);
-if encode_json(code_mode_result content_input) == "\"message\"" { score = score + 100 }
+let content_input: FixtureInput = #ResultCustomCall (#ResultContentBody message_contents);
+if encode_json(code_mode_result content_input) == "\"message\"" then
+  score = score + 100
+end;
 
-let tool_members: FixtureJsonObject = `Cons ([["name", `String "one"], `Nil ()]);
-let tool: FixtureJson = `Object tool_members;
-let tools: FixtureJsonArray = `Cons ([tool, `Nil ()]);
-let search_input: FixtureInput = `ResultToolSearch tools;
-if encode_json(code_mode_result search_input) == "[{\"name\":\"one\"}]" { score = score + 1000 }
+let tool_members: FixtureJsonObject = #Cons ([["name", #String "one"], #Nil]);
+let tool: FixtureJson = #Object tool_members;
+let tools: FixtureJsonArray = #Cons ([tool, #Nil]);
+let search_input: FixtureInput = #ResultToolSearch tools;
+if encode_json(code_mode_result search_input) == "[{\"name\":\"one\"}]" then
+  score = score + 1000 end;
 
-let mcp_members: FixtureJsonObject = `Cons ([["isError", `Bool false], `Nil ()]);
-let mcp: FixtureJson = `Object mcp_members;
-let mcp_input: FixtureInput = `ResultMcpCall mcp;
-if encode_json(code_mode_result mcp_input) == "{\"isError\":false}" { score = score + 10000 }
+let mcp_members: FixtureJsonObject = #Cons ([["isError", #Bool false], #Nil]);
+let mcp: FixtureJson = #Object mcp_members;
+let mcp_input: FixtureInput = #ResultMcpCall mcp;
+if encode_json(code_mode_result mcp_input) == "{\"isError\":false}" then
+  score = score + 10000 end;
 
-let json_output: FixtureInput = `ResultJsonToolOutput (`Number "42");
-if encode_json(code_mode_result json_output) == "42" { score = score + 100000 }
+let json_output: FixtureInput = #ResultJsonToolOutput (#Number "42");
+if encode_json(code_mode_result json_output) == "42" then
+  score = score + 100000
+end;
 
 return { .score = score };

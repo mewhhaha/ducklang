@@ -17,126 +17,126 @@ type NotificationInjection = CodeModeNotificationInjection
 type NotificationCompletion = CodeModeNotificationCompletion
 type NotificationOutput = CodeModeNotificationOutput
 
-const dispatch_cancellation_message: DispatchRequest -> Text = request => {
-  if let `DispatchNestedInvocation _ = request {
+const dispatch_cancellation_message: DispatchRequest -> Text = request => do
+  if let #DispatchNestedInvocation _ = request then
     "code mode nested tool call cancelled"
-  } else {
+  else
     "code mode notification cancelled"
-  }
-};
+  end;
+end;
 
 const plan_code_mode_dispatch_submission: DispatchSubmissionFacts -> DispatchSubmissionPlan =
-  facts => {
-    if let `DispatchCancelled () = facts.cancellation {
-      return `RejectCodeModeDispatch (dispatch_cancellation_message facts.request);
-    }
+  facts => do
+    if let #DispatchCancelled = facts.cancellation then
+      return #RejectCodeModeDispatch (dispatch_cancellation_message facts.request);
+    end;
 
-    if let `DispatchChannelUnavailable () = facts.channel {
-      if let `DispatchNestedInvocation _ = facts.request {
-        return `RejectCodeModeDispatch "code mode nested tool dispatcher is unavailable";
-      }
-      return `RejectCodeModeDispatch "code mode notification dispatcher is unavailable";
-    }
+    if let #DispatchChannelUnavailable = facts.channel then
+      if let #DispatchNestedInvocation _ = facts.request then
+        return #RejectCodeModeDispatch "code mode nested tool dispatcher is unavailable";
+      end;
+      return #RejectCodeModeDispatch "code mode notification dispatcher is unavailable";
+    end;
 
-    `QueueCodeModeDispatch facts.request
-  };
+    #QueueCodeModeDispatch facts.request
+  end;
 
-const plan_code_mode_dispatch_response: [DispatchRequest, DispatchResponseState] ->
+const plan_code_mode_dispatch_response: (DispatchRequest, DispatchResponseState) ->
   DispatchResponsePlan = (
     request,
     response,
-  ) => {
-    if let `DispatchResponseDelivered delivered = response {
-      if let `DispatchDeliveredFailure message = delivered {
-        return `RejectCodeModeDispatchResponse message;
-      }
-      return `AcceptCodeModeDispatchResponse ();
-    }
+  ) => do
+    if let #DispatchResponseDelivered delivered = response then
+      if let #DispatchDeliveredFailure message = delivered then
+        return #RejectCodeModeDispatchResponse message;
+      end;
+      return #AcceptCodeModeDispatchResponse;
+    end;
 
-    if let `DispatchResponseStopped () = response {
-      if let `DispatchNestedInvocation _ = request {
-        return `RejectCodeModeDispatchResponse "code mode nested tool dispatcher stopped";
-      }
-      return `RejectCodeModeDispatchResponse "code mode notification dispatcher stopped";
-    }
+    if let #DispatchResponseStopped = response then
+      if let #DispatchNestedInvocation _ = request then
+        return #RejectCodeModeDispatchResponse "code mode nested tool dispatcher stopped";
+      end;
+      return #RejectCodeModeDispatchResponse "code mode notification dispatcher stopped";
+    end;
 
-    `RejectCodeModeDispatchResponse (dispatch_cancellation_message request)
-  };
+    #RejectCodeModeDispatchResponse (dispatch_cancellation_message request)
+  end;
 
-const close_code_mode_dispatch_gate: DispatchRequest -> DispatchGatePlan = request => {
-  if let `DispatchNestedInvocation invocation = request {
-    `CloseNestedToolDispatchGate invocation.cell_id
-  } else {
-    let `DispatchNotification notification = request else {
+const close_code_mode_dispatch_gate: DispatchRequest -> DispatchGatePlan = request => do
+  if let #DispatchNestedInvocation invocation = request then
+    #CloseNestedToolDispatchGate invocation.cell_id
+  else
+    let #DispatchNotification notification = request else do
       let impossible: DispatchGatePlan =
         panic "code-mode dispatch request has no recognized variant";
       return impossible;
-    };
+    end;
     let closed: ClosedNotification = [
       .cell_id = notification.cell_id,
       .error = "code mode notification cancelled"];
-    `CloseNotificationDispatchGate closed
-  }
-};
+    #CloseNotificationDispatchGate closed
+  end;
+end;
 
-const plan_code_mode_dispatch_gate: DispatchGateFacts -> DispatchGatePlan = facts => {
-  if let `DispatchCancelled () = facts.cancellation {
+const plan_code_mode_dispatch_gate: DispatchGateFacts -> DispatchGatePlan = facts => do
+  if let #DispatchCancelled = facts.cancellation then
     return close_code_mode_dispatch_gate facts.request;
-  }
-  if let `DispatchGateClosed () = facts.gate {
+  end;
+  if let #DispatchGateClosed = facts.gate then
     return close_code_mode_dispatch_gate facts.request;
-  }
+  end;
 
-  if let `DispatchGateWaiting () = facts.gate {
-    if let `DispatchNestedInvocation invocation = facts.request {
-      return `WaitForCodeModeDispatchGate invocation.cell_id;
-    }
-    let `DispatchNotification notification = facts.request else {
+  if let #DispatchGateWaiting = facts.gate then
+    if let #DispatchNestedInvocation invocation = facts.request then
+      return #WaitForCodeModeDispatchGate invocation.cell_id;
+    end;
+    let #DispatchNotification notification = facts.request else do
       let impossible: DispatchGatePlan =
         panic "code-mode dispatch request has no recognized variant";
       return impossible;
-    };
-    return `WaitForCodeModeDispatchGate notification.cell_id;
-  }
+    end;
+    return #WaitForCodeModeDispatchGate notification.cell_id;
+  end;
 
-  if let `DispatchNestedInvocation invocation = facts.request {
-    `SpawnNestedToolDispatch invocation
-  } else {
-    let `DispatchNotification notification = facts.request else {
+  if let #DispatchNestedInvocation invocation = facts.request then
+    #SpawnNestedToolDispatch invocation
+  else
+    let #DispatchNotification notification = facts.request else do
       let impossible: DispatchGatePlan =
         panic "code-mode dispatch request has no recognized variant";
       return impossible;
-    };
-    `RunCodeModeNotification notification
-  }
-};
+    end;
+    #RunCodeModeNotification notification
+  end;
+end;
 
-const plan_code_mode_notification: Notification -> NotificationPlan = notification => {
-  if text_trim_whitespace notification.text == "" {
-    return `CompleteBlankNotification ();
-  }
+const plan_code_mode_notification: Notification -> NotificationPlan = notification => do
+  if text_trim_whitespace notification.text == "" then
+    return #CompleteBlankNotification;
+  end;
 
   let output: NotificationOutput = [
     .call_id = notification.call_id,
     .name = "exec",
     .text = notification.text];
-  `InjectCodeModeNotification output
-};
+  #InjectCodeModeNotification output
+end;
 
-const finish_code_mode_notification: [Text, NotificationInjection] -> NotificationCompletion = (
+const finish_code_mode_notification: (Text, NotificationInjection) -> NotificationCompletion = (
   cell_id,
   injection,
-) => {
-  if let `NotificationInjected () = injection {
-    return `NotificationComplete ();
-  }
-  `NotificationRejected (
-    text_append [
+) => do
+  if let #NotificationInjected = injection then
+    return #NotificationComplete;
+  end;
+  #NotificationRejected (
+    text_append (
       "failed to inject exec notify message for cell ",
-      text_append [cell_id, ": no active turn"],
-    ]
+      text_append (cell_id, ": no active turn"),
+    )
   )
-};
+end;
 
 return {
   .finish_code_mode_notification,

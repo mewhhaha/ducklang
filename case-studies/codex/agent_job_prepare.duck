@@ -33,264 +33,287 @@ type AgentJobPrepareJsonMember = JsonMember
 type AgentJobPrepareJsonMemberNode = JsonMemberNode
 type AgentJobPrepareJsonObject = JsonObject
 
-const agent_job_texts_contain: [AgentJobPrepareTextList, Text] -> Bool = (
+const agent_job_texts_contain: (AgentJobPrepareTextList, Text) -> Bool = (
   values: AgentJobPrepareTextList,
   expected: Text,
-) => {
+) => do
   let current = values;
   let found = false;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      if value == expected { found = true }
+      if value == expected then
+        found = true
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   found
-};
+end;
 
-const agent_job_text_at: [AgentJobPrepareTextList, I32] -> AgentJobPrepareOption = (
+const agent_job_text_at: (AgentJobPrepareTextList, I32) -> AgentJobPrepareOption = (
   values: AgentJobPrepareTextList,
   expected_index: I32,
-) => {
+) => do
   let current = values;
   let index = 0;
-  let result: AgentJobPrepareOption = `None ();
+  let result: AgentJobPrepareOption = #None;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      if index == expected_index {
-        result = `Some value
+      if index == expected_index then
+        result = #Some value
         done = true
-      } else {
+      else
         index = index + 1
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   result
-};
+end;
 
-const insert_agent_job_member: [AgentJobPrepareJsonMember, AgentJobPrepareJsonObject] ->
+const insert_agent_job_member: (AgentJobPrepareJsonMember, AgentJobPrepareJsonObject) ->
   AgentJobPrepareJsonObject = (
     member: AgentJobPrepareJsonMember,
     members: AgentJobPrepareJsonObject,
-  ) => {
+  ) => do
     let [key, _] = member;
     let remaining = members;
-    let prefix_reversed: AgentJobPrepareJsonObject = `Nil ();
+    let prefix_reversed: AgentJobPrepareJsonObject = #Nil;
     let inserted = false;
-    loop {
-      if let `Cons node = remaining {
+    loop do
+      if let #Cons node = remaining then
         let [existing, tail] = node;
         let [existing_key, _] = existing;
-        if text_less_than [key, existing_key] {
+        if text_less_than (key, existing_key) then
           let inserted_node: AgentJobPrepareJsonMemberNode = [member, remaining];
-          remaining = `Cons inserted_node
+          remaining = #Cons inserted_node
           inserted = true
           break;
-        }
+        end;
         let prefix_node: AgentJobPrepareJsonMemberNode = [existing, prefix_reversed];
-        prefix_reversed = `Cons prefix_node
+        prefix_reversed = #Cons prefix_node
         remaining = tail
-      } else {
-        let inserted_node: AgentJobPrepareJsonMemberNode = [member, `Nil ()];
-        remaining = `Cons inserted_node
+      else
+        let inserted_node: AgentJobPrepareJsonMemberNode = [member, #Nil];
+        remaining = #Cons inserted_node
         inserted = true
         break;
-      }
-    }
-    if inserted {
-      loop {
-        if let `Cons node = prefix_reversed {
+      end;
+    end;
+    if inserted then
+      loop do
+        if let #Cons node = prefix_reversed then
           let [existing, tail] = node;
           let restored_node: AgentJobPrepareJsonMemberNode = [existing, remaining];
-          remaining = `Cons restored_node
+          remaining = #Cons restored_node
           prefix_reversed = tail
-        } else {
+        else
           break;
-        }
-      }
-    }
+        end;
+      end;
+    end;
     remaining
-  };
+  end;
 
-const agent_job_row_object: [AgentJobPrepareTextList, AgentJobPrepareTextList] ->
+const agent_job_row_object: (AgentJobPrepareTextList, AgentJobPrepareTextList) ->
   AgentJobPrepareJsonObject = (
     headers: AgentJobPrepareTextList,
     values: AgentJobPrepareTextList,
-  ) => {
+  ) => do
     let current_headers = headers;
     let current_values = values;
-    let members: AgentJobPrepareJsonObject = `Nil ();
+    let members: AgentJobPrepareJsonObject = #Nil;
     let done = false;
-    loop {
-      if let `Cons header_node = current_headers {
+    loop do
+      if let #Cons header_node = current_headers then
         let [header, header_tail] = header_node;
-        if let `Cons value_node = current_values {
+        if let #Cons value_node = current_values then
           let [value, value_tail] = value_node;
           let member: AgentJobPrepareJsonMember = [header, json_string value];
           members = insert_agent_job_member(member, members)
           current_headers = header_tail
           current_values = value_tail
-        } else {
+        else
           done = true
-        }
-      } else {
+        end;
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     members
-  };
+  end;
 
-let agent_job_schema_pretty: AgentJobPrepareOption -> Text = schema => {
-  if let `Some document = schema {
+let agent_job_schema_pretty: AgentJobPrepareOption -> Text = schema => do
+  if let #Some document = schema then
     let parsed = parse_json_document document;
-    if let `Ok value_and_position = parsed {
+    if let #Ok value_and_position = parsed then
       let [value, _] = value_and_position;
       encode_json_pretty value
-    } else {
+    else
       "{}"
-    }
-  } else {
+    end;
+  else
     "{}"
-  }
-};
+  end;
+end;
 
-let render_agent_job_worker_prompt: [Text, Text, Text, AgentJobPrepareJsonObject, Text] -> Text = (
+let render_agent_job_worker_prompt: (Text, Text, Text, AgentJobPrepareJsonObject, Text) -> Text = (
   job_id: Text,
   item_id: Text,
   instruction: Text,
   row: AgentJobPrepareJsonObject,
   schema_pretty: Text,
-) => {
+) => do
   let task = render_agent_job_instruction(instruction, row);
   let row_pretty = encode_json_pretty(json_object row);
-  let prompt = text_append [
+  let prompt = text_append (
     "You are processing one item for a generic agent job.\nJob ID: ",
     job_id,
-  ];
-  prompt = text_append [prompt, text_append ["\nItem ID: ", item_id]]
-  prompt = text_append [prompt, text_append ["\n\nTask instruction:\n", task]]
-  prompt = text_append [prompt, text_append ["\n\nInput row (JSON):\n", row_pretty]]
-  prompt = text_append [
+  );
+  prompt = text_append (prompt, text_append ("\nItem ID: ", item_id))
+  prompt = text_append (prompt, text_append ("\n\nTask instruction:\n", task))
+  prompt = text_append (prompt, text_append ("\n\nInput row (JSON):\n", row_pretty))
+  prompt = text_append (
     prompt,
-    text_append ["\n\nExpected result schema (JSON Schema or {}):\n", schema_pretty],
-  ]
-  prompt = text_append [
+    text_append ("\n\nExpected result schema (JSON Schema or {}):\n", schema_pretty),
+  )
+  prompt = text_append (
     prompt,
     "\n\nYou MUST call the `report_agent_job_result` tool exactly once with:\n",
-  ]
-  prompt = text_append [prompt, text_append ["1. `job_id` = \"", text_append [job_id, "\"\n"]]]
-  prompt = text_append [prompt, text_append ["2. `item_id` = \"", text_append [item_id, "\"\n"]]]
-  prompt = text_append [
+  )
+  prompt = text_append (prompt, text_append ("1. `job_id` = \"", text_append (job_id, "\"\n")))
+  prompt = text_append (
+    prompt,
+    text_append ("2. `item_id` = \"", text_append (item_id, "\"\n")),
+  )
+  prompt = text_append (
     prompt,
     "3. `result` = a JSON object that contains your analysis result for this row.\n\n",
-  ]
-  prompt = text_append [
+  )
+  prompt = text_append (
     prompt,
     "If you need to stop the job early, include `stop` = true in the tool call.\n\nAfter the tool call succeeds, stop.",
-  ]
+  )
   prompt
-};
+end;
 
-const default_agent_job_output_path: [Text, Text] -> Text = (input_path: Text, job_id: Text) => {
+const default_agent_job_output_path: (Text, Text) -> Text = (input_path: Text, job_id: Text) => do
   let basename = path_basename input_path;
   let dot = -1;
-  if text_length basename > 0 {
-    for index in 0..text_length basename {
-      if text_get [basename, index] == 46 && index > 0 { dot = index }
-    }
-  }
-  let stem = if dot > 0 { text_slice [basename, 0, dot] } else { basename };
-  let suffix_end = if text_length job_id < 8 { text_length job_id } else { 8 };
-  let filename = text_append [
+  if text_length basename > 0 then
+    for index in 0..text_length basename do
+      if text_get (basename, index) == 46 && index > 0 then
+        dot = index
+      end;
+    end
+  end;
+  let stem = if dot > 0 then text_slice (basename, 0, dot) else basename end;
+  let suffix_end = if text_length job_id < 8 then text_length job_id else 8 end;
+  let filename = text_append (
     stem,
-    text_append [".agent-job-", text_append [text_slice [job_id, 0, suffix_end], ".csv"]],
-  ];
-  path_join [path_parent input_path, filename]
-};
+    text_append (".agent-job-", text_append (text_slice (job_id, 0, suffix_end), ".csv")),
+  );
+  path_join (path_parent input_path, filename)
+end;
 
-let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
+let prepare_agent_job: (Text, AgentJobPrepareArgs, AgentJobPrepareDocument) ->
   AgentJobPrepareResult = (
     job_id: Text,
     args: AgentJobPrepareArgs,
     document: AgentJobPrepareDocument,
-  ) => {
+  ) => do
     let failure = validate_agent_job_csv_rows document;
-    let seen_headers: AgentJobPrepareTextList = `Nil ();
+    let seen_headers: AgentJobPrepareTextList = #Nil;
     let current_headers = document.headers;
     let id_column_index = -1;
     let header_index = 0;
     let done = false;
-    loop {
-      if let `Cons node = current_headers {
+    loop do
+      if let #Cons node = current_headers then
         let [header, tail] = node;
-        if failure == "" && agent_job_texts_contain(seen_headers, header) { failure = text_append [
-          "csv header ",
-          text_append [header, " is duplicated"],
-        ] }
+        if failure == "" && agent_job_texts_contain(seen_headers, header) then
+          failure = text_append (
+            "csv header ",
+            text_append (header, " is duplicated"),
+          ) end;
         let seen_node: AgentJobPrepareTextListNode = [header, seen_headers];
-        seen_headers = `Cons seen_node
-        if let `Some id_column = args.id_column {
-          if header == id_column { id_column_index = header_index }
-        }
+        seen_headers = #Cons seen_node
+        if let #Some id_column = args.id_column then
+          if header == id_column then
+            id_column_index = header_index
+          end;
+        end;
         header_index = header_index + 1
         current_headers = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
 
-    if let `Some id_column = args.id_column {
-      if failure == "" && id_column_index < 0 { failure = text_append [
-        "id_column ",
-        text_append [id_column, " was not found in csv headers"],
-      ] }
-    }
+    if let #Some id_column = args.id_column then
+      if failure == "" && id_column_index < 0 then
+        failure = text_append (
+          "id_column ",
+          text_append (id_column, " was not found in csv headers"),
+        ) end;
+    end;
 
-    if failure != "" {
-      `JobPreparationFailed failure
-    } else {
+    if failure != "" then
+      #JobPreparationFailed failure
+    else
       let schema_pretty = agent_job_schema_pretty args.output_schema_json;
-      let used_ids: AgentJobPrepareTextList = `Nil ();
-      let items_reversed: AgentJobPrepareItemList = `Nil ();
+      let used_ids: AgentJobPrepareTextList = #Nil;
+      let items_reversed: AgentJobPrepareItemList = #Nil;
       let current_rows = document.rows;
       let row_index = 0;
       done = false
-      loop {
-        if let `Cons node = current_rows {
+      loop do
+        if let #Cons node = current_rows then
           let [row, tail] = node;
-          let source_id: AgentJobPrepareOption = `None ();
-          if id_column_index >= 0 {
+          let source_id: AgentJobPrepareOption = #None;
+          if id_column_index >= 0 then
             let selected = agent_job_text_at(row, id_column_index);
-            if let `Some value = selected {
-              if text_trim_ascii_whitespace value != "" { source_id = `Some value }
-            }
-          }
-          let base_id = if let `Some value = source_id { value } else { text_append [
+            if let #Some value = selected then
+              if text_trim_ascii_whitespace value != "" then
+                source_id = #Some value
+              end;
+            end;
+          end;
+          let base_id = if let #Some value = source_id then value else text_append (
             "row-",
             format_i32(row_index + 1),
-          ] };
+          ) end;
           let item_id = base_id;
           let suffix = 2;
-          loop {
-            if !(agent_job_texts_contain(used_ids, item_id)) { break; }
-            item_id = text_append [base_id, text_append ["-", format_i32 suffix]]
+          loop do
+            if !(agent_job_texts_contain(used_ids, item_id)) then
+              break;
+            end;
+            item_id = text_append (base_id, text_append ("-", format_i32 suffix))
             suffix = suffix + 1
-          }
+          end;
           let used_node: AgentJobPrepareTextListNode = [item_id, used_ids];
-          used_ids = `Cons used_node
+          used_ids = #Cons used_node
           let row_object = agent_job_row_object(document.headers, row);
           let row_json = encode_json(json_object row_object);
           let prompt = render_agent_job_worker_prompt(
@@ -309,38 +332,42 @@ let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
             .prompt = prompt,
           ];
           let item_node: AgentJobPrepareItemListNode = [item, items_reversed];
-          items_reversed = `Cons item_node
+          items_reversed = #Cons item_node
           row_index = row_index + 1
           current_rows = tail
-        } else {
+        else
           done = true
-        }
-        if done { break; }
-      }
+        end;
+        if done then
+          break;
+        end;
+      end;
 
-      let items: AgentJobPrepareItemList = `Nil ();
+      let items: AgentJobPrepareItemList = #Nil;
       done = false
-      loop {
-        if let `Cons node = items_reversed {
+      loop do
+        if let #Cons node = items_reversed then
           let [item, tail] = node;
           let item_node: AgentJobPrepareItemListNode = [item, items];
-          items = `Cons item_node
+          items = #Cons item_node
           items_reversed = tail
-        } else {
+        else
           done = true
-        }
-        if done { break; }
-      }
+        end;
+        if done then
+          break;
+        end;
+      end;
 
-      let output_path = if let `Some path = args.output_path { path } else {
+      let output_path = if let #Some path = args.output_path then path else
         default_agent_job_output_path(
           args.input_path,
           job_id,
-        ) };
-      let suffix_end = if text_length job_id < 8 { text_length job_id } else { 8 };
+        ) end;
+      let suffix_end = if text_length job_id < 8 then text_length job_id else 8 end;
       let job: AgentJobPrepareJob = [
         .job_id = job_id,
-        .name = text_append ["agent-job-", text_slice [job_id, 0, suffix_end]],
+        .name = text_append ("agent-job-", text_slice (job_id, 0, suffix_end)),
         .instruction = args.instruction,
         .headers = document.headers,
         .input_path = args.input_path,
@@ -350,9 +377,9 @@ let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
         .max_runtime_seconds = args.max_runtime_seconds,
         .items = items,
       ];
-      `JobPrepared job
-    }
-  };
+      #JobPrepared job
+    end;
+  end;
 
 return {
   .default_agent_job_output_path,

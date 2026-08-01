@@ -3,10 +3,10 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type RequestUserInputMode =
-  | `Plan Unit
-  | `Default Unit
-  | `PairProgramming Unit
-  | `Execute Unit
+  | #Plan
+  | #Default
+  | #PairProgramming
+  | #Execute
 
 type RequestUserInputQuestionOption = struct {
   .label = Text,
@@ -15,14 +15,14 @@ type RequestUserInputQuestionOption = struct {
 
 type RequestUserInputQuestionOptionNode = [
   RequestUserInputQuestionOption,
-  RequestUserInputQuestionOptions ]
+  RequestUserInputQuestionOptions]
 type RequestUserInputQuestionOptions =
-  | `Nil Unit
-  | `Cons RequestUserInputQuestionOptionNode
+  | #Nil
+  | #Cons RequestUserInputQuestionOptionNode
 
 type RequestUserInputQuestionOptionsField =
-  | `Missing Unit
-  | `Present RequestUserInputQuestionOptions
+  | #Missing
+  | #Present RequestUserInputQuestionOptions
 
 type RequestUserInputQuestion = struct {
   .id = Text,
@@ -35,13 +35,13 @@ type RequestUserInputQuestion = struct {
 
 type RequestUserInputQuestionNode = [RequestUserInputQuestion, RequestUserInputQuestions]
 type RequestUserInputQuestions =
-  | `Nil Unit
-  | `Cons RequestUserInputQuestionNode
+  | #Nil
+  | #Cons RequestUserInputQuestionNode
 
 type RequestUserInputAutoResolution =
-  | `NoAutoResolution Unit
-  | `AutoResolutionMs I64
-  | `AutoResolutionAboveMaximum Unit
+  | #NoAutoResolution
+  | #AutoResolutionMs I64
+  | #AutoResolutionAboveMaximum
 
 type RequestUserInputArgs = struct {
   .questions = RequestUserInputQuestions,
@@ -49,20 +49,20 @@ type RequestUserInputArgs = struct {
 }
 
 type RequestUserInputNormalization =
-  | `Normalized RequestUserInputArgs
-  | `Invalid Text
+  | #Normalized RequestUserInputArgs
+  | #Invalid Text
 
 type RequestUserInputAvailability =
-  | `Available Unit
-  | `Unavailable Text
+  | #Available
+  | #Unavailable Text
 
 type RequestUserInputPlan =
-  | `PromptUser RequestUserInputArgs
-  | `RejectRequest Text
+  | #PromptUser RequestUserInputArgs
+  | #RejectRequest Text
 
 type RequestUserInputAnswerTexts =
-  | `Nil Unit
-  | `Cons RequestUserInputAnswerTextNode
+  | #Nil
+  | #Cons RequestUserInputAnswerTextNode
 type RequestUserInputAnswerTextNode = [Text, RequestUserInputAnswerTexts]
 
 type RequestUserInputAnswer = struct {
@@ -72,8 +72,8 @@ type RequestUserInputAnswer = struct {
 
 type RequestUserInputAnswerNode = [RequestUserInputAnswer, RequestUserInputAnswers]
 type RequestUserInputAnswers =
-  | `Nil Unit
-  | `Cons RequestUserInputAnswerNode
+  | #Nil
+  | #Cons RequestUserInputAnswerNode
 
 type RequestUserInputResponse = struct {
   .answers = RequestUserInputAnswers,
@@ -86,11 +86,11 @@ type RequestUserInputHostRequest = struct {
 }
 
 type RequestUserInputHostResponse =
-  | `Cancelled Unit
-  | `Answered RequestUserInputResponse
+  | #Cancelled
+  | #Answered RequestUserInputResponse
 
 type RequestUserInputExecutionResult =
-  | `Completed Text
-  | `Rejected Text
+  | #Completed Text
+  | #Rejected Text
 
 return {};

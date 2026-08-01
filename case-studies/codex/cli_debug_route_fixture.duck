@@ -12,10 +12,12 @@ let input: FixtureArgs = args.prepend("debug", args.prepend("models", args.singl
 let plan: FixturePlan = parse_cli input;
 let score = 0;
 
-if let `ManageDebug command = plan {
-  if let `DebugModels bundled = command {
-    if bundled { score = 1 }
-  }
-}
+if let #ManageDebug command = plan then
+  if let #DebugModels bundled = command then
+    if bundled then
+      score = 1
+    end;
+  end;
+end;
 
 return { .score = score };

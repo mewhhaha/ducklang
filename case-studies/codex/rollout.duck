@@ -12,85 +12,85 @@ type PersistItems = RolloutItems
 
 const rollout_items = comptime list PersistItem;
 
-const response_is_persisted = (response: PersistResponse) => {
-  if let `AdditionalTools () = response {
+const response_is_persisted = (response: PersistResponse) => do
+  if let #AdditionalTools = response then
     false
-  } else if let `CompactionTrigger () = response {
+  else let #CompactionTrigger = response then
     false
-  } else if let `Other () = response {
+  else let #Other = response then
     false
-  } else {
+  else
     true
-  }
-};
+  end;
+end;
 
-const response_is_persisted_for_memories = (response: PersistResponse) => {
-  if let `Message message = response {
+const response_is_persisted_for_memories = (response: PersistResponse) => do
+  if let #Message message = response then
     let [role, _] = message;
     role != "developer"
-  } else if let `AgentMessage () = response {
+  else let #AgentMessage = response then
     true
-  } else if let `FunctionCall () = response {
+  else let #FunctionCall = response then
     true
-  } else if let `FunctionOutput () = response {
+  else let #FunctionOutput = response then
     true
-  } else if let `ToolCall () = response {
+  else let #ToolCall = response then
     true
-  } else if let `ToolOutput () = response {
+  else let #ToolOutput = response then
     true
-  } else if let `WebSearch () = response {
+  else let #WebSearch = response then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const completed_item_is_persisted = (item: PersistCompletedItem, mode: PersistHistoryMode) => {
-  if let `Paginated () = mode {
+const completed_item_is_persisted = (item: PersistCompletedItem, mode: PersistHistoryMode) => do
+  if let #Paginated = mode then
     true
-  } else if let `Plan () = item {
+  else let #Plan = item then
     true
-  } else if let `Sleep () = item {
+  else let #Sleep = item then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const event_is_persisted = (event: PersistEvent, mode: PersistHistoryMode) => {
-  if let `ItemCompleted completed = event {
+const event_is_persisted = (event: PersistEvent, mode: PersistHistoryMode) => do
+  if let #ItemCompleted completed = event then
     let [_, item] = completed;
     completed_item_is_persisted(item, mode)
-  } else if let `Durable () = event {
+  else let #Durable = event then
     true
-  } else if let `ThreadRolledBack () = event {
+  else let #ThreadRolledBack = event then
     true
-  } else if let `TurnStarted _ = event {
+  else let #TurnStarted _ = event then
     true
-  } else if let `TurnComplete _ = event {
+  else let #TurnComplete _ = event then
     true
-  } else if let `TurnAborted _ = event {
+  else let #TurnAborted _ = event then
     true
-  } else if let `LegacyOnly () = event {
-    if let `Legacy () = mode { true } else { false }
-  } else {
+  else let #LegacyOnly = event then
+    if let #Legacy = mode then true else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const is_persisted_rollout_item = (item: PersistItem, mode: PersistHistoryMode) => {
-  if let `Response response = item {
+const is_persisted_rollout_item = (item: PersistItem, mode: PersistHistoryMode) => do
+  if let #Response response = item then
     response_is_persisted response
-  } else if let `Event event = item {
+  else let #Event event = item then
     event_is_persisted(event, mode)
-  } else {
+  else
     true
-  }
-};
+  end;
+end;
 
-const persisted_rollout_items = (values: PersistItems, mode: PersistHistoryMode) => {
+const persisted_rollout_items = (values: PersistItems, mode: PersistHistoryMode) => do
   rollout_items.filter(values, (item: PersistItem) => is_persisted_rollout_item(item, mode))
-};
+end;
 
 return {
   .response_is_persisted,

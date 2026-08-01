@@ -7,22 +7,26 @@ type FixtureDefinitions = ToolDefinitions
 
 let score = 0;
 let disabled: FixtureDefinitions = test_sync_tool_definitions false;
-if let `Nil () = disabled { score = score + 1 }
+if let #Nil = disabled then
+  score = score + 1
+end;
 
 let definitions: FixtureDefinitions = test_sync_tool_definitions true;
-if let `Cons node = definitions {
+if let #Cons node = definitions then
   let [definition, tail] = node;
   let [name, exposure, tool_handler, payload, parallel, waits] = definition;
   let [namespace, local_name] = name;
-  if namespace == "" && local_name == "test_sync_tool" && parallel && !(waits) {
-    if let `Direct () = exposure {
-      if let `TestSync () = tool_handler {
-        if let `FunctionPayload () = payload {
-          if let `Nil () = tail { score = score + 10 }
-        }
-      }
-    }
-  }
-}
+  if namespace == "" && local_name == "test_sync_tool" && parallel && !(waits) then
+    if let #Direct = exposure then
+      if let #TestSync = tool_handler then
+        if let #FunctionPayload = payload then
+          if let #Nil = tail then
+            score = score + 10
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

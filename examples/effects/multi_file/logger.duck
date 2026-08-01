@@ -1,7 +1,7 @@
 module (!init: Init) where
 
-let write: Text -> <Io.print> Unit = (message: Text) => {
+let write: Text -> <Io.print> Unit = (message: Text) => do
   _ <- Io.print(&message)
-};
+end;
 
 return { .write = write };

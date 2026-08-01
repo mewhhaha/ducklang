@@ -49,6 +49,12 @@ export abstract class ParserParams extends ParserCursor {
     this.allow_pascal_type_names = state.allow_pascal_type_names;
   }
   protected starts_pattern_arrow(offset = 0): boolean {
+    const first = this.peek(offset);
+
+    if (first.kind === "name" && first.text === "case") {
+      return false;
+    }
+
     let parens = 0;
     let brackets = 0;
     let braces = 0;
@@ -70,6 +76,13 @@ export abstract class ParserParams extends ParserCursor {
           continue;
         }
 
+        return false;
+      }
+
+      if (
+        token.kind === "name" && token.text === "of" &&
+        parens === 0 && brackets === 0 && braces === 0
+      ) {
         return false;
       }
 
@@ -208,24 +221,24 @@ export abstract class ParserParams extends ParserCursor {
         return { tag: "const_value", value };
       }
 
-      const name = this.expect_name("Expected atom pattern name");
-      expect_snake_case(name, "Atom pattern");
+      const name = this.expect_name("Expected tag or union case pattern name");
+
+      if (/^[A-Z][A-Za-z0-9]*$/.test(name)) {
+        let value: Pattern = { tag: "unit" };
+
+        if (this.starts_union_pattern_payload()) {
+          value = this.parse_pattern_inner();
+          expect(
+            value.tag !== "unit",
+            "Nullary union case pattern #" + name + " omits `()`",
+          );
+        }
+
+        return { tag: "union_case", name, value };
+      }
+
+      expect_snake_case(name, "Tag pattern");
       return { tag: "literal", value: { tag: "atom", name } };
-    }
-
-    if (this.match_symbol("`")) {
-      const name = this.expect_name("Expected union case pattern name");
-      expect(
-        /^[A-Z][A-Za-z0-9]*$/.test(name),
-        "Union case pattern must use PascalCase: " + name,
-      );
-      expect(
-        this.starts_union_pattern_payload(),
-        "Union case pattern `" + name + " requires a value",
-      );
-      const value = this.parse_pattern_inner();
-
-      return { tag: "union_case", name, value };
     }
 
     if (this.match_symbol("(")) {
@@ -281,12 +294,12 @@ export abstract class ParserParams extends ParserCursor {
     }
 
     return token.kind === "symbol" &&
-      (token.text === "!" || token.text === "`" || token.text === "(" ||
+      (token.text === "!" || token.text === "(" ||
         token.text === "[" || token.text === "{" || token.text === "#");
   }
 
   private parse_binding_pattern(mode: PatternMode): Pattern {
-    const source_name = this.expect_name("Expected pattern binding");
+    const source_name = this.expect_variable_name("Expected pattern binding");
 
     if (source_name === "_") {
       if (mode === "linear") {
@@ -493,6 +506,10 @@ export abstract class ParserParams extends ParserCursor {
         if (parsed.type_annotation !== undefined) {
           pattern.type_annotation = parsed.type_annotation;
         }
+      } else if (label === "end") {
+        throw this.error(
+          "`end` is reserved; bind the `.end` field to another name",
+        );
       }
 
       if (pattern.tag === "binding") {

@@ -1,4 +1,4 @@
-import type { ParseSourceResult } from "../frontend/parser.ts";
+import type { ParseSourceResult } from "../frontend/source_parse.ts";
 import { Source, type SourceAnalysis } from "../frontend/source.ts";
 import type { SourceDiagnostic } from "../frontend/semantic_diagnostic.ts";
 import { type LspRange, PositionIndex } from "./position.ts";
@@ -51,14 +51,39 @@ export function analysis_diagnostics(
   encoding: import("./position.ts").PositionEncoding,
 ): LspDiagnostic[] {
   const positions = new PositionIndex(analysis.syntax.text, encoding);
-  return analysis.diagnostics.map((diagnostic) =>
-    source_diagnostic_to_lsp(
-      diagnostic,
-      analysis.syntax.text,
-      positions,
-      uri,
-    )
-  );
+  const diagnostics: LspDiagnostic[] = [];
+
+  for (const diagnostic of analysis.diagnostics) {
+    let positioned = diagnostic;
+
+    if (diagnostic.uri !== undefined && diagnostic.uri !== uri) {
+      const imported_here = diagnostic.related?.find((related) =>
+        related.uri === uri
+      );
+      if (imported_here === undefined) {
+        continue;
+      }
+      positioned = {
+        ...diagnostic,
+        message: "Imported source " + diagnostic.uri + ": " +
+          diagnostic.message,
+        span: imported_here.span,
+        uri,
+        related: undefined,
+      };
+    }
+
+    diagnostics.push(
+      source_diagnostic_to_lsp(
+        positioned,
+        analysis.syntax.text,
+        positions,
+        uri,
+      ),
+    );
+  }
+
+  return diagnostics;
 }
 
 function source_diagnostic_to_lsp(

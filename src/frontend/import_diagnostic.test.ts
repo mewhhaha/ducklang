@@ -63,9 +63,43 @@ Deno.test("Source.analyze diagnoses cycles reached through closure bodies", () =
   );
 });
 
+Deno.test("Source.analyze reports Baba import parse failures", () => {
+  const main = 'const dependency = import "./dep.duck";\ndependency\n';
+  const dependency = "module () where\n" +
+    "let value = ;\n" +
+    "return {};\n";
+  const analysis = Source.analyze(main, {
+    uri: "file:///main.duck",
+    resolve_import: (uri) => {
+      if (uri === "file:///dep.duck") return dependency;
+      return undefined;
+    },
+  });
+
+  assert_equals(analysis.diagnostics, [{
+    code: "DUCK1001",
+    severity: "error",
+    message: "Baba parser rejected MISSING",
+    span: {
+      start: dependency.indexOf(";"),
+      end: dependency.indexOf(";"),
+    },
+    uri: "file:///dep.duck",
+    related: [{
+      message: "Imported here.",
+      span: {
+        start: main.indexOf('import "./dep.duck"'),
+        end: main.indexOf('import "./dep.duck"') +
+          'import "./dep.duck"'.length,
+      },
+      uri: "file:///main.duck",
+    }],
+  }]);
+});
+
 Deno.test("import validation skips a statically eliminated branch", () => {
   const source = parse_source(
-    'const dependency = if false { import "./missing.duck" } else { import "./dep.duck" };\ndependency',
+    'const dependency = if false then import "./missing.duck" else import "./dep.duck" end;\ndependency',
   );
   const sources = new Map<string, string>([
     ["file:///dep.duck", "module () where\nreturn {};"],

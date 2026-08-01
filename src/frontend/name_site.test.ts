@@ -128,14 +128,16 @@ Deno.test("postfix member sites remain distinct across repeated member names", (
 Deno.test("synthetic handler state and final conditional retain source sites", () => {
   const text = [
     "effect Counter { get: () => I32 }",
-    "let counter = {",
+    "let counter = do",
     "  let initial = 0;",
     "  handler Counter {",
     "    get: (!resume) => !resume(initial),",
     "    return: value => value,",
     "  }",
-    "};",
-    "let result = { if condition { 1 } };",
+    "end;",
+    "let result = do",
+    "  if condition then 1 end",
+    "end;",
     "",
   ].join("\n");
   const source = parse_source(text);
@@ -159,18 +161,18 @@ Deno.test("synthetic handler state and final conditional retain source sites", (
     slot: "name",
     index: undefined,
     name: "initial",
-    span: { start: 56, end: 63 },
+    span: { start: 57, end: 64 },
   }]);
   assert_equals(name_sites(final.expr.cond), [{
     slot: "name",
     index: undefined,
     name: "condition",
-    span: { start: 182, end: 191 },
+    span: { start: 188, end: 197 },
   }]);
 });
 
 Deno.test("prefixed type field annotations retain their identifier site", () => {
-  const source = parse_source("declare Record { text: #Text }\n");
+  const source = parse_source("declare Record { text: freeze Text }\n");
   const declaration = source.declarations?.[0];
 
   if (declaration === undefined || declaration.tag !== "record") {
@@ -188,7 +190,7 @@ Deno.test("prefixed type field annotations retain their identifier site", () => 
       slot: "type_name",
       index: 0,
       name: "Text",
-      span: { start: 24, end: 28 },
+      span: { start: 30, end: 34 },
     },
   ]);
 });

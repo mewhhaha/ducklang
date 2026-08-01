@@ -60,6 +60,31 @@ export function record_node_name_sites(owner: object, tokens: Token[]): void {
   if (has_name_sites(owner)) {
     return;
   }
+  record_direct_node_name_sites(owner, tokens);
+
+  const value = owner as Record<string, unknown>;
+  for (const child of Object.values(value)) {
+    if (child !== null && typeof child === "object") {
+      if (Array.isArray(child)) {
+        for (const entry of child) {
+          if (entry !== null && typeof entry === "object") {
+            record_node_name_sites(entry, tokens);
+          }
+        }
+      } else {
+        record_node_name_sites(child, tokens);
+      }
+    }
+  }
+}
+
+export function record_direct_node_name_sites(
+  owner: object,
+  tokens: Token[],
+): void {
+  if (has_name_sites(owner)) {
+    return;
+  }
 
   const value = owner as Record<string, unknown>;
   const names: {
@@ -182,20 +207,6 @@ export function record_node_name_sites(owner: object, tokens: Token[]): void {
         candidate.index,
       );
       next_token = found.index + 1;
-    }
-  }
-
-  for (const child of Object.values(value)) {
-    if (child !== null && typeof child === "object") {
-      if (Array.isArray(child)) {
-        for (const entry of child) {
-          if (entry !== null && typeof entry === "object") {
-            record_node_name_sites(entry, tokens);
-          }
-        }
-      } else {
-        record_node_name_sites(child, tokens);
-      }
     }
   }
 }

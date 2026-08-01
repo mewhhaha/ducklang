@@ -3,5 +3,9 @@ const { .length } = import "duck:prelude/runtime" ();
 let first = "Ada";
 let last = " Lovelace";
 let full = first ++ last;
+let second = (value: Text) => do
+  let width = @len value;
+  if 1 < width then value[1] else 0 end
+end;
 
-length full + full[1]
+length full + second full

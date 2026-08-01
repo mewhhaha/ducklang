@@ -6,14 +6,14 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-let input: FixtureArgs = `Cons (["--ephemeral", `Cons (["summarize", `Nil ()])]);
+let input: FixtureArgs = #Cons (["--ephemeral", #Cons (["summarize", #Nil])]);
 let parsed: FixtureResult = parse_exec_options input;
-let start_score = if let `Ok options = parsed {
-  if let `ExecStart start = options.command {
-    if let `Some prompt = start.prompt {
-      if prompt == "summarize" && options.ephemeral { 1 } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+let start_score = if let #Ok options = parsed then
+  if let #ExecStart start = options.command then
+    if let #Some prompt = start.prompt then
+      if prompt == "summarize" && options.ephemeral then 1 else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = start_score };

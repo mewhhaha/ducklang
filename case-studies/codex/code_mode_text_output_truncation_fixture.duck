@@ -10,37 +10,42 @@ type FixtureItems = FunctionOutputContentItems
 
 let score = 0;
 
-let long_text: FixtureItem = `InputText "0123456789012345678901234567890123456789";
-let long_text_node: FixtureItemNode = [long_text, `Nil ()];
-let long_items: FixtureItems = `Cons long_text_node;
+let long_text: FixtureItem = #InputText "0123456789012345678901234567890123456789";
+let long_text_node: FixtureItemNode = [long_text, #Nil];
+let long_items: FixtureItems = #Cons long_text_node;
 let truncated_text = truncate_code_mode_text_output(5i64, long_items);
-if let `Cons node = truncated_text {
+if let #Cons node = truncated_text then
   let [item, tail] = node;
-  if let `InputText text = item {
-    if text == "Warning: truncated output (original token count: 10)\nTotal output lines: 1\n\n0123456789…5 tokens truncated…0123456789" {
-      if let `Nil () = tail { score = score + 1 }
-    }
-  }
-}
+  if let #InputText text = item then
+    if text
+      == "Warning: truncated output (original token count: 10)\nTotal output lines: 1\n\n0123456789…5 tokens truncated…0123456789" then
+        if let #Nil = tail then
+          score = score + 1
+        end;
+      end;
+  end;
+end;
 
-let short_tail_item: FixtureItem = `InputText "cd";
-let short_tail_node: FixtureItemNode = [short_tail_item, `Nil ()];
-let short_head_item: FixtureItem = `InputText "ab";
-let short_head_node: FixtureItemNode = [short_head_item, `Cons short_tail_node];
-let short_items: FixtureItems = `Cons short_head_node;
+let short_tail_item: FixtureItem = #InputText "cd";
+let short_tail_node: FixtureItemNode = [short_tail_item, #Nil];
+let short_head_item: FixtureItem = #InputText "ab";
+let short_head_node: FixtureItemNode = [short_head_item, #Cons short_tail_node];
+let short_items: FixtureItems = #Cons short_head_node;
 let preserved_text = truncate_code_mode_text_output(2i64, short_items);
-if let `Cons first = preserved_text {
+if let #Cons first = preserved_text then
   let [first_item, first_tail] = first;
-  if let `InputText first_text = first_item {
-    if let `Cons second = first_tail {
+  if let #InputText first_text = first_item then
+    if let #Cons second = first_tail then
       let [second_item, second_tail] = second;
-      if let `InputText second_text = second_item {
-        if first_text == "ab" && second_text == "cd" {
-          if let `Nil () = second_tail { score = score + 10 }
-        }
-      }
-    }
-  }
-}
+      if let #InputText second_text = second_item then
+        if first_text == "ab" && second_text == "cd" then
+          if let #Nil = second_tail then
+            score = score + 10
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

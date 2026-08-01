@@ -8,28 +8,33 @@ type FixtureArgs = AgentJobSpawnDecodedArgs
 let base: FixtureArgs = [
   .csv_path = "input.csv",
   .instruction = "Review {path}",
-  .id_column = `None (),
-  .output_path = `None (),
-  .output_schema_json = `None (),
-  .max_concurrency = `None (),
-  .max_workers = `None (),
-  .max_runtime_seconds = `None (),
+  .id_column = #None,
+  .output_path = #None,
+  .output_schema_json = #None,
+  .max_concurrency = #None,
+  .max_workers = #None,
+  .max_runtime_seconds = #None,
 ];
 let score = 0;
 let valid = decode_agent_job_spawn_numeric_options(
   "{\"max_concurrency\":100,\"max_workers\":2,\"max_runtime_seconds\":90}",
   base,
 );
-if let `SpawnDecoded args = valid {
-  let concurrency_valid = if let `Some value = args.max_concurrency { value == "100" } else { false
-  };
-  let workers_valid = if let `Some value = args.max_workers { value == "2" } else { false };
-  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false };
-  if concurrency_valid && workers_valid && runtime_valid { score = 1 }
-}
+if let #SpawnDecoded args = valid then
+  let concurrency_valid = if let #Some value = args.max_concurrency then value == "100" else false
+  end;
+  let workers_valid = if let #Some value = args.max_workers then value == "2" else false end;
+  let runtime_valid =
+    if let #Some value = args.max_runtime_seconds then value == "90" else false end;
+  if concurrency_valid && workers_valid && runtime_valid then
+    score = 1
+  end;
+end;
 let invalid = decode_agent_job_spawn_numeric_options("{\"max_workers\":\"many\"}", base);
-if let `SpawnDecodeFailed reason = invalid {
-  if reason == "max_workers must be a number" { score = score + 10 }
-}
+if let #SpawnDecodeFailed reason = invalid then
+  if reason == "max_workers must be a number" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

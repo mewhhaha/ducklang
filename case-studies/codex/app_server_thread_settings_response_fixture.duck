@@ -1,4 +1,5 @@
-const { .encode_json, .json_object, .json_object_empty, .json_string } = import "duck:prelude/json" ();
+const { .encode_json, .json_object, .json_object_empty, .json_string } =
+  import "duck:prelude/json" ();
 const responses_module = import "./app_server_thread_settings_responses.duck";
 const {} = import "./app_server_thread_settings_types.duck" ();
 const {
@@ -10,11 +11,11 @@ type FixtureJsonOption = AppServerJsonOption
 type FixtureTextOption = AppServerTextOption
 type FixtureSettings = AppServerThreadSettings
 
-let no_text: FixtureTextOption = `None ();
-let no_json: FixtureJsonOption = `None ();
-let tier: FixtureTextOption = `Some "priority";
-let effort: FixtureTextOption = `Some "high";
-let personality: FixtureTextOption = `Some "pragmatic";
+let no_text: FixtureTextOption = #None;
+let no_json: FixtureJsonOption = #None;
+let tier: FixtureTextOption = #Some "priority";
+let effort: FixtureTextOption = #Some "high";
+let personality: FixtureTextOption = #Some "pragmatic";
 let settings: FixtureSettings = [
   "/workspace",
   json_string "never",
@@ -42,8 +43,13 @@ let stable_expected =
   "{\"threadId\":\"thread-1\",\"threadSettings\":{\"cwd\":\"/workspace\",\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandboxPolicy\":{},\"activePermissionProfile\":null,\"model\":\"gpt-5\",\"modelProvider\":\"openai\",\"serviceTier\":\"priority\",\"effort\":\"high\",\"summary\":null,\"collaborationMode\":{},\"personality\":\"pragmatic\"}}";
 
 let score = 0;
-if encode_json notification == expected { score = score + 1 }
-if encode_json(materialize_thread_settings_update_response()) == "{}" { score = score + 10 }
-if encode_json stable_notification == stable_expected { score = score + 100 }
+if encode_json notification == expected then
+  score = score + 1
+end;
+if encode_json(materialize_thread_settings_update_response()) == "{}" then
+  score = score + 10 end;
+if encode_json stable_notification == stable_expected then
+  score = score + 100
+end;
 
 return { .score = score };

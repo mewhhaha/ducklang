@@ -32,221 +32,221 @@ const texts = comptime list Text;
 const environments = comptime list RenderEnvironment;
 const filesystem_entries = comptime list RenderFileSystemEntry;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
-const text_element = (name: Text, value: Text) => {
+const text_element = (name: Text, value: Text) => do
   append_text(
     append_text(append_text(append_text("<", name), ">"), text_escape_xml value),
     append_text("</", append_text(name, ">")),
   )
-};
+end;
 
-const join_texts = (values: RenderTexts, separator: Text) => {
+const join_texts = (values: RenderTexts, separator: Text) => do
   let current = values;
   let output: Text = "";
   let first = true;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
 
-      if first {
+      if first then
         first = false
-      } else {
+      else
         output = append_text(output, separator)
-      }
+      end;
 
       output = append_text(output, value)
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   output
-};
+end;
 
-const indent_lines = (value: Text, indent: Text) => {
+const indent_lines = (value: Text, indent: Text) => do
   let output = indent;
   let segment_start = 0;
 
-  if text_length value > 0 {
-    for index in 0..text_length value {
-      if text_get [value, index] == 10 {
+  if text_length value > 0 then
+    for index in 0..text_length value do
+      if text_get (value, index) == 10 then
         output = append_text(
           output,
-          append_text(text_slice [value, segment_start, index + 1], indent),
+          append_text(text_slice (value, segment_start, index + 1), indent),
         )
         segment_start = index + 1
-      }
-    }
-  }
+      end;
+    end
+  end;
 
-  append_text(output, text_slice [value, segment_start, text_length value])
-};
+  append_text(output, text_slice (value, segment_start, text_length value))
+end;
 
-const environment_id_before = (left: RenderEnvironment, right: RenderEnvironment) => {
+const environment_id_before = (left: RenderEnvironment, right: RenderEnvironment) => do
   let [left_id, _, _, _] = left;
   let [right_id, _, _, _] = right;
-  text_less_than [left_id, right_id]
-};
+  text_less_than (left_id, right_id)
+end;
 
-const render_environment_values = (environment: RenderEnvironment, indent: Text) => {
+const render_environment_values = (environment: RenderEnvironment, indent: Text) => do
   let [_, cwd, status, shell] = environment;
   let output = append_text(indent, append_text(text_element("cwd", cwd), "\n"));
 
-  if let `Starting () = status {
+  if let #Starting = status then
     output = append_text(output, append_text(indent, "<status>starting</status>\n"))
-  }
+  end;
 
-  if let `Some shell_name = shell {
+  if let #Some shell_name = shell then
     output = append_text(
       output,
       append_text(indent, append_text(text_element("shell", shell_name), "\n")),
     )
-  }
+  end;
 
   output
-};
+end;
 
-const render_network = (network: RenderNetwork) => {
+const render_network = (network: RenderNetwork) => do
   let [allowed, denied] = network;
   let output: Text = "<network enabled=\"true\">";
 
-  if texts.length(allowed) > 0 {
+  if texts.length(allowed) > 0 then
     output = append_text(output, text_element("allowed", join_texts(allowed, ",")))
-  }
+  end;
 
-  if texts.length(denied) > 0 {
+  if texts.length(denied) > 0 then
     output = append_text(output, text_element("denied", join_texts(denied, ",")))
-  }
+  end;
 
   append_text(output, "</network>")
-};
+end;
 
-const filesystem_entry_equal = (left: RenderFileSystemEntry, right: RenderFileSystemEntry) => {
+const filesystem_entry_equal = (left: RenderFileSystemEntry, right: RenderFileSystemEntry) => do
   let [left_access, left_path] = left;
   let [right_access, right_path] = right;
 
-  if left_access != right_access {
+  if left_access != right_access then
     false
-  } else if let `Path left_value = left_path {
-    if let `Path right_value = right_path { left_value == right_value } else { false }
-  } else if let `Glob left_value = left_path {
-    if let `Glob right_value = right_path { left_value == right_value } else { false }
-  } else if let `Special left_value = left_path {
-    if let `Special right_value = right_path { left_value == right_value } else { false }
-  } else {
+  else let #Path left_value = left_path then
+    if let #Path right_value = right_path then left_value == right_value else false end;
+  else let #Glob left_value = left_path then
+    if let #Glob right_value = right_path then left_value == right_value else false end;
+  else let #Special left_value = left_path then
+    if let #Special right_value = right_path then left_value == right_value else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const dedupe_filesystem_entries = (values: RenderFileSystemEntries) => {
+const dedupe_filesystem_entries = (values: RenderFileSystemEntries) => do
   let current = values;
   let unique_reversed = filesystem_entries.empty();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [entry, tail] = node;
       let unique_current = unique_reversed;
       let duplicate = false;
       let checked = false;
 
-      loop {
-        if let `Cons unique_node = unique_current {
+      loop do
+        if let #Cons unique_node = unique_current then
           let [existing, unique_tail] = unique_node;
 
-          if filesystem_entry_equal(existing, entry) {
+          if filesystem_entry_equal(existing, entry) then
             duplicate = true
             checked = true
-          } else {
+          else
             unique_current = unique_tail
-          }
-        } else {
+          end;
+        else
           checked = true
-        }
+        end;
 
-        if checked {
+        if checked then
           break;
-        }
-      }
+        end;
+      end;
 
-      if duplicate {
+      if duplicate then
         ()
-      } else {
+      else
         unique_reversed = filesystem_entries.prepend(entry, unique_reversed)
-      }
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   filesystem_entries.reverse unique_reversed
-};
+end;
 
-const render_filesystem_entry = (entry: RenderFileSystemEntry) => {
+const render_filesystem_entry = (entry: RenderFileSystemEntry) => do
   let [access, path] = entry;
   let attributes = append_text(" access=\"", append_text(text_escape_xml access, "\""));
 
-  if access == "deny" {
+  if access == "deny" then
     attributes = append_text(attributes, " escalatable=\"false\"")
-  }
+  end;
 
-  let body = if let `Path value = path {
+  let body = if let #Path value = path then
     text_element("path", value)
-  } else if let `Glob value = path {
+  else let #Glob value = path then
     text_element("glob", value)
-  } else if let `Special value = path {
+  else let #Special value = path then
     text_element("special", value)
-  } else {
+  else
     ""
-  };
+  end;
 
   append_text(append_text(append_text("<entry", attributes), ">"), append_text(body, "</entry>"))
-};
+end;
 
-const render_filesystem_profile = (profile: RenderFileSystemProfile) => {
-  if let `ManagedRestricted restricted = profile {
+const render_filesystem_profile = (profile: RenderFileSystemProfile) => do
+  if let #ManagedRestricted restricted = profile then
     let [raw_entries, maximum_depth] = restricted;
     let entries = dedupe_filesystem_entries raw_entries;
     let attributes: Text = "";
 
-    if let `Some depth = maximum_depth {
+    if let #Some depth = maximum_depth then
       attributes = append_text(" glob_scan_max_depth=\"", append_text(format_i32 depth, "\""))
-    }
+    end;
 
-    if filesystem_entries.length(entries) == 0 && attributes == "" {
+    if filesystem_entries.length(entries) == 0 && attributes == "" then
       "<permission_profile type=\"managed\"><file_system type=\"restricted\" /></permission_profile>"
-    } else {
+    else
       let body: Text = "";
       let current = entries;
       let done = false;
 
-      loop {
-        if let `Cons node = current {
+      loop do
+        if let #Cons node = current then
           let [entry, tail] = node;
           body = append_text(body, render_filesystem_entry entry)
           current = tail
-        } else {
+        else
           done = true
-        }
+        end;
 
-        if done {
+        if done then
           break;
-        }
-      }
+        end;
+      end;
 
       append_text(
         "<permission_profile type=\"managed\"><file_system type=\"restricted\"",
@@ -255,73 +255,73 @@ const render_filesystem_profile = (profile: RenderFileSystemProfile) => {
           append_text(">", append_text(body, "</file_system></permission_profile>")),
         ),
       )
-    }
-  } else if let `ManagedUnrestricted () = profile {
+    end;
+  else let #ManagedUnrestricted = profile then
     "<permission_profile type=\"managed\"><file_system type=\"unrestricted\" /></permission_profile>"
-  } else if let `Disabled () = profile {
+  else let #Disabled = profile then
     "<permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile>"
-  } else {
+  else
     "<permission_profile type=\"external\"><file_system type=\"external\" /></permission_profile>"
-  }
-};
+  end;
+end;
 
-const render_filesystem = (filesystem: RenderFileSystem) => {
+const render_filesystem = (filesystem: RenderFileSystem) => do
   let [workspace_roots, profile] = filesystem;
   let output: Text = "<filesystem>";
 
-  if texts.length(workspace_roots) > 0 {
+  if texts.length(workspace_roots) > 0 then
     output = append_text(output, "<workspace_roots>")
     let current = workspace_roots;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [root, tail] = node;
         output = append_text(output, text_element("root", root))
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     output = append_text(output, "</workspace_roots>")
-  }
+  end;
 
   append_text(output, append_text(render_filesystem_profile profile, "</filesystem>"))
-};
+end;
 
-const render_environment_context = (context: RenderEnvironmentContext) => {
+const render_environment_context = (context: RenderEnvironmentContext) => do
   let [raw_environments, current_date, timezone, network, filesystem, subagents] = context;
   let sorted = environments.sort_by(raw_environments, environment_id_before);
   let body: Text = "\n";
   let legacy_single = environments.length(sorted) == 1;
 
-  if legacy_single {
-    let only = environments.nth_or(["", "", `Unavailable (), `None ()], 0, sorted);
+  if legacy_single then
+    let only = environments.nth_or(["", "", #Unavailable, #None], 0, sorted);
     let [_, _, status, _] = only;
 
-    if let `Available () = status {
+    if let #Available = status then
       body = append_text(body, render_environment_values(only, "  "))
-    } else {
+    else
       legacy_single = false
-    }
-  }
+    end;
+  end;
 
-  if !(legacy_single) && environments.length(sorted) > 0 {
+  if !(legacy_single) && environments.length(sorted) > 0 then
     body = append_text(body, "  <environments>\n")
     let current = sorted;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [environment, tail] = node;
         let [id, _, status, _] = environment;
 
-        if let `Unavailable () = status {
+        if let #Unavailable = status then
           body = append_text(
             body,
             append_text(
@@ -329,57 +329,60 @@ const render_environment_context = (context: RenderEnvironmentContext) => {
               append_text(text_escape_xml id, "\" status=\"unavailable\" />\n"),
             ),
           )
-        } else {
+        else
           body = append_text(
             body,
             append_text("    <environment id=\"", append_text(text_escape_xml id, "\">\n")),
           )
           body = append_text(body, render_environment_values(environment, "      "))
           body = append_text(body, "    </environment>\n")
-        }
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     body = append_text(body, "  </environments>\n")
-  }
+  end;
 
-  if let `Some value = current_date {
+  if let #Some value = current_date then
     body = append_text(
       body,
       append_text("  ", append_text(text_element("current_date", value), "\n")),
     )
-  }
+  end;
 
-  if let `Some value = timezone {
-    body = append_text(body, append_text("  ", append_text(text_element("timezone", value), "\n")))
-  }
+  if let #Some value = timezone then
+    body = append_text(
+      body,
+      append_text("  ", append_text(text_element("timezone", value), "\n")),
+    )
+  end;
 
-  if let `Some value = network {
+  if let #Some value = network then
     body = append_text(body, append_text("  ", append_text(render_network value, "\n")))
-  }
+  end;
 
-  if let `Some value = filesystem {
+  if let #Some value = filesystem then
     body = append_text(body, append_text("  ", append_text(render_filesystem value, "\n")))
-  }
+  end;
 
-  if let `Some value = subagents {
+  if let #Some value = subagents then
     body = append_text(
       body,
       append_text("  <subagents>\n", append_text(indent_lines(value, "    "),
         "\n  </subagents>\n")),
     )
-  }
+  end;
 
   append_text("<environment_context>", append_text(body, "</environment_context>"))
-};
+end;
 
 return {
   .render_environment_context,

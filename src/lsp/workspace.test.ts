@@ -1,6 +1,5 @@
 import { assert_equals } from "../assert.ts";
 import type { TextDocument } from "./documents.ts";
-import { workspace_symbols } from "./navigation.ts";
 import {
   discover_workspace_roots,
   workspace_definition_location,
@@ -103,10 +102,10 @@ Deno.test("workspace symbols use declaration metadata without semantic analysis"
       [
         "module (!init: Init) where",
         "type Pair value = struct { .left = value, .right = value }",
-        "type Choice = | `Some Pair | `None Unit",
+        "type Choice = | #Some Pair | #None",
         "const choose = value => value;",
-        "let selected = `Some ();",
-        "if let `Some local = selected { local }",
+        "let selected = #Some; const adjacent = selected;",
+        "if let #Some local = selected then local end",
         "",
       ].join("\n"),
     );
@@ -133,10 +132,25 @@ Deno.test("workspace symbols use declaration metadata without semantic analysis"
       model.symbols([], "choose", "utf-16").map((symbol) => symbol.kind),
       [14],
     );
+    assert_equals(
+      model.symbols([], "adjacent", "utf-16").map((symbol) => symbol.name),
+      ["adjacent"],
+    );
     assert_equals(model.analysis_count(), 0);
     assert_equals(
-      model.symbols([], "", "utf-16"),
-      workspace_symbols(model.entries([]), "", "utf-16"),
+      model.symbols([], "", "utf-16").map((symbol) => symbol.name),
+      [
+        "adjacent",
+        "Choice",
+        "choose",
+        "init",
+        "left",
+        "None",
+        "Pair",
+        "right",
+        "selected",
+        "Some",
+      ],
     );
   } finally {
     await Deno.remove(root_path, { recursive: true });

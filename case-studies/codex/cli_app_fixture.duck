@@ -11,42 +11,48 @@ const args = comptime list Text;
 let score = 0;
 
 let default_app: FixtureResult = parse_desktop_app_options(args.empty());
-if let `Ok command = default_app {
-  if let `OpenDesktopApp options = command {
-    if options.path == "." { score = score + 1 }
-  }
-}
+if let #Ok command = default_app then
+  if let #OpenDesktopApp options = command then
+    if options.path == "." then
+      score = score + 1
+    end;
+  end;
+end;
 
 let app_input: FixtureArgs = args.prepend(
   "workspace",
   args.prepend("--download-url", args.singleton("https://example.com/codex.zip")),
 );
 let selected_app: FixtureResult = parse_desktop_app_options app_input;
-if let `Ok command = selected_app {
-  if let `OpenDesktopApp options = command {
-    if let `Some download_url = options.download_url {
-      if options.path == "workspace" && download_url == "https://example.com/codex.zip" {
+if let #Ok command = selected_app then
+  if let #OpenDesktopApp options = command then
+    if let #Some download_url = options.download_url then
+      if options.path == "workspace" && download_url == "https://example.com/codex.zip" then
         score = score + 10
-      }
-    }
-  }
-}
+      end;
+    end;
+  end;
+end;
 
 let foreground: FixtureResult = parse_remote_control_options(args.empty());
-if let `Ok command = foreground {
-  if let `RunRemoteControl options = command {
-    if let `RemoteControlForeground () = options.operation { score = score + 100 }
-  }
-}
+if let #Ok command = foreground then
+  if let #RunRemoteControl options = command then
+    if let #RemoteControlForeground = options.operation then
+      score = score + 100
+    end;
+  end;
+end;
 
 let remote_input: FixtureArgs = args.prepend("--json", args.singleton("pair"));
 let remote: FixtureResult = parse_remote_control_options remote_input;
-if let `Ok command = remote {
-  if let `RunRemoteControl options = command {
-    if let `RemoteControlPair () = options.operation {
-      if options.json { score = score + 1000 }
-    }
-  }
-}
+if let #Ok command = remote then
+  if let #RunRemoteControl options = command then
+    if let #RemoteControlPair = options.operation then
+      if options.json then
+        score = score + 1000
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

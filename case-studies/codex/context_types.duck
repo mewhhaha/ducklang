@@ -5,9 +5,9 @@ type ContextI32Option = Option I32
 type ContextTexts = List Text
 
 type ContextEnvironmentStatus =
-  | `Available Unit
-  | `Starting Unit
-  | `Unavailable Unit
+  | #Available
+  | #Starting
+  | #Unavailable
 type ContextEnvironment = [Text, Text, ContextEnvironmentStatus, ContextTextOption]
 type ContextEnvironments = List ContextEnvironment
 
@@ -15,17 +15,17 @@ type ContextNetwork = [ContextTexts, ContextTexts]
 type ContextNetworkOption = Option ContextNetwork
 
 type ContextFileSystemPath =
-  | `Path Text
-  | `Glob Text
-  | `Special Text
+  | #Path Text
+  | #Glob Text
+  | #Special Text
 type ContextFileSystemEntry = [Text, ContextFileSystemPath]
 type ContextFileSystemEntries = List ContextFileSystemEntry
 type ContextManagedRestricted = [ContextFileSystemEntries, ContextI32Option]
 type ContextFileSystemProfile =
-  | `ManagedRestricted ContextManagedRestricted
-  | `ManagedUnrestricted Unit
-  | `Disabled Unit
-  | `External Unit
+  | #ManagedRestricted ContextManagedRestricted
+  | #ManagedUnrestricted
+  | #Disabled
+  | #External
 type ContextFileSystem = [ContextTexts, ContextFileSystemProfile]
 type ContextFileSystemOption = Option ContextFileSystem
 
@@ -35,7 +35,7 @@ type EnvironmentContext = [
   ContextTextOption,
   ContextNetworkOption,
   ContextFileSystemOption,
-  ContextTextOption ]
+  ContextTextOption]
 
 type ModelContextFragment = [Text, Bool, Text]
 

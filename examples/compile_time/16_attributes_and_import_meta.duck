@@ -1,12 +1,12 @@
-const keep_in_builds = (const target) => {
-  if import .meta.mode is #build {
-    `Replace target
-  } else {
-    `Replace 0
-  }
-};
+const keep_in_builds = (const target) => do
+  if import .meta.mode is #build then
+    #Replace target
+  else
+    #Replace 0
+  end;
+end;
 
-const increment = (const target) => `Replace (target + 1);
+const increment = (const target) => #Replace (target + 1);
 
 @[keep_in_builds]
 @[increment, increment]

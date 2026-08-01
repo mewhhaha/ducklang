@@ -11,11 +11,13 @@ const args = comptime list Text;
 let score = 0;
 
 let defaults: FixtureResult = parse_cloud_list(args.empty());
-if let `Ok command = defaults {
-  if let `CloudList options = command {
-    if options.limit == 20i64 { score = score + 1 }
-  }
-}
+if let #Ok command = defaults then
+  if let #CloudList options = command then
+    if options.limit == 20i64 then
+      score = score + 1
+    end;
+  end;
+end;
 
 let input: FixtureArgs = args.prepend(
   "--env",
@@ -28,16 +30,16 @@ let input: FixtureArgs = args.prepend(
   ),
 );
 let planned: FixtureResult = parse_cloud_list input;
-if let `Ok command = planned {
-  if let `CloudList options = command {
-    if let `Some environment = options.environment {
-      if let `Some cursor = options.cursor {
-        if environment == "env-7" && options.limit == 4i64 && cursor == "next" && options.json {
+if let #Ok command = planned then
+  if let #CloudList options = command then
+    if let #Some environment = options.environment then
+      if let #Some cursor = options.cursor then
+        if environment == "env-7" && options.limit == 4i64 && cursor == "next" && options.json then
           score = score + 10
-        }
-      }
-    }
-  }
-}
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

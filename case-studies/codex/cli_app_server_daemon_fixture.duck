@@ -1,7 +1,8 @@
 module () where
 
 const { .list } = import "duck:prelude/functional" ();
-const { .parse_app_server_daemon, .parse_app_server_proxy } = import "./cli_app_server_tools.duck" ();
+const { .parse_app_server_daemon, .parse_app_server_proxy } =
+  import "./cli_app_server_tools.duck" ();
 const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
@@ -13,30 +14,36 @@ let score = 0;
 let bootstrap: FixtureResult = parse_app_server_daemon(
   args.prepend("bootstrap", args.singleton("--remote-control"))
 );
-if let `Ok command = bootstrap {
-  if let `ManageAppServerDaemon operation = command {
-    if let `AppServerDaemonBootstrap remote_control = operation {
-      if remote_control { score = score + 1 }
-    }
-  }
-}
+if let #Ok command = bootstrap then
+  if let #ManageAppServerDaemon operation = command then
+    if let #AppServerDaemonBootstrap remote_control = operation then
+      if remote_control then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 let version: FixtureResult = parse_app_server_daemon(args.singleton("version"));
-if let `Ok command = version {
-  if let `ManageAppServerDaemon operation = command {
-    if let `AppServerDaemonVersion () = operation { score = score + 10 }
-  }
-}
+if let #Ok command = version then
+  if let #ManageAppServerDaemon operation = command then
+    if let #AppServerDaemonVersion = operation then
+      score = score + 10
+    end;
+  end;
+end;
 
 let proxy: FixtureResult = parse_app_server_proxy(
   args.prepend("--sock", args.singleton("codex.sock"))
 );
-if let `Ok command = proxy {
-  if let `ProxyAppServer socket_path = command {
-    if let `Some path = socket_path {
-      if path == "codex.sock" { score = score + 100 }
-    }
-  }
-}
+if let #Ok command = proxy then
+  if let #ProxyAppServer socket_path = command then
+    if let #Some path = socket_path then
+      if path == "codex.sock" then
+        score = score + 100
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

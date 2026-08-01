@@ -15,7 +15,7 @@ function binding_signature(statement: Stmt | undefined): string | undefined {
 
 Deno.test("declared polymorphic signatures contextualize lambda parameters", () => {
   const source = parse_source(`
-const choose: forall left right.[left, right] -> left = (first, second) => first;
+const choose: forall left right.(left, right) -> left = (first, second) => first;
 choose(42, true)
 `);
   const choose = source.statements[0];
@@ -52,9 +52,9 @@ forward(&point)
 Deno.test("function signatures preserve transient value-pack results", () => {
   const source = infer_front_function_signatures(parse_source(`
 let direct = value => (value, true);
-let block = value => {
+let block = value => do
   (value, false)
-};
+end;
 let (direct_value, direct_flag) = direct(1);
 let (block_value, block_flag) = block(2);
 direct_value + block_value
@@ -66,12 +66,12 @@ direct_value + block_value
 
 Deno.test("mutually recursive components infer one shared signature solution", () => {
   const source = infer_front_function_signatures(parse_source(`
-let rec even = value => {
-  if value == 0 { 1 } else { odd(value - 1) }
-}
-and odd = value => {
-  if value == 0 { 0 } else { even(value - 1) }
-};
+let rec even = value => do
+  if value == 0 then 1  else  odd(value - 1) end;
+end
+and odd = value => do
+  if value == 0 then 0  else  even(value - 1) end;
+end;
 even(10)
 `));
   const even = source.statements[0];
@@ -90,14 +90,13 @@ even(10)
   );
 });
 
-Deno.test("recursive match results infer from the terminating branch", () => {
+Deno.test("recursive case results infer from the terminating branch", () => {
   const source = infer_front_function_signatures(parse_source(`
-type Numbers = | \`More [I32, Numbers] | \`End Unit
-let rec last = (values: Numbers) => match values {
-  | \`More node => last(node[1])
-  | \`End () => 0
-};
-last(\`More [42, \`End ()])
+type Numbers = | #More [I32, Numbers] | #End
+let rec last = (values: Numbers) => case values of
+  #More node => last(node[1]),
+  #End => 0;
+last(#More [42, #End])
 `));
 
   assert_equals(binding_signature(source.statements[0]), "Numbers -> I32");
@@ -105,9 +104,9 @@ last(\`More [42, \`End ()])
 
 Deno.test("recursive value-pack results remain transient", () => {
   const source = infer_front_function_signatures(parse_source(`
-let rec pair = (value: I32) => {
-  if value == 0 { (1, 2) } else { pair(value - 1) }
-};
+let rec pair = (value: I32) => do
+  if value == 0 then (1, 2)  else  pair(value - 1) end;
+end;
 let (left, right) = pair(3);
 left + right
 `));
