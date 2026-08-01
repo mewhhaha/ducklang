@@ -2265,6 +2265,125 @@ Deno.test("checked contracts erase before semantic Core construction", () => {
   );
 });
 
+Deno.test("unconditional identity contracts publish certified function summaries", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures value = result\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const identity = analysis.symbols.get("identity")?.[0];
+  if (identity === undefined) {
+    throw new Error("Expected identity callable value.");
+  }
+  const callable = analysis.callable_control_flow.get(identity);
+  const summary = analysis.function_summaries.get(identity);
+  if (callable === undefined || summary === undefined) {
+    throw new Error("Expected identity function summary.");
+  }
+  assert_equals(
+    Object.isFrozen(Object.getPrototypeOf(analysis.function_summaries)),
+    true,
+  );
+  assert_equals(Object.isFrozen(summary), true);
+  assert_equals(Object.isFrozen(summary.evidence), true);
+  assert_equals(Object.isFrozen(summary.evidence.requirement), true);
+  assert_equals([...analysis.function_summaries.keys()], [identity]);
+  assert_equals(summary.requires, { tag: "true" });
+  assert_equals(summary.ensures, {
+    tag: "equal",
+    type: { tag: "constant", name: "I32" },
+    left: { tag: "var", index: 1 },
+    right: { tag: "var", index: 0 },
+  });
+  assert_equals(summary.ensures_when_true, { tag: "true" });
+  assert_equals(summary.ensures_when_false, { tag: "true" });
+  assert_equals(summary.total, false);
+  assert_equals(summary.safety, { tag: "safe" });
+  assert_equals(summary.evidence.tag, "return_identity");
+  if (summary.evidence.tag !== "return_identity") {
+    throw new Error("Expected return identity summary evidence.");
+  }
+  assert_equals(
+    summary.evidence.binding.orientation,
+    "parameter_equals_result",
+  );
+  assert_equals(callable.callable, identity);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("identity summaries exclude required and additional contracts", () => {
+  const required = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "requires value = value\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(required.diagnostics, []);
+  assert_equals(required.function_summaries.size, 0);
+
+  const additional = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "ensures value = result\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(additional.diagnostics, []);
+  assert_equals(additional.function_summaries.size, 0);
+
+  const proof_parameter = analyze_duck_source(parse_duck_source(
+    "type identity = " +
+      "(value: I32, evidence: Proof value = value) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = (actual, evidence) => actual;\n",
+  ));
+  assert_equals(proof_parameter.diagnostics, []);
+  assert_equals(proof_parameter.function_summaries.size, 0);
+
+  const refined_parameter = analyze_duck_source(parse_duck_source(
+    "type identity = " +
+      "(value: {refined: I32 | refined = refined}) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(refined_parameter.diagnostics, []);
+  assert_equals(refined_parameter.function_summaries.size, 0);
+
+  const refined_result = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> " +
+      "(result: {answer: I32 | answer = value})\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(refined_result.diagnostics, []);
+  assert_equals(refined_result.function_summaries.size, 0);
+});
+
+Deno.test("shadowed identity summaries retain distinct callable keys", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "let inner = do\n" +
+      "  type identity = (value: I64) -> (result: I64)\n" +
+      "  ensures result = value\n" +
+      "  let identity = value => value;\n" +
+      "  identity\n" +
+      "end;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.function_summaries.size, 2);
+  const identities = analysis.symbols.get("identity");
+  if (identities === undefined || identities.length !== 2) {
+    throw new Error("Expected two identity callable values.");
+  }
+  assert_equals(
+    identities.every((identity) => analysis.function_summaries.has(identity)),
+    true,
+  );
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
 Deno.test("checked refinement signatures erase to their base representation", () => {
   const refined_source = "type identity = " +
     "(value: {refined: I32 | refined = refined}) -> " +

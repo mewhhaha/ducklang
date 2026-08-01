@@ -185,17 +185,6 @@ export type {
   SourceSyntax,
   SyntaxDiagnostic,
 } from "./frontend/syntax.ts";
-export {
-  check_contract_compatibility,
-  summary_matches,
-} from "./frontend/function_summary.ts";
-export type {
-  ContractBinder,
-  ContractCompatibilityCertificates,
-  ContractFunction,
-  FunctionFactSummary,
-  FunctionProofContext,
-} from "./frontend/function_summary.ts";
 export { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
 export type {
   ComputationalPackageFact,
@@ -205,6 +194,8 @@ export type {
   DuckSemanticProgram,
   DuckSourceAnalysis,
   FunctionFactIndex,
+  FunctionFactSummary,
+  FunctionFactSummaryEvidence,
   KernelCertificateIndex,
   RefinementIndex,
   SemanticCallableCfgIndex,

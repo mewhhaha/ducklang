@@ -177,10 +177,12 @@ import {
 import {
   certificate_establishes,
   check_proof,
+  check_proposition_formation,
   instantiate_proposition,
   type KernelCertificate,
   lift_proposition,
   machine_reflection_holds,
+  type ProofSafety,
   type ProofTerm,
   type Proposition,
   proposition_equal,
@@ -196,7 +198,6 @@ import {
   term_equal,
   type_sort,
 } from "./frontend/kernel_terms.ts";
-import type { FunctionFactSummary } from "./frontend/function_summary.ts";
 import type { TypeExpr } from "./type_syntax.ts";
 import {
   associate_prefix_signatures,
@@ -244,6 +245,7 @@ type ReturnIdentityProofValidation = {
   definition_span: SourceSpan;
   requirement: SemanticReturnIdentityRequirement;
   binding: ReturnIdentityKernelBinding;
+  publish_summary: boolean;
 };
 type CheckedContractProof = {
   key: string;
@@ -397,7 +399,129 @@ export type KernelCertificateIndex = ReadonlyMap<
   CheckedKernelCertificate
 >;
 export type SourceOriginIndex = ReadonlyMap<ValueId, SemanticOrigin>;
-export type FunctionFactIndex = ReadonlyMap<string, FunctionFactSummary>;
+export type FunctionFactSummaryEvidence = {
+  tag: "return_identity";
+  proof_key: string;
+  callable: ValueId;
+  contract_span: SourceSpan;
+  definition_span: SourceSpan;
+  requirement: SemanticReturnIdentityRequirement;
+  binding: ReturnIdentityKernelBinding;
+};
+export type FunctionFactSummary = {
+  requires: Proposition;
+  ensures: Proposition;
+  ensures_when_true: Proposition;
+  ensures_when_false: Proposition;
+  total: boolean;
+  safety: ProofSafety;
+  certificate: KernelCertificate;
+  proof_context: {
+    environment: KernelEnvironment;
+    term_context: KernelContext;
+  };
+  evidence: FunctionFactSummaryEvidence;
+};
+export type FunctionFactIndex = ReadonlyMap<
+  ValueId,
+  FunctionFactSummary
+>;
+
+function verify_function_fact_summary(
+  summary: FunctionFactSummary,
+  callable: SemanticCallableControlFlow,
+  proofs: KernelCertificateIndex,
+  validation: ReturnIdentityProofValidation,
+): boolean {
+  try {
+    const proof_context = summary.proof_context;
+    const requires = check_proposition_formation(
+      summary.requires,
+      proof_context,
+    );
+    const ensures = check_proposition_formation(
+      summary.ensures,
+      proof_context,
+    );
+    const ensures_when_true = check_proposition_formation(
+      summary.ensures_when_true,
+      proof_context,
+    );
+    const ensures_when_false = check_proposition_formation(
+      summary.ensures_when_false,
+      proof_context,
+    );
+    const evidence = summary.evidence;
+    if (
+      !validation.publish_summary ||
+      evidence.tag !== "return_identity" ||
+      evidence.proof_key !== validation.key ||
+      evidence.callable !== validation.callable ||
+      evidence.contract_span !== validation.contract_span ||
+      evidence.definition_span !== validation.definition_span ||
+      evidence.requirement !== validation.requirement ||
+      evidence.binding !== validation.binding ||
+      evidence.callable !== callable.callable ||
+      evidence.requirement.callable !== callable.callable ||
+      summary.total ||
+      summary.safety.tag !== "safe" ||
+      requires.tag !== "true" ||
+      ensures_when_true.tag !== "true" ||
+      ensures_when_false.tag !== "true"
+    ) {
+      return false;
+    }
+    const proof = proofs.get(evidence.proof_key);
+    if (
+      proof === undefined ||
+      summary.certificate !== proof.certificate ||
+      proof_context.environment !== proof.environment ||
+      !kernel_context_equal(
+        proof_context.term_context,
+        proof.term_context,
+        proof_context.environment,
+      )
+    ) {
+      return false;
+    }
+    const canonical_ensures = return_identity_summary_ensures(
+      evidence.binding,
+    );
+    if (!proposition_equal(ensures, canonical_ensures, proof_context)) {
+      return false;
+    }
+    return verify_return_identity_checked_certificate(
+      proof,
+      callable,
+      evidence.contract_span,
+      evidence.definition_span,
+      evidence.requirement,
+      evidence.binding,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function return_identity_summary_ensures(
+  binding: ReturnIdentityKernelBinding,
+): Proposition {
+  return Object.freeze({
+    tag: "equal",
+    type: Object.freeze({
+      tag: "constant",
+      name: binding.result_type,
+    }),
+    left: Object.freeze({
+      tag: "var",
+      index: binding.parameter_types.length,
+    }),
+    right: Object.freeze({
+      tag: "var",
+      index: binding.parameter_ordinal,
+    }),
+  });
+}
 export type SemanticCallableCfgIndex = ReadonlyMap<
   ValueId,
   SemanticCallableControlFlow
@@ -525,6 +649,63 @@ class FrozenMap<Key, Value> implements ReadonlyMap<Key, Value> {
   [Symbol.iterator](): MapIterator<[Key, Value]> {
     return this.entries();
   }
+}
+Object.freeze(FrozenMap.prototype);
+
+function function_fact_summaries_from_return_identities(
+  validations: readonly ReturnIdentityProofValidation[],
+  proofs: KernelCertificateIndex,
+  callable_control_flow: SemanticCallableCfgIndex,
+): FunctionFactIndex {
+  const entries: [ValueId, FunctionFactSummary][] = [];
+  const published_callables = new Set<ValueId>();
+  for (const validation of validations) {
+    if (!validation.publish_summary) continue;
+    expect(
+      !published_callables.has(validation.callable),
+      `Callable ${validation.callable} has more than one published function summary.`,
+    );
+    const proof = proofs.get(validation.key);
+    expect(
+      proof !== undefined,
+      `Function summary proof ${validation.key} is missing.`,
+    );
+    const callable = callable_control_flow.get(validation.callable);
+    expect(
+      callable !== undefined,
+      `Function summary callable ${validation.callable} is missing.`,
+    );
+    const truth = Object.freeze({ tag: "true" as const });
+    const summary = Object.freeze({
+      requires: truth,
+      ensures: return_identity_summary_ensures(validation.binding),
+      ensures_when_true: truth,
+      ensures_when_false: truth,
+      total: false,
+      safety: Object.freeze({ tag: "safe" as const }),
+      certificate: proof.certificate,
+      proof_context: Object.freeze({
+        environment: proof.environment,
+        term_context: proof.term_context,
+      }),
+      evidence: Object.freeze({
+        tag: "return_identity" as const,
+        proof_key: validation.key,
+        callable: validation.callable,
+        contract_span: validation.contract_span,
+        definition_span: validation.definition_span,
+        requirement: validation.requirement,
+        binding: validation.binding,
+      }),
+    });
+    expect(
+      verify_function_fact_summary(summary, callable, proofs, validation),
+      `Callable ${validation.callable} produced an invalid function summary.`,
+    );
+    published_callables.add(validation.callable);
+    entries.push([validation.callable, summary]);
+  }
+  return new FrozenMap(entries);
 }
 
 export function analyze_duck_source(
@@ -747,9 +928,22 @@ export function analyze_duck_source(
   ], options.uri);
   let control_flow: SemanticCfg | undefined;
   let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
+  const proofs: KernelCertificateIndex = new FrozenMap([
+    ...contract_validation.proofs,
+    ...index_validation.proofs,
+    ...primitive_validation.proofs,
+    ...narrowing_validation.proofs,
+    ...slice_validation.proofs,
+  ]);
+  let function_summaries: FunctionFactIndex = new FrozenMap([]);
   if (!has_error_diagnostics(diagnostics)) {
     control_flow = inferred_control_flow;
     callable_control_flow = new FrozenMap(inferred_callable_control_flow);
+    function_summaries = function_fact_summaries_from_return_identities(
+      contract_validation.return_identity_validations,
+      proofs,
+      callable_control_flow,
+    );
   }
   freeze_semantic_graph(source_analysis.syntax_diagnostics);
   freeze_semantic_graph(source_analysis.diagnostics);
@@ -766,15 +960,9 @@ export function analyze_duck_source(
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap(types),
     facts: new FrozenMap<ValueId, FactState>([]),
-    proofs: new FrozenMap([
-      ...contract_validation.proofs,
-      ...index_validation.proofs,
-      ...primitive_validation.proofs,
-      ...narrowing_validation.proofs,
-      ...slice_validation.proofs,
-    ]),
+    proofs,
     origins: new FrozenMap(origins),
-    function_summaries: new FrozenMap<string, FunctionFactSummary>([]),
+    function_summaries,
   };
   Object.freeze(analysis);
   Reflect.apply(weak_map_set, checked_duck_analysis_state, [
@@ -3145,6 +3333,7 @@ function validate_prefix_contracts(
           signature,
           ensures,
           clause_index,
+          "explicit_ensures",
           resolved_definitions,
           source_text,
           symbols,
@@ -13393,6 +13582,7 @@ function check_prefix_result_refinement(
     },
     ensures,
     signature.ensures.length,
+    "result_refinement",
     definitions,
     source_text,
     symbols,
@@ -13558,6 +13748,7 @@ function check_prefix_ensures(
   signature: PrefixSignature,
   ensures: PrefixSignature["ensures"][number],
   clause_index: number,
+  origin: "explicit_ensures" | "result_refinement",
   definitions: readonly PrefixDefinition[],
   source_text: string,
   symbols: ReadonlyMap<string, readonly ValueId[]>,
@@ -13839,13 +14030,15 @@ function check_prefix_ensures(
       ),
     );
   }
-  const semantic_requirement: SemanticReturnIdentityRequirement = {
-    callable: callable_value,
-    parameter: parameter_value,
-    parameter_ordinal: runtime_expected_index,
-    parameter_type: expected_representation,
-    result_type: callable_type.result,
-  };
+  const semantic_requirement: SemanticReturnIdentityRequirement = Object.freeze(
+    {
+      callable: callable_value,
+      parameter: parameter_value,
+      parameter_ordinal: runtime_expected_index,
+      parameter_type: snapshot_representation_type(expected_representation),
+      result_type: snapshot_representation_type(callable_type.result),
+    },
+  );
   const semantic_certificate = semantic_return_identity_certificate(
     ensures.span,
     metadata_definition.span,
@@ -13977,6 +14170,17 @@ function check_prefix_ensures(
       definition_span: Object.freeze({ ...metadata_definition.span }),
       requirement: semantic_requirement,
       binding,
+      publish_summary: origin === "explicit_ensures" &&
+        signature.requires.length === 0 &&
+        signature.ensures.length === 1 &&
+        signature.type.parameters.every((parameter) =>
+          parameter.type.proof === undefined &&
+          parameter.type.refinement === undefined &&
+          parameter.type.computational_exists === undefined
+        ) &&
+        signature.type.result.type.refinement === undefined &&
+        signature.type.result.type.computational_exists === undefined &&
+        metadata_definition.unsafe_span === undefined,
     }),
   });
 }
@@ -14564,6 +14768,10 @@ export function lower_duck_source(
     analysis,
     analysis_state.return_identity_validations,
   );
+  validate_function_fact_summaries(
+    analysis,
+    analysis_state.return_identity_validations,
+  );
   validate_computational_package_erasure(analysis);
   try {
     const lowering_source = source_with_host_callable_exports(
@@ -14623,6 +14831,52 @@ function validate_return_identity_proofs(
         validation.binding,
       ),
       `Return identity proof ${validation.key} is not bound to its semantic certificate.`,
+    );
+  }
+}
+
+function validate_function_fact_summaries(
+  analysis: DuckAnalysis,
+  validations: readonly ReturnIdentityProofValidation[],
+): void {
+  const expected_callables = new Set<ValueId>();
+  for (const validation of validations) {
+    if (!validation.publish_summary) continue;
+    expect(
+      !expected_callables.has(validation.callable),
+      `Callable ${validation.callable} has duplicate function summary evidence.`,
+    );
+    expected_callables.add(validation.callable);
+    const summary = analysis.function_summaries.get(validation.callable);
+    expect(
+      summary !== undefined,
+      `Function summary for callable ${validation.callable} disappeared before Core lowering.`,
+    );
+    const callable = analysis.callable_control_flow.get(validation.callable);
+    expect(
+      callable !== undefined,
+      `Function summary callable ${validation.callable} disappeared before Core lowering.`,
+    );
+    expect(
+      summary.evidence.tag === "return_identity" &&
+        summary.evidence.proof_key === validation.key &&
+        verify_function_fact_summary(
+          summary,
+          callable,
+          analysis.proofs,
+          validation,
+        ),
+      `Function summary for callable ${validation.callable} is not bound to its return identity evidence.`,
+    );
+  }
+  expect(
+    analysis.function_summaries.size === expected_callables.size,
+    "Function summary index contains unpublished entries.",
+  );
+  for (const callable of analysis.function_summaries.keys()) {
+    expect(
+      expected_callables.has(callable),
+      `Function summary index contains unexpected callable ${callable}.`,
     );
   }
 }
