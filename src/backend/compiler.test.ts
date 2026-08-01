@@ -78,6 +78,36 @@ Deno.test("Duck compiler checks and erases contracts before gpufuck", async () =
   }
 });
 
+Deno.test("Duck compiler erases identity-summary call proofs", async () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+    "let consume = (left, right, evidence) => left;\n" +
+    "let value = 42i32;\n" +
+    "consume(identity value, value)\n";
+  const plain_source = "let identity = value => value;\n" +
+    "let consume = (left, right) => left;\n" +
+    "let value = 42i32;\n" +
+    "consume(identity value, value)\n";
+  const contracted_module = encode_duck_module(contracted_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(contracted_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    contracted_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const contracted = await compiler.run(contracted_source);
+    assert_equals(contracted.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler retains computational witnesses after proof erasure", async () => {
   const source = "type make = (value: I32) -> " +
     "some (witness: I32). { payload: I32 | payload = witness }\n" +

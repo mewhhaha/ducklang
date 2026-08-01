@@ -136,6 +136,7 @@ import {
   type SemanticTypeRequirement,
 } from "./frontend/semantic_fact_graph.ts";
 import {
+  semantic_monomorphic_call_instantiation_certificate,
   semantic_predicate_certificate,
   semantic_return_identity_certificate,
   type SemanticBoundedOffsetGoal,
@@ -144,6 +145,8 @@ import {
   type SemanticIndexBoundsRequirement,
   type SemanticIntegerNarrowingRequirement,
   type SemanticMachineCertificate,
+  type SemanticMonomorphicCallInstantiationCertificate,
+  type SemanticMonomorphicCallInstantiationRequirement,
   type SemanticPredicateAtom,
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
@@ -161,6 +164,7 @@ import {
   verify_semantic_integer_narrowing_unreachable,
   verify_semantic_machine_certificate,
   verify_semantic_machine_checkpoint_certificate,
+  verify_semantic_monomorphic_call_instantiation_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_primitive_disproved,
   verify_semantic_primitive_safety_certificate,
@@ -251,6 +255,35 @@ type CheckedContractProof = {
   key: string;
   proof: CheckedKernelCertificate;
   return_identity?: ReturnIdentityProofValidation;
+  summary_call?: SummaryCallProofValidation;
+};
+type SummaryCallCandidate = {
+  validation: ReturnIdentityProofValidation;
+  proof: CheckedKernelCertificate;
+};
+type SummaryCallHypothesisEvidence = {
+  summary: ReturnIdentityProofValidation;
+  control_flow: SemanticCfg;
+  source_call_span: SourceSpan;
+  target_call_span: SourceSpan;
+  requirement: SemanticMonomorphicCallInstantiationRequirement;
+  certificate: SemanticMonomorphicCallInstantiationCertificate;
+  target_result_ordinal: number;
+  target_argument_ordinal: number;
+};
+export type SummaryCallKernelBinding = {
+  source_call_span: SourceSpan;
+  target_call_span: SourceSpan;
+  requirement: SemanticMonomorphicCallInstantiationRequirement;
+  target_result_ordinal: number;
+  target_argument_ordinal: number;
+  result_term_index: number;
+  argument_term_index: number;
+};
+type SummaryCallProofValidation = SummaryCallKernelBinding & {
+  key: string;
+  summary: ReturnIdentityProofValidation;
+  control_flow: SemanticCfg;
 };
 
 export function verify_return_identity_checked_certificate(
@@ -522,6 +555,225 @@ function return_identity_summary_ensures(
     }),
   });
 }
+
+export function verify_summary_call_checked_certificate(
+  checked: CheckedKernelCertificate,
+  summary: FunctionFactSummary,
+  summary_callable: SemanticCallableControlFlow,
+  summary_proof: CheckedKernelCertificate,
+  control_flow: SemanticCfg,
+  binding: SummaryCallKernelBinding,
+): boolean {
+  try {
+    const summary_source = Reflect.apply(
+      weak_map_get,
+      checked_function_fact_summary_sources,
+      [summary],
+    ) as {
+      callable: SemanticCallableControlFlow;
+      owner: object;
+      proof: CheckedKernelCertificate;
+    } | undefined;
+    if (
+      summary_source === undefined ||
+      summary_source.callable !== summary_callable ||
+      summary_source.proof !== summary_proof ||
+      Reflect.apply(weak_map_get, checked_semantic_control_flow_owners, [
+          control_flow,
+        ]) !== summary_source.owner
+    ) {
+      return false;
+    }
+    const semantic_certificate = checked.semantic_certificate;
+    if (semantic_certificate?.tag !== "monomorphic_call_instantiation") {
+      return false;
+    }
+    if (
+      !verify_semantic_monomorphic_call_instantiation_certificate(
+        semantic_certificate,
+        control_flow,
+        binding.source_call_span,
+        binding.requirement,
+      )
+    ) {
+      return false;
+    }
+    const evidence = summary.evidence;
+    const validation: ReturnIdentityProofValidation = {
+      key: evidence.proof_key,
+      callable: evidence.callable,
+      contract_span: evidence.contract_span,
+      definition_span: evidence.definition_span,
+      requirement: evidence.requirement,
+      binding: evidence.binding,
+      publish_summary: true,
+    };
+    if (
+      !verify_function_fact_summary(
+        summary,
+        summary_callable,
+        new Map([[evidence.proof_key, summary_proof]]),
+        validation,
+      ) ||
+      binding.requirement.callable !== evidence.callable ||
+      binding.requirement.parameter_ordinal !==
+        evidence.binding.parameter_ordinal ||
+      !same_representation_type(
+        binding.requirement.parameter_type,
+        evidence.requirement.parameter_type,
+      ) ||
+      !same_representation_type(
+        binding.requirement.result_type,
+        evidence.requirement.result_type,
+      )
+    ) {
+      return false;
+    }
+    if (
+      !Number.isSafeInteger(binding.target_result_ordinal) ||
+      binding.target_result_ordinal < 0 ||
+      !Number.isSafeInteger(binding.target_argument_ordinal) ||
+      binding.target_argument_ordinal < 0 ||
+      binding.target_result_ordinal === binding.target_argument_ordinal
+    ) {
+      return false;
+    }
+    const target_calls = semantic_calls_at_span(
+      control_flow,
+      binding.target_call_span,
+    );
+    const target_call = target_calls[0]?.node;
+    if (
+      target_calls.length !== 1 || target_call === undefined ||
+      target_call.inputs[binding.target_result_ordinal + 1] !==
+        binding.requirement.result ||
+      target_call.inputs[binding.target_argument_ordinal + 1] !==
+        binding.requirement.argument
+    ) {
+      return false;
+    }
+    if (
+      !Number.isSafeInteger(binding.result_term_index) ||
+      binding.result_term_index < 0 ||
+      binding.result_term_index >= checked.term_context.length ||
+      !Number.isSafeInteger(binding.argument_term_index) ||
+      binding.argument_term_index < 0 ||
+      binding.argument_term_index >= checked.term_context.length ||
+      binding.result_term_index === binding.argument_term_index
+    ) {
+      return false;
+    }
+    const equality_type: KernelType = {
+      tag: "constant",
+      name: evidence.binding.result_type,
+    };
+    const expected_premise: Proposition = {
+      tag: "equal",
+      type: equality_type,
+      left: { tag: "var", index: binding.result_term_index },
+      right: { tag: "var", index: binding.argument_term_index },
+    };
+    const reversed_conclusion: Proposition = {
+      tag: "equal",
+      type: equality_type,
+      left: { tag: "var", index: binding.argument_term_index },
+      right: { tag: "var", index: binding.result_term_index },
+    };
+    const checked_proposition = checked.certificate.proposition;
+    if (checked_proposition.tag !== "implies") return false;
+    const proof_context = {
+      environment: checked.environment,
+      term_context: checked.term_context,
+    };
+    if (
+      !proposition_equal(
+        checked_proposition.premise,
+        expected_premise,
+        proof_context,
+      )
+    ) {
+      return false;
+    }
+    let expected_conclusion = expected_premise;
+    if (
+      !proposition_equal(
+        checked_proposition.conclusion,
+        expected_premise,
+        proof_context,
+      )
+    ) {
+      if (
+        !proposition_equal(
+          checked_proposition.conclusion,
+          reversed_conclusion,
+          proof_context,
+        )
+      ) {
+        return false;
+      }
+      expected_conclusion = reversed_conclusion;
+    }
+    return certificate_establishes(
+      checked.certificate,
+      {
+        tag: "implies",
+        premise: expected_premise,
+        conclusion: expected_conclusion,
+      },
+      {
+        environment: checked.environment,
+        term_context: checked.term_context,
+        require_safe: true,
+      },
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function summary_call_proof_keys_match(
+  validation_keys: readonly string[],
+  proofs: KernelCertificateIndex,
+): boolean {
+  try {
+    if (
+      validation_keys.length > proof_limits.compiler_search_steps ||
+      proofs.size > proof_limits.compiler_search_steps
+    ) {
+      return false;
+    }
+    const expected = new Set<string>();
+    for (const key of validation_keys) {
+      if (
+        typeof key !== "string" || key.length === 0 || expected.has(key)
+      ) {
+        return false;
+      }
+      const proof = proofs.get(key);
+      if (
+        proof?.semantic_certificate?.tag !==
+          "monomorphic_call_instantiation"
+      ) {
+        return false;
+      }
+      expected.add(key);
+    }
+    let observed = 0;
+    for (const [key, proof] of proofs) {
+      if (
+        proof.semantic_certificate?.tag !== "monomorphic_call_instantiation"
+      ) {
+        continue;
+      }
+      if (!expected.has(key)) return false;
+      observed += 1;
+    }
+    return observed === expected.size;
+  } catch {
+    return false;
+  }
+}
+
 export type SemanticCallableCfgIndex = ReadonlyMap<
   ValueId,
   SemanticCallableControlFlow
@@ -571,11 +823,21 @@ export type DuckSemanticProgram = {
 };
 
 const checked_duck_analyses = new WeakSet<DuckAnalysis>();
+const checked_function_fact_summary_sources = new WeakMap<
+  FunctionFactSummary,
+  {
+    callable: SemanticCallableControlFlow;
+    owner: object;
+    proof: CheckedKernelCertificate;
+  }
+>();
+const checked_semantic_control_flow_owners = new WeakMap<SemanticCfg, object>();
 const checked_duck_analysis_state = new WeakMap<
   DuckAnalysis,
   {
     has_errors: boolean;
     return_identity_validations: readonly ReturnIdentityProofValidation[];
+    summary_call_validations: readonly SummaryCallProofValidation[];
     source_fingerprint: string;
   }
 >();
@@ -656,6 +918,7 @@ function function_fact_summaries_from_return_identities(
   validations: readonly ReturnIdentityProofValidation[],
   proofs: KernelCertificateIndex,
   callable_control_flow: SemanticCallableCfgIndex,
+  owner: object,
 ): FunctionFactIndex {
   const entries: [ValueId, FunctionFactSummary][] = [];
   const published_callables = new Set<ValueId>();
@@ -702,6 +965,10 @@ function function_fact_summaries_from_return_identities(
       verify_function_fact_summary(summary, callable, proofs, validation),
       `Callable ${validation.callable} produced an invalid function summary.`,
     );
+    Reflect.apply(weak_map_set, checked_function_fact_summary_sources, [
+      summary,
+      Object.freeze({ callable, owner, proof }),
+    ]);
     published_callables.add(validation.callable);
     entries.push([validation.callable, summary]);
   }
@@ -939,10 +1206,24 @@ export function analyze_duck_source(
   if (!has_error_diagnostics(diagnostics)) {
     control_flow = inferred_control_flow;
     callable_control_flow = new FrozenMap(inferred_callable_control_flow);
+    const summary_owner = Object.freeze({});
+    if (control_flow !== undefined) {
+      Reflect.apply(weak_map_set, checked_semantic_control_flow_owners, [
+        control_flow,
+        summary_owner,
+      ]);
+    }
+    for (const callable of callable_control_flow.values()) {
+      Reflect.apply(weak_map_set, checked_semantic_control_flow_owners, [
+        callable.control_flow,
+        summary_owner,
+      ]);
+    }
     function_summaries = function_fact_summaries_from_return_identities(
       contract_validation.return_identity_validations,
       proofs,
       callable_control_flow,
+      summary_owner,
     );
   }
   freeze_semantic_graph(source_analysis.syntax_diagnostics);
@@ -971,6 +1252,7 @@ export function analyze_duck_source(
       has_errors: has_error_diagnostics(analysis.diagnostics),
       return_identity_validations:
         contract_validation.return_identity_validations,
+      summary_call_validations: contract_validation.summary_call_validations,
       source_fingerprint: semantic_graph_fingerprint(analysis.source),
     }),
   ]);
@@ -3030,6 +3312,7 @@ function validate_prefix_contracts(
   proofs: ReadonlyMap<string, CheckedKernelCertificate>;
   computational_packages: ComputationalPackageIndex;
   return_identity_validations: readonly ReturnIdentityProofValidation[];
+  summary_call_validations: readonly SummaryCallProofValidation[];
 } {
   const transparent_aliases = transparent_types.aliases;
   const transparent_type_definitions = transparent_types.definitions;
@@ -3184,6 +3467,7 @@ function validate_prefix_contracts(
     };
   });
   const checks: Checked<CheckedContractProof | undefined>[] = [];
+  const summary_candidates = new Map<ValueId, SummaryCallCandidate>();
   const computational_pack_validation = check_prefix_computational_packs(
     resolved_computational_packs,
     resolved_signatures,
@@ -3328,20 +3612,26 @@ function validate_prefix_contracts(
         ensures !== undefined,
         `Prefix signature ${signature.name} lost ensures clause ${clause_index}.`,
       );
-      checks.push(
-        check_prefix_ensures(
-          signature,
-          ensures,
-          clause_index,
-          "explicit_ensures",
-          resolved_definitions,
-          source_text,
-          symbols,
-          types,
-          origins,
-          callable_control_flow,
-        ),
+      const ensures_check = check_prefix_ensures(
+        signature,
+        ensures,
+        clause_index,
+        "explicit_ensures",
+        resolved_definitions,
+        source_text,
+        symbols,
+        types,
+        origins,
+        callable_control_flow,
       );
+      checks.push(ensures_check);
+      const checked_ensures = checked_value(ensures_check);
+      if (checked_ensures?.return_identity?.publish_summary) {
+        summary_candidates.set(checked_ensures.return_identity.callable, {
+          validation: checked_ensures.return_identity,
+          proof: checked_ensures.proof,
+        });
+      }
     }
     const result_refinement = signature.type.result.type.refinement;
     if (result_refinement !== undefined) {
@@ -3372,16 +3662,21 @@ function validate_prefix_contracts(
       callable_control_flow,
       computational_opens,
       certified_computational_packs,
+      summary_candidates,
     ),
   );
   const proofs = new Map<string, CheckedKernelCertificate>();
   const return_identity_validations: ReturnIdentityProofValidation[] = [];
+  const summary_call_validations: SummaryCallProofValidation[] = [];
   for (const check of checks) {
     const proof = checked_value(check);
     if (proof !== undefined) {
       proofs.set(proof.key, proof.proof);
       if (proof.return_identity !== undefined) {
         return_identity_validations.push(proof.return_identity);
+      }
+      if (proof.summary_call !== undefined) {
+        summary_call_validations.push(proof.summary_call);
       }
     }
   }
@@ -3400,6 +3695,7 @@ function validate_prefix_contracts(
     proofs,
     computational_packages,
     return_identity_validations: Object.freeze(return_identity_validations),
+    summary_call_validations: Object.freeze(summary_call_validations),
   };
 }
 
@@ -3719,6 +4015,7 @@ function check_prefix_computational_packs(
         ...branch_hypotheses.propositions.map((candidate) => ({
           proposition: candidate,
           facts,
+          semantic_certificate: branch_hypotheses.certificate,
         })),
       ],
       term_types,
@@ -3726,7 +4023,6 @@ function check_prefix_computational_packs(
       definitions,
       declared_type_names,
       pack_index,
-      branch_hypotheses.certificate,
     ));
     if (
       diagnostics_of(all(checks.slice(first_pack_check))).length === 0
@@ -5258,6 +5554,7 @@ function normalized_prefix_computational_relation(
 type PrefixCallObligation = {
   kind?: "decreases";
   proposition: PrefixProposition;
+  source_proposition?: PrefixProposition;
   source_span: SourceSpan;
   description: string;
 };
@@ -5265,6 +5562,8 @@ type PrefixCallObligation = {
 type PrefixCallHypothesis = {
   proposition: PrefixProposition;
   facts: ReadonlyMap<string, PrefixFactSignature>;
+  semantic_certificate?: SemanticControlFlowCertificate;
+  summary_call?: SummaryCallHypothesisEvidence;
 };
 
 function check_prefix_call_obligations(
@@ -5279,8 +5578,9 @@ function check_prefix_call_obligations(
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
   computational_opens: readonly PrefixComputationalOpen[],
   computational_packs: readonly PrefixComputationalPack[],
+  summary_candidates: ReadonlyMap<ValueId, SummaryCallCandidate>,
 ): Checked<
-  { key: string; proof: CheckedKernelCertificate } | undefined
+  CheckedContractProof | undefined
 >[] {
   const contracts_by_entity = new Map<EntityId, PrefixRuntimeContract>();
   const contracts: PrefixRuntimeContract[] = [];
@@ -5383,7 +5683,7 @@ function check_prefix_call_obligations(
   }
 
   const checks: Checked<
-    { key: string; proof: CheckedKernelCertificate } | undefined
+    CheckedContractProof | undefined
   >[] = [];
   const recursive_groups = new Map<string, PrefixDefinition[]>();
   for (const definition of definitions) {
@@ -5639,12 +5939,13 @@ function check_prefix_call_obligations(
       control_flow,
       callable_control_flow,
     );
+    let semantic_call: SemanticNode | undefined;
     if (call_control_flow !== undefined) {
       const semantic_calls = semantic_calls_at_span(
         call_control_flow,
         call_span,
       );
-      const semantic_call = semantic_calls[0];
+      semantic_call = semantic_calls[0]?.node;
       expect(
         semantic_calls.length === 1 && semantic_call !== undefined,
         `Call to ${contract.signature.name} lost its semantic operation.`,
@@ -5652,7 +5953,7 @@ function check_prefix_call_obligations(
       for (let index = 0; index < runtime_parameters.length; index += 1) {
         const parameter = runtime_parameters[index];
         const argument = call.args[index];
-        const value = semantic_call.node.inputs[index + 1];
+        const value = semantic_call.inputs[index + 1];
         expect(
           parameter !== undefined && argument !== undefined &&
             value !== undefined,
@@ -5754,34 +6055,208 @@ function check_prefix_call_obligations(
         control_flow,
         callable_control_flow,
       );
+      let checked_obligation = obligation;
+      const obligation_hypotheses: PrefixCallHypothesis[] = [
+        ...hypotheses,
+        ...branch_hypotheses.propositions.map((proposition) => ({
+          proposition,
+          facts,
+          semantic_certificate: branch_hypotheses.certificate,
+        })),
+      ];
+      const source_proposition = obligation.source_proposition;
+      if (
+        call_control_flow !== undefined && semantic_call !== undefined &&
+        source_proposition?.tag === "equal" &&
+        source_proposition.left.shape.tag === "name" &&
+        source_proposition.right.shape.tag === "name"
+      ) {
+        const left_name = source_proposition.left.shape.name;
+        const right_name = source_proposition.right.shape.name;
+        const left_ordinal = runtime_parameters.findIndex((parameter) =>
+          parameter.name === left_name
+        );
+        const right_ordinal = runtime_parameters.findIndex((parameter) =>
+          parameter.name === right_name
+        );
+        const left_value = semantic_call.inputs[left_ordinal + 1];
+        const right_value = semantic_call.inputs[right_ordinal + 1];
+        if (
+          left_ordinal >= 0 && right_ordinal >= 0 &&
+          left_ordinal !== right_ordinal && left_value !== undefined &&
+          right_value !== undefined
+        ) {
+          const orientations = [
+            {
+              result: left_value,
+              argument: right_value,
+              result_ordinal: left_ordinal,
+              argument_ordinal: right_ordinal,
+            },
+            {
+              result: right_value,
+              argument: left_value,
+              result_ordinal: right_ordinal,
+              argument_ordinal: left_ordinal,
+            },
+          ];
+          for (const orientation of orientations) {
+            let producer: SemanticNode | undefined;
+            let duplicate_producer = false;
+            for (const block of call_control_flow.blocks) {
+              for (const node of block.nodes) {
+                if (
+                  node.outputs.length !== 1 ||
+                  node.outputs[0] !== orientation.result
+                ) {
+                  continue;
+                }
+                if (producer !== undefined) {
+                  duplicate_producer = true;
+                  break;
+                }
+                producer = node;
+              }
+              if (duplicate_producer) break;
+            }
+            if (
+              duplicate_producer || producer === undefined ||
+              producer.operation.tag !== "call" ||
+              producer.inputs.length === 0
+            ) {
+              continue;
+            }
+            const producer_callable = producer.inputs[0];
+            expect(
+              producer_callable !== undefined,
+              "Semantic call producer lost its callable input.",
+            );
+            const summary_candidate = summary_candidates.get(
+              producer_callable,
+            );
+            if (summary_candidate === undefined) continue;
+            const summary = summary_candidate.validation;
+            const source_callable = callable_control_flow.get(
+              summary.callable,
+            );
+            if (
+              source_callable === undefined ||
+              !verify_return_identity_checked_certificate(
+                summary_candidate.proof,
+                source_callable,
+                summary.contract_span,
+                summary.definition_span,
+                summary.requirement,
+                summary.binding,
+              )
+            ) {
+              continue;
+            }
+            const producer_argument =
+              producer.inputs[summary.binding.parameter_ordinal + 1];
+            const producer_result = producer.outputs[0];
+            if (
+              summary.callable !== producer_callable ||
+              producer_argument !== orientation.argument ||
+              producer_result !== orientation.result
+            ) {
+              continue;
+            }
+            const requirement: SemanticMonomorphicCallInstantiationRequirement =
+              {
+                callable: producer_callable,
+                parameter_ordinal: summary.binding.parameter_ordinal,
+                argument: orientation.argument,
+                result: orientation.result,
+                parameter_type: summary.requirement.parameter_type,
+                result_type: summary.requirement.result_type,
+              };
+            const certificate =
+              semantic_monomorphic_call_instantiation_certificate(
+                producer.span,
+                requirement,
+              );
+            if (
+              !verify_semantic_monomorphic_call_instantiation_certificate(
+                certificate,
+                call_control_flow,
+                producer.span,
+                requirement,
+              )
+            ) {
+              continue;
+            }
+            const result_name = "semantic-value:" + orientation.result;
+            const argument_name = "semantic-value:" + orientation.argument;
+            if (
+              !term_types.has(result_name) ||
+              !term_types.has(argument_name)
+            ) {
+              continue;
+            }
+            checked_obligation = {
+              ...obligation,
+              proposition: substitute_prefix_proposition(
+                source_proposition,
+                semantic_substitutions,
+              ),
+            };
+            const summary_call: SummaryCallHypothesisEvidence = Object.freeze({
+              summary,
+              control_flow: call_control_flow,
+              source_call_span: certificate.call_span,
+              target_call_span: Object.freeze({ ...call_span }),
+              requirement: certificate.requirement,
+              certificate,
+              target_result_ordinal: orientation.result_ordinal,
+              target_argument_ordinal: orientation.argument_ordinal,
+            });
+            obligation_hypotheses.push({
+              proposition: {
+                tag: "equal",
+                left: {
+                  text: result_name,
+                  references: [result_name],
+                  shape: { tag: "name", name: result_name },
+                  span: certificate.call_span,
+                },
+                right: {
+                  text: argument_name,
+                  references: [argument_name],
+                  shape: { tag: "name", name: argument_name },
+                  span: certificate.call_span,
+                },
+                span: certificate.call_span,
+              },
+              facts,
+              semantic_certificate: certificate,
+              summary_call,
+            });
+            break;
+          }
+        }
+      }
       checks.push(
         check_prefix_call_obligation(
           contract.signature,
-          obligation,
+          checked_obligation,
           call_span,
-          [
-            ...hypotheses,
-            ...branch_hypotheses.propositions.map((proposition) => ({
-              proposition,
-              facts,
-            })),
-          ],
+          obligation_hypotheses,
           term_types,
           signatures,
           definitions,
           declared_type_names,
           index,
-          branch_hypotheses.certificate,
         ),
       );
     }
     if (decrease.tag === "alternatives") {
       let accepted: Checked<
-        { key: string; proof: CheckedKernelCertificate } | undefined
+        CheckedContractProof | undefined
       >[] | undefined;
       for (const alternative of decrease.alternatives) {
         const alternative_checks: Checked<
-          { key: string; proof: CheckedKernelCertificate } | undefined
+          CheckedContractProof | undefined
         >[] = [];
         for (let index = 0; index < alternative.length; index += 1) {
           const obligation = alternative[index];
@@ -5810,6 +6285,7 @@ function check_prefix_call_obligations(
                 ...branch_hypotheses.propositions.map((proposition) => ({
                   proposition,
                   facts,
+                  semantic_certificate: branch_hypotheses.certificate,
                 })),
               ],
               term_types,
@@ -5817,7 +6293,6 @@ function check_prefix_call_obligations(
               definitions,
               declared_type_names,
               obligations.length + index,
-              branch_hypotheses.certificate,
             ),
           );
         }
@@ -6862,6 +7337,7 @@ function instantiate_prefix_call_obligations(
   for (const requirement of signature.requires) {
     obligations.push({
       proposition: substitute_prefix_proposition(requirement, substitutions),
+      source_proposition: requirement,
       source_span: requirement.span,
       description: "requires " + requirement_text(requirement),
     });
@@ -6873,6 +7349,7 @@ function instantiate_prefix_call_obligations(
           parameter.type.proof,
           substitutions,
         ),
+        source_proposition: parameter.type.proof,
         source_span: parameter.type.proof.span,
         description: "proof parameter " + parameter.name,
       });
@@ -6886,6 +7363,7 @@ function instantiate_prefix_call_obligations(
     );
     obligations.push({
       proposition: substitute_prefix_proposition(renamed, substitutions),
+      source_proposition: renamed,
       source_span: refinement.span,
       description: "parameter refinement " + refinement.text,
     });
@@ -6950,8 +7428,7 @@ function check_prefix_call_obligation(
   definitions: readonly PrefixDefinition[],
   declared_type_names: ReadonlySet<string>,
   obligation_index: number,
-  semantic_certificate: SemanticControlFlowCertificate | undefined,
-): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+): Checked<CheckedContractProof | undefined> {
   const declarations = new Map<string, KernelType>();
   const term_context: KernelType[] = [];
   const term_indices = new Map<string, number>();
@@ -7003,7 +7480,14 @@ function check_prefix_call_obligation(
   const stable_term_context = snapshot_kernel_context(term_context);
   let proof: ProofTerm | undefined;
   let certificate_goal = goal;
-  for (const hypothesis of kernel_hypotheses) {
+  let selected_hypothesis: PrefixCallHypothesis | undefined;
+  for (let index = 0; index < kernel_hypotheses.length; index += 1) {
+    const hypothesis = kernel_hypotheses[index];
+    const source_hypothesis = hypotheses[index];
+    expect(
+      hypothesis !== undefined && source_hypothesis !== undefined,
+      `Call to ${signature.name} lost hypothesis ${index}.`,
+    );
     if (
       proposition_equal(hypothesis, goal, {
         environment,
@@ -7020,6 +7504,7 @@ function check_prefix_call_obligation(
         premise: hypothesis,
         body: { tag: "assumption", index: 0 },
       };
+      selected_hypothesis = source_hypothesis;
       break;
     }
     if (
@@ -7052,6 +7537,7 @@ function check_prefix_call_obligation(
         proof: { tag: "assumption", index: 0 },
       },
     };
+    selected_hypothesis = source_hypothesis;
     break;
   }
   if (proof === undefined) {
@@ -7068,15 +7554,51 @@ function check_prefix_call_obligation(
       environment,
       term_context: stable_term_context,
     });
+    const proof_key = signature.scope + ":" + signature.name + ":call:" +
+      call_span.start.toString() + ":" + obligation_index.toString();
+    const checked_proof = Object.freeze({
+      certificate,
+      environment,
+      term_context: stable_term_context,
+      semantic_certificate: selected_hypothesis?.semantic_certificate,
+    });
+    let summary_call: SummaryCallProofValidation | undefined;
+    const summary_evidence = selected_hypothesis?.summary_call;
+    if (summary_evidence !== undefined) {
+      expect(
+        selected_hypothesis?.semantic_certificate ===
+            summary_evidence.certificate &&
+          certificate.proposition.tag === "implies",
+        `Call to ${signature.name} detached its summary-call certificate.`,
+      );
+      const result_term_index = term_indices.get(
+        "semantic-value:" + summary_evidence.requirement.result,
+      );
+      const argument_term_index = term_indices.get(
+        "semantic-value:" + summary_evidence.requirement.argument,
+      );
+      expect(
+        result_term_index !== undefined && argument_term_index !== undefined &&
+          result_term_index !== argument_term_index,
+        `Call to ${signature.name} lost summary-call term identities.`,
+      );
+      summary_call = Object.freeze({
+        key: proof_key,
+        summary: summary_evidence.summary,
+        control_flow: summary_evidence.control_flow,
+        source_call_span: summary_evidence.source_call_span,
+        target_call_span: summary_evidence.target_call_span,
+        requirement: summary_evidence.requirement,
+        target_result_ordinal: summary_evidence.target_result_ordinal,
+        target_argument_ordinal: summary_evidence.target_argument_ordinal,
+        result_term_index,
+        argument_term_index,
+      });
+    }
     return ok({
-      key: signature.scope + ":" + signature.name + ":call:" +
-        call_span.start.toString() + ":" + obligation_index.toString(),
-      proof: Object.freeze({
-        certificate,
-        environment,
-        term_context: stable_term_context,
-        semantic_certificate,
-      }),
+      key: proof_key,
+      proof: checked_proof,
+      summary_call,
     });
   }
   let status = "unknown";
@@ -14750,6 +15272,7 @@ export function lower_duck_source(
   ) as {
     has_errors: boolean;
     return_identity_validations: readonly ReturnIdentityProofValidation[];
+    summary_call_validations: readonly SummaryCallProofValidation[];
     source_fingerprint: string;
   } | undefined;
   expect(
@@ -14771,6 +15294,10 @@ export function lower_duck_source(
   validate_function_fact_summaries(
     analysis,
     analysis_state.return_identity_validations,
+  );
+  validate_summary_call_proofs(
+    analysis,
+    analysis_state.summary_call_validations,
   );
   validate_computational_package_erasure(analysis);
   try {
@@ -14877,6 +15404,65 @@ function validate_function_fact_summaries(
     expect(
       expected_callables.has(callable),
       `Function summary index contains unexpected callable ${callable}.`,
+    );
+  }
+}
+
+function validate_summary_call_proofs(
+  analysis: DuckAnalysis,
+  validations: readonly SummaryCallProofValidation[],
+): void {
+  const validation_keys = validations.map((validation) => validation.key);
+  expect(
+    summary_call_proof_keys_match(validation_keys, analysis.proofs),
+    "Summary-call private evidence does not match the proof index.",
+  );
+  for (const validation of validations) {
+    const proof = analysis.proofs.get(validation.key);
+    expect(
+      proof !== undefined,
+      `Summary-call proof ${validation.key} disappeared before Core lowering.`,
+    );
+    let known_control_flow = analysis.control_flow === validation.control_flow;
+    if (!known_control_flow) {
+      for (const callable of analysis.callable_control_flow.values()) {
+        if (callable.control_flow !== validation.control_flow) continue;
+        known_control_flow = true;
+        break;
+      }
+    }
+    expect(
+      known_control_flow,
+      `Summary-call proof ${validation.key} references unknown control flow.`,
+    );
+    const summary_callable = analysis.callable_control_flow.get(
+      validation.summary.callable,
+    );
+    const summary = analysis.function_summaries.get(
+      validation.summary.callable,
+    );
+    const summary_proof = analysis.proofs.get(validation.summary.key);
+    expect(
+      summary_callable !== undefined && summary !== undefined &&
+        summary_proof !== undefined &&
+        verify_function_fact_summary(
+          summary,
+          summary_callable,
+          analysis.proofs,
+          validation.summary,
+        ),
+      `Summary-call proof ${validation.key} lost its certified function summary.`,
+    );
+    expect(
+      verify_summary_call_checked_certificate(
+        proof,
+        summary,
+        summary_callable,
+        summary_proof,
+        validation.control_flow,
+        validation,
+      ),
+      `Summary-call proof ${validation.key} failed pre-erasure verification.`,
     );
   }
 }

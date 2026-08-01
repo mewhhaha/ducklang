@@ -2,7 +2,10 @@ import { assert_equals, assert_throws } from "./assert.ts";
 import {
   analyze_duck_source,
   lower_duck_source,
+  summary_call_proof_keys_match,
+  type SummaryCallKernelBinding,
   verify_return_identity_checked_certificate,
+  verify_summary_call_checked_certificate,
 } from "./semantic_program.ts";
 import { parse_duck_source } from "./frontend/baba_parser.ts";
 import { checked_value, diagnostics_of } from "./frontend/checked.ts";
@@ -2310,6 +2313,662 @@ Deno.test("unconditional identity contracts publish certified function summaries
   );
   assert_equals(callable.callable, identity);
   assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+function certified_summary_call_fixture() {
+  const target_text = "consume(identity value, value)";
+  const source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+    "let consume = (left, right, evidence) => left;\n" +
+    `let forward = value => ${target_text};\n` +
+    "forward 42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  if (analysis.diagnostics.length !== 0) {
+    throw new Error("Expected a checked summary-call fixture.");
+  }
+  const identity = analysis.symbols.get("identity")?.[0];
+  const forward = analysis.symbols.get("forward")?.[0];
+  if (identity === undefined || forward === undefined) {
+    throw new Error("Expected identity and forward callable values.");
+  }
+  const summary = analysis.function_summaries.get(identity);
+  const summary_callable = analysis.callable_control_flow.get(identity);
+  const forward_callable = analysis.callable_control_flow.get(forward);
+  if (
+    summary === undefined || summary_callable === undefined ||
+    forward_callable === undefined
+  ) {
+    throw new Error("Expected summary-call control flow and summary.");
+  }
+  const call_entry = [...analysis.proofs].find((entry) =>
+    entry[1].semantic_certificate?.tag === "monomorphic_call_instantiation"
+  );
+  if (call_entry === undefined) {
+    throw new Error("Expected a checked summary-call proof.");
+  }
+  const [call_key, call_proof] = call_entry;
+  const semantic_certificate = call_proof.semantic_certificate;
+  const checked_proposition = call_proof.certificate.proposition;
+  if (
+    semantic_certificate?.tag !== "monomorphic_call_instantiation" ||
+    checked_proposition.tag !== "implies" ||
+    checked_proposition.premise.tag !== "equal" ||
+    checked_proposition.premise.left.tag !== "var" ||
+    checked_proposition.premise.right.tag !== "var"
+  ) {
+    throw new Error("Expected a checked equality implication.");
+  }
+  const summary_proof = analysis.proofs.get(summary.evidence.proof_key);
+  if (summary_proof === undefined) {
+    throw new Error("Expected the identity summary proof.");
+  }
+  const target_start = source.indexOf(target_text);
+  if (target_start < 0) throw new Error("Expected the target call span.");
+  const binding: SummaryCallKernelBinding = {
+    source_call_span: semantic_certificate.call_span,
+    target_call_span: {
+      start: target_start,
+      end: target_start + target_text.length,
+    },
+    requirement: semantic_certificate.requirement,
+    target_result_ordinal: 0,
+    target_argument_ordinal: 1,
+    result_term_index: checked_proposition.premise.left.index,
+    argument_term_index: checked_proposition.premise.right.index,
+  };
+  return {
+    analysis,
+    binding,
+    call_key,
+    call_proof,
+    control_flow: forward_callable.control_flow,
+    summary,
+    summary_callable,
+    summary_proof,
+  };
+}
+
+Deno.test("monomorphic calls instantiate certified identity summaries", () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+    "let consume = (left, right, evidence) => left;\n" +
+    "let forward = value => consume(identity value, value);\n" +
+    "forward 42\n";
+  const plain_source = "let identity = value => value;\n" +
+    "let consume = (left, right) => left;\n" +
+    "let forward = value => consume(identity value, value);\n" +
+    "forward 42\n";
+  const contracted = analyze_duck_source(
+    parse_duck_source(contracted_source),
+  );
+  const plain = analyze_duck_source(parse_duck_source(plain_source));
+  assert_equals(contracted.diagnostics, []);
+  assert_equals(contracted.proofs.size, 2);
+  const call_proof = [...contracted.proofs.values()].find((proof) =>
+    proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+  );
+  if (
+    call_proof?.semantic_certificate?.tag !==
+      "monomorphic_call_instantiation"
+  ) {
+    throw new Error("Expected a monomorphic call instantiation proof.");
+  }
+  assert_equals(
+    call_proof.semantic_certificate.requirement.parameter_ordinal,
+    0,
+  );
+  assert_equals(
+    call_proof.semantic_certificate.requirement.callable,
+    contracted.symbols.get("identity")?.[0],
+  );
+  const contracted_program = checked_value(lower_duck_source(contracted));
+  const plain_program = checked_value(lower_duck_source(plain));
+  if (contracted_program === undefined || plain_program === undefined) {
+    throw new Error("Expected contracted and proof-free calls to lower.");
+  }
+  assert_equals(contracted_program.core, plain_program.core);
+});
+
+Deno.test("identity summaries prove reversed target equalities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures value = result\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(value, identity value);\n" +
+      "forward 42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    true,
+  );
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("identity summary evidence does not cross result aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => do\n" +
+      "  let alias = identity value;\n" +
+      "  consume(alias, value)\n" +
+      "end;\n" +
+      "forward 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summary evidence rejects polymorphic call shapes", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = forall (a: Type). " +
+      "(value: a) -> (result: a)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(identity value, value);\n" +
+      "forward 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("unrelated identity calls do not prove target equalities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => do\n" +
+      "  identity value;\n" +
+      "  consume(value, 0i32)\n" +
+      "end;\n" +
+      "forward 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summary evidence stays bound to its certified input", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = (left, right) => consume(identity left, right);\n" +
+      "forward(1i32, 2i32)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summaries instantiate nonzero parameter ordinals", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(ignored: I32, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (ignored, value) => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(choose(0i32, value), value);\n" +
+      "forward 7i32\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const call_proof = [...analysis.proofs.values()].find((proof) =>
+    proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+  );
+  if (
+    call_proof?.semantic_certificate?.tag !==
+      "monomorphic_call_instantiation"
+  ) {
+    throw new Error("Expected a nonzero-ordinal call proof.");
+  }
+  assert_equals(
+    call_proof.semantic_certificate.requirement.parameter_ordinal,
+    1,
+  );
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("nonzero identity ordinals reject a different certified input", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(ignored: I32, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (ignored, value) => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(choose(value, 0i32), value);\n" +
+      "forward 7i32\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification accepts exact summary-call evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    true,
+  );
+});
+
+Deno.test("pre-erasure verification rejects unbranded summaries", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      { ...fixture.call_proof },
+      { ...fixture.summary },
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects detached summary evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  const other = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      { ...fixture.summary_callable },
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      { ...fixture.summary_proof },
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      other.summary,
+      other.summary_callable,
+      other.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched source provenance", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        source_call_span: {
+          ...fixture.binding.source_call_span,
+          end: fixture.binding.source_call_span.end + 1,
+        },
+      },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        requirement: {
+          ...fixture.binding.requirement,
+          argument: fixture.binding.requirement.callable,
+        },
+      },
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched representations", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        requirement: {
+          ...fixture.binding.requirement,
+          parameter_type: { tag: "scalar", name: "I64" },
+        },
+      },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        requirement: {
+          ...fixture.binding.requirement,
+          result_type: { tag: "scalar", name: "I64" },
+        },
+      },
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched target provenance", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        target_call_span: {
+          ...fixture.binding.target_call_span,
+          end: fixture.binding.target_call_span.end + 1,
+        },
+      },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        target_result_ordinal: fixture.binding.target_argument_ordinal,
+        target_argument_ordinal: fixture.binding.target_result_ordinal,
+      },
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched kernel identities", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        result_term_index: fixture.binding.argument_term_index,
+      },
+    ),
+    false,
+  );
+  const first_type = fixture.call_proof.term_context[0];
+  if (first_type === undefined) {
+    throw new Error("Expected a summary-call kernel context.");
+  }
+  const mismatched_context = {
+    ...fixture.call_proof,
+    term_context: snapshot_kernel_context([
+      ...fixture.call_proof.term_context,
+      first_type,
+    ]),
+  };
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      mismatched_context,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects unsafe call-site evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  const proposition = fixture.call_proof.certificate.proposition;
+  const unsafe_proof = {
+    ...fixture.call_proof,
+    certificate: check_proof(
+      { tag: "unsafe_assume", proposition },
+      proposition,
+      {
+        allow_unsafe: true,
+        environment: fixture.call_proof.environment,
+        term_context: fixture.call_proof.term_context,
+      },
+    ),
+  };
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      unsafe_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects a reversed assumed premise", () => {
+  const fixture = certified_summary_call_fixture();
+  const proposition = fixture.call_proof.certificate.proposition;
+  if (proposition.tag !== "implies" || proposition.premise.tag !== "equal") {
+    throw new Error("Expected a summary-call equality implication.");
+  }
+  const reversed = {
+    tag: "equal" as const,
+    type: proposition.premise.type,
+    left: proposition.premise.right,
+    right: proposition.premise.left,
+  };
+  const reversed_goal = {
+    tag: "implies" as const,
+    premise: reversed,
+    conclusion: reversed,
+  };
+  const reversed_proof = {
+    ...fixture.call_proof,
+    certificate: check_proof(
+      {
+        tag: "implies_intro",
+        premise: reversed,
+        body: { tag: "assumption", index: 0 },
+      },
+      reversed_goal,
+      {
+        allow_unsafe: false,
+        environment: fixture.call_proof.environment,
+        term_context: fixture.call_proof.term_context,
+      },
+    ),
+  };
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      reversed_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("summary-call proof keys reject duplicate private evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key],
+      fixture.analysis.proofs,
+    ),
+    true,
+  );
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key, fixture.call_key],
+      fixture.analysis.proofs,
+    ),
+    false,
+  );
+});
+
+Deno.test("summary-call proof keys reject orphaned evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    summary_call_proof_keys_match([], fixture.analysis.proofs),
+    false,
+  );
+  const proofs_without_call = new Map(fixture.analysis.proofs);
+  proofs_without_call.delete(fixture.call_key);
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key],
+      proofs_without_call,
+    ),
+    false,
+  );
+  const proofs_with_orphan = new Map(fixture.analysis.proofs);
+  proofs_with_orphan.set("orphan-summary-call", fixture.call_proof);
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key],
+      proofs_with_orphan,
+    ),
+    false,
+  );
 });
 
 Deno.test("identity summaries exclude required and additional contracts", () => {
