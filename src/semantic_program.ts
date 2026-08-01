@@ -137,6 +137,7 @@ import {
 } from "./frontend/semantic_fact_graph.ts";
 import {
   semantic_predicate_certificate,
+  semantic_return_identity_certificate,
   type SemanticBoundedOffsetGoal,
   type SemanticBoundedOffsetRequirement,
   type SemanticControlFlowCertificate,
@@ -147,6 +148,7 @@ import {
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticReturnIdentityRequirement,
   type SemanticSliceBoundsCertificate,
   type SemanticSliceBoundsRequirement,
   verify_semantic_bounded_offset_certificate,
@@ -165,6 +167,7 @@ import {
   verify_semantic_primitive_unreachable,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
+  verify_semantic_return_identity_certificate,
   verify_semantic_slice_bounds_certificate,
   verify_semantic_slice_disproved,
   verify_semantic_slice_unreachable,
@@ -172,6 +175,7 @@ import {
   verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
 import {
+  certificate_establishes,
   check_proof,
   instantiate_proposition,
   type KernelCertificate,
@@ -182,6 +186,7 @@ import {
   proposition_equal,
 } from "./frontend/proof_kernel.ts";
 import {
+  kernel_context_equal,
   type KernelContext,
   KernelEnvironment,
   type KernelTerm,
@@ -224,6 +229,169 @@ export type CheckedKernelCertificate = {
   term_context: KernelContext;
   semantic_certificate?: SemanticControlFlowCertificate;
 };
+export type ReturnIdentityKernelBinding = {
+  parameter_ordinal: number;
+  parameter_representations: readonly RepresentationType[];
+  parameter_types: readonly string[];
+  result_representation: RepresentationType;
+  result_type: string;
+  orientation: "result_equals_parameter" | "parameter_equals_result";
+};
+type ReturnIdentityProofValidation = {
+  key: string;
+  callable: ValueId;
+  contract_span: SourceSpan;
+  definition_span: SourceSpan;
+  requirement: SemanticReturnIdentityRequirement;
+  binding: ReturnIdentityKernelBinding;
+};
+type CheckedContractProof = {
+  key: string;
+  proof: CheckedKernelCertificate;
+  return_identity?: ReturnIdentityProofValidation;
+};
+
+export function verify_return_identity_checked_certificate(
+  checked: CheckedKernelCertificate,
+  callable: SemanticCallableControlFlow,
+  contract_span: SourceSpan,
+  definition_span: SourceSpan,
+  requirement: SemanticReturnIdentityRequirement,
+  binding: ReturnIdentityKernelBinding,
+): boolean {
+  if (checked.semantic_certificate?.tag !== "return_identity") return false;
+  if (
+    callable.parameters.length > proof_limits.compiler_search_steps ||
+    binding.parameter_representations.length >
+      proof_limits.compiler_search_steps ||
+    binding.parameter_types.length > proof_limits.compiler_search_steps ||
+    binding.parameter_ordinal !== requirement.parameter_ordinal ||
+    binding.parameter_representations.length !== callable.parameters.length ||
+    binding.parameter_types.length !== callable.parameters.length ||
+    binding.parameter_ordinal < 0 ||
+    binding.parameter_ordinal >= binding.parameter_types.length ||
+    binding.result_type.length === 0 ||
+    (binding.orientation !== "result_equals_parameter" &&
+      binding.orientation !== "parameter_equals_result")
+  ) {
+    return false;
+  }
+  const variable_names = new Map<number, string>();
+  const variable_ids = new Map<string, number>();
+  const paired_types = binding.parameter_representations.map(
+    (representation, index) => ({
+      logical: binding.parameter_types[index],
+      representation: snapshot_representation_type(representation),
+    }),
+  );
+  paired_types.push({
+    logical: binding.result_type,
+    representation: snapshot_representation_type(
+      binding.result_representation,
+    ),
+  });
+  for (const paired of paired_types) {
+    if (
+      paired.logical === undefined || paired.logical.length === 0 ||
+      paired.logical.length > proof_limits.compiler_search_steps
+    ) {
+      return false;
+    }
+    if (paired.representation.tag === "variable") {
+      if (!is_snake_case(paired.logical) || paired.logical === "_") {
+        return false;
+      }
+      const known_name = variable_names.get(paired.representation.id);
+      const known_id = variable_ids.get(paired.logical);
+      if (
+        (known_name !== undefined && known_name !== paired.logical) ||
+        (known_id !== undefined && known_id !== paired.representation.id)
+      ) {
+        return false;
+      }
+      variable_names.set(paired.representation.id, paired.logical);
+      variable_ids.set(paired.logical, paired.representation.id);
+      continue;
+    }
+    if (
+      logical_representation_name(paired.representation) !== paired.logical
+    ) {
+      return false;
+    }
+  }
+  const parameter_representation =
+    binding.parameter_representations[binding.parameter_ordinal];
+  if (
+    parameter_representation === undefined ||
+    !same_representation_type(
+      parameter_representation,
+      requirement.parameter_type,
+    ) ||
+    !same_representation_type(
+      binding.result_representation,
+      requirement.result_type,
+    )
+  ) {
+    return false;
+  }
+  if (
+    !verify_semantic_return_identity_certificate(
+      checked.semantic_certificate,
+      callable,
+      contract_span,
+      definition_span,
+      requirement,
+    )
+  ) {
+    return false;
+  }
+  const expected_context = snapshot_kernel_context([
+    ...binding.parameter_types.map((name) => ({
+      tag: "constant" as const,
+      name,
+    })),
+    { tag: "constant", name: binding.result_type },
+  ]);
+  if (
+    !kernel_context_equal(
+      expected_context,
+      checked.term_context,
+      checked.environment,
+    )
+  ) {
+    return false;
+  }
+  const parameter = {
+    tag: "var" as const,
+    index: binding.parameter_ordinal,
+  };
+  const result = {
+    tag: "var" as const,
+    index: binding.parameter_types.length,
+  };
+  let left = result;
+  let right = parameter;
+  if (binding.orientation === "parameter_equals_result") {
+    left = parameter;
+    right = result;
+  }
+  const equality = {
+    tag: "equal" as const,
+    type: { tag: "constant" as const, name: binding.result_type },
+    left,
+    right,
+  };
+  const expected = {
+    tag: "implies" as const,
+    premise: equality,
+    conclusion: equality,
+  };
+  return certificate_establishes(checked.certificate, expected, {
+    environment: checked.environment,
+    term_context: checked.term_context,
+    require_safe: true,
+  });
+}
 export type KernelCertificateIndex = ReadonlyMap<
   string,
   CheckedKernelCertificate
@@ -283,6 +451,7 @@ const checked_duck_analysis_state = new WeakMap<
   DuckAnalysis,
   {
     has_errors: boolean;
+    return_identity_validations: readonly ReturnIdentityProofValidation[];
     source_fingerprint: string;
   }
 >();
@@ -486,7 +655,11 @@ export function analyze_duck_source(
     ValueId,
     SemanticCallableControlFlow
   >();
-  if (!has_error_diagnostics(precontract_diagnostics)) {
+  const control_flow_is_blocked = precontract_diagnostics.some((diagnostic) =>
+    diagnostic.severity === "error" &&
+    diagnostic.code !== diagnostic_codes.unresolved_call_type
+  );
+  if (!control_flow_is_blocked) {
     const control_flows = semantic_cfgs_from_source(
       source_analysis.source,
       stable_input.cst.root,
@@ -608,6 +781,8 @@ export function analyze_duck_source(
     analysis,
     Object.freeze({
       has_errors: has_error_diagnostics(analysis.diagnostics),
+      return_identity_validations:
+        contract_validation.return_identity_validations,
       source_fingerprint: semantic_graph_fingerprint(analysis.source),
     }),
   ]);
@@ -2666,6 +2841,7 @@ function validate_prefix_contracts(
   diagnostics: CompilerDiagnostic[];
   proofs: ReadonlyMap<string, CheckedKernelCertificate>;
   computational_packages: ComputationalPackageIndex;
+  return_identity_validations: readonly ReturnIdentityProofValidation[];
 } {
   const transparent_aliases = transparent_types.aliases;
   const transparent_type_definitions = transparent_types.definitions;
@@ -2819,9 +2995,7 @@ function validate_prefix_contracts(
       ),
     };
   });
-  const checks: Checked<
-    { key: string; proof: CheckedKernelCertificate } | undefined
-  >[] = [];
+  const checks: Checked<CheckedContractProof | undefined>[] = [];
   const computational_pack_validation = check_prefix_computational_packs(
     resolved_computational_packs,
     resolved_signatures,
@@ -2976,6 +3150,7 @@ function validate_prefix_contracts(
           symbols,
           types,
           origins,
+          callable_control_flow,
         ),
       );
     }
@@ -2990,6 +3165,7 @@ function validate_prefix_contracts(
           symbols,
           types,
           origins,
+          callable_control_flow,
         ),
       );
     }
@@ -3010,10 +3186,14 @@ function validate_prefix_contracts(
     ),
   );
   const proofs = new Map<string, CheckedKernelCertificate>();
+  const return_identity_validations: ReturnIdentityProofValidation[] = [];
   for (const check of checks) {
     const proof = checked_value(check);
     if (proof !== undefined) {
       proofs.set(proof.key, proof.proof);
+      if (proof.return_identity !== undefined) {
+        return_identity_validations.push(proof.return_identity);
+      }
     }
   }
   const computational_packages = collect_computational_package_index(
@@ -3030,6 +3210,7 @@ function validate_prefix_contracts(
     diagnostics: diagnostics_of(all(checks)),
     proofs,
     computational_packages,
+    return_identity_validations: Object.freeze(return_identity_validations),
   };
 }
 
@@ -13195,7 +13376,8 @@ function check_prefix_result_refinement(
   symbols: ReadonlyMap<string, readonly ValueId[]>,
   types: ReadonlyMap<ValueId, RepresentationType>,
   origins: ReadonlyMap<ValueId, SemanticOrigin>,
-): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): Checked<CheckedContractProof | undefined> {
   const ensures = rename_prefix_proposition_reference(
     refinement.proposition,
     refinement.binder,
@@ -13216,6 +13398,7 @@ function check_prefix_result_refinement(
     symbols,
     types,
     origins,
+    callable_control_flow,
   );
 }
 
@@ -13380,7 +13563,8 @@ function check_prefix_ensures(
   symbols: ReadonlyMap<string, readonly ValueId[]>,
   types: ReadonlyMap<ValueId, RepresentationType>,
   origins: ReadonlyMap<ValueId, SemanticOrigin>,
-): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+): Checked<CheckedContractProof | undefined> {
   const proof_key = signature.scope + ":" + signature.name + ":ensures:" +
     clause_index.toString();
   const proposition_text = source_text.slice(
@@ -13569,6 +13753,7 @@ function check_prefix_ensures(
   );
   if (metadata_definition === undefined) return ok(undefined);
   let callable_type: RepresentationType | undefined;
+  let callable_value: ValueId | undefined;
   let callable_start = Number.MAX_SAFE_INTEGER;
   const signature_values = symbols.get(signature.name);
   if (signature_values !== undefined) {
@@ -13582,14 +13767,17 @@ function check_prefix_ensures(
       ) {
         continue;
       }
-      callable_type = types.get(value);
+      const candidate_type = types.get(value);
+      if (candidate_type === undefined) continue;
+      callable_type = candidate_type;
+      callable_value = value;
       callable_start = origin.start;
     }
   }
   if (callable_type !== undefined) {
     callable_type = callable_function_body(callable_type);
   }
-  if (callable_type === undefined) {
+  if (callable_type === undefined || callable_value === undefined) {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
@@ -13637,14 +13825,12 @@ function check_prefix_ensures(
       ),
     );
   }
-  const result_name = metadata_definition.callable_body?.text;
-  const lambda_parameters = metadata_definition.callable_parameters;
-  const establishes = result_name !== undefined &&
-    lambda_parameters !== undefined && expected_index >= 0 &&
-    expected_parameter !== undefined &&
-    expected_parameter.type.canonical === result_type_name &&
-    lambda_parameters[expected_index] === result_name;
-  if (!establishes) {
+  const callable = callable_control_flow.get(callable_value);
+  const parameter_value = callable?.parameters[runtime_expected_index];
+  if (
+    callable === undefined || parameter_value === undefined ||
+    expected_parameter.type.canonical !== result_type_name
+  ) {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
@@ -13653,50 +13839,144 @@ function check_prefix_ensures(
       ),
     );
   }
-  const declarations = new Map<string, KernelType>();
-  for (const parameter of signature_parameters) {
-    declarations.set(parameter.type.canonical, type_sort(0));
-  }
-  declarations.set(result_type_name, type_sort(0));
-  const environment = KernelEnvironment.from(declarations);
-  const term_context = snapshot_kernel_context(
-    signature_parameters.map((parameter) => ({
-      tag: "constant" as const,
-      name: parameter.type.canonical,
-    })),
-  );
-  const variable = {
-    tag: "var" as const,
-    index: expected_index,
+  const semantic_requirement: SemanticReturnIdentityRequirement = {
+    callable: callable_value,
+    parameter: parameter_value,
+    parameter_ordinal: runtime_expected_index,
+    parameter_type: expected_representation,
+    result_type: callable_type.result,
   };
-  expect(
-    expected_parameter !== undefined,
-    "Established contract lost its expected parameter.",
+  const semantic_certificate = semantic_return_identity_certificate(
+    ensures.span,
+    metadata_definition.span,
+    semantic_requirement,
   );
+  if (
+    !verify_semantic_return_identity_certificate(
+      semantic_certificate,
+      callable,
+      ensures.span,
+      metadata_definition.span,
+      semantic_requirement,
+    )
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} does not establish ensures ${proposition_text} on every normal return.`,
+        ensures.span,
+        [{
+          message: "Callable definition is here.",
+          span: metadata_definition.span,
+        }],
+      ),
+    );
+  }
+  const declarations = new Map<string, KernelType>();
+  const parameter_type_names: string[] = [];
+  const term_context_types: KernelType[] = [];
+  for (const parameter of runtime_parameters) {
+    const logical_type = logical_term_type_from_reference(parameter.type);
+    declarations.set(logical_type.representation, type_sort(0));
+    parameter_type_names.push(logical_type.representation);
+    term_context_types.push({
+      tag: "constant",
+      name: logical_type.representation,
+    });
+  }
+  const logical_result = logical_term_type_from_reference(
+    signature.type.result.type,
+  );
+  declarations.set(logical_result.representation, type_sort(0));
+  term_context_types.push({
+    tag: "constant",
+    name: logical_result.representation,
+  });
+  const environment = KernelEnvironment.from(declarations);
+  const term_context = snapshot_kernel_context(term_context_types);
+  const parameter_variable = {
+    tag: "var" as const,
+    index: runtime_expected_index,
+  };
+  const result_variable = {
+    tag: "var" as const,
+    index: runtime_parameters.length,
+  };
   const equality_type = {
     tag: "constant" as const,
-    name: expected_parameter.type.canonical,
+    name: logical_result.representation,
   };
+  let left = parameter_variable;
+  let right = result_variable;
+  if (ensures.left.text === "result") {
+    left = result_variable;
+    right = parameter_variable;
+  }
   const goal = {
     tag: "equal" as const,
     type: equality_type,
-    left: variable,
-    right: variable,
+    left,
+    right,
   };
+  const certificate_goal = {
+    tag: "implies" as const,
+    premise: goal,
+    conclusion: goal,
+  };
+  const proof = Object.freeze({
+    certificate: check_proof(
+      {
+        tag: "implies_intro" as const,
+        premise: goal,
+        body: { tag: "assumption" as const, index: 0 },
+      },
+      certificate_goal,
+      {
+        allow_unsafe: false,
+        environment,
+        term_context,
+      },
+    ),
+    environment,
+    term_context,
+    semantic_certificate,
+  });
+  let orientation: ReturnIdentityKernelBinding["orientation"] =
+    "parameter_equals_result";
+  if (ensures.left.text === "result") {
+    orientation = "result_equals_parameter";
+  }
+  const binding: ReturnIdentityKernelBinding = Object.freeze({
+    parameter_ordinal: runtime_expected_index,
+    parameter_representations: Object.freeze(
+      callable_type.params.map(snapshot_representation_type),
+    ),
+    parameter_types: Object.freeze(parameter_type_names),
+    result_representation: snapshot_representation_type(callable_type.result),
+    result_type: logical_result.representation,
+    orientation,
+  });
+  expect(
+    verify_return_identity_checked_certificate(
+      proof,
+      callable,
+      ensures.span,
+      metadata_definition.span,
+      semantic_requirement,
+      binding,
+    ),
+    `Prefix signature ${signature.name} produced an unbound return identity certificate.`,
+  );
   return ok({
     key: proof_key,
-    proof: Object.freeze({
-      certificate: check_proof(
-        { tag: "refl", type: equality_type, term: variable },
-        goal,
-        {
-          allow_unsafe: false,
-          environment,
-          term_context,
-        },
-      ),
-      environment,
-      term_context,
+    proof,
+    return_identity: Object.freeze({
+      key: proof_key,
+      callable: callable_value,
+      contract_span: Object.freeze({ ...ensures.span }),
+      definition_span: Object.freeze({ ...metadata_definition.span }),
+      requirement: semantic_requirement,
+      binding,
     }),
   });
 }
@@ -14265,6 +14545,7 @@ export function lower_duck_source(
     [analysis],
   ) as {
     has_errors: boolean;
+    return_identity_validations: readonly ReturnIdentityProofValidation[];
     source_fingerprint: string;
   } | undefined;
   expect(
@@ -14279,6 +14560,10 @@ export function lower_duck_source(
   if (analysis_state.has_errors) {
     return fail(...analysis.diagnostics);
   }
+  validate_return_identity_proofs(
+    analysis,
+    analysis_state.return_identity_validations,
+  );
   validate_computational_package_erasure(analysis);
   try {
     const lowering_source = source_with_host_callable_exports(
@@ -14308,6 +14593,37 @@ export function lower_duck_source(
       return fail(error.diagnostic);
     }
     throw error;
+  }
+}
+
+function validate_return_identity_proofs(
+  analysis: DuckAnalysis,
+  validations: readonly ReturnIdentityProofValidation[],
+): void {
+  for (const validation of validations) {
+    const proof = analysis.proofs.get(validation.key);
+    expect(
+      proof !== undefined,
+      `Return identity proof ${validation.key} disappeared before Core lowering.`,
+    );
+    const callable = analysis.callable_control_flow.get(validation.callable);
+    expect(
+      callable !== undefined,
+      `Return identity callable ${
+        String(validation.callable)
+      } disappeared before Core lowering.`,
+    );
+    expect(
+      verify_return_identity_checked_certificate(
+        proof,
+        callable,
+        validation.contract_span,
+        validation.definition_span,
+        validation.requirement,
+        validation.binding,
+      ),
+      `Return identity proof ${validation.key} is not bound to its semantic certificate.`,
+    );
   }
 }
 

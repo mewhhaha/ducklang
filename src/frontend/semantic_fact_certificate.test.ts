@@ -1,5 +1,6 @@
-import { assert_equals } from "../assert.ts";
+import { assert_equals, assert_throws } from "../assert.ts";
 import { normalize_machine_integer } from "./fact_graph.ts";
+import { proof_limits } from "./proof_limits.ts";
 import {
   semantic_bounded_offset_certificate,
   semantic_index_bounds_certificate,
@@ -9,6 +10,7 @@ import {
   semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
+  semantic_return_identity_certificate,
   semantic_slice_bounds_certificate,
   semantic_type_certificate,
   semantic_unreachable_certificate,
@@ -19,6 +21,7 @@ import {
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticReturnIdentityRequirement,
   type SemanticSliceBoundsRequirement,
   type SemanticTypeRequirement,
   verify_semantic_bounded_offset_certificate,
@@ -30,6 +33,7 @@ import {
   verify_semantic_primitive_safety_certificate,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
+  verify_semantic_return_identity_certificate,
   verify_semantic_slice_bounds_certificate,
   verify_semantic_type_certificate,
   verify_semantic_unreachable_certificate,
@@ -47,6 +51,8 @@ import {
 } from "./semantic_fact_graph.ts";
 import {
   semantic_cfg_is_well_formed,
+  type SemanticCallableControlFlow,
+  type SemanticCfg,
   SemanticCfgBuilder,
 } from "./semantic_cfg.ts";
 import type { ValueId } from "./semantic_identity.ts";
@@ -65,6 +71,449 @@ const pair_type = {
     { label: undefined, type: i32_type },
   ],
 } as const;
+
+function return_identity_fixture(
+  name: string,
+  control_flow: SemanticCfg,
+  parameter: ValueId,
+) {
+  const callable_id = ("return-identity-" + name + "-callable") as ValueId;
+  const callable: SemanticCallableControlFlow = {
+    callable: callable_id,
+    parameters: [parameter],
+    captures: [],
+    recursive_self: undefined,
+    recursive_group: [],
+    control_flow,
+  };
+  const contract_span = { start: 0, end: 20 };
+  const definition_span = { start: 21, end: 60 };
+  const requirement: SemanticReturnIdentityRequirement = {
+    callable: callable_id,
+    parameter,
+    parameter_ordinal: 0,
+    parameter_type: i32_type,
+    result_type: i32_type,
+  };
+  return {
+    callable,
+    certificate: semantic_return_identity_certificate(
+      contract_span,
+      definition_span,
+      requirement,
+    ),
+    contract_span,
+    definition_span,
+    requirement,
+  };
+}
+
+Deno.test("semantic return identity certificates check every feasible return", () => {
+  const builder = new SemanticCfgBuilder("return-identity-live");
+  const entry = builder.add_block(origin);
+  const returned = builder.add_block(origin);
+  const trapped = builder.add_block(origin);
+  const unreachable = builder.add_block(origin);
+  const parameter = "return-identity-parameter" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 5,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 6, end: 10 },
+    { tag: "constant", value: true },
+    [],
+    [bool_type],
+  )[0];
+  if (condition === undefined) {
+    throw new Error("Expected return identity branch condition.");
+  }
+  builder.connect(entry, returned);
+  builder.connect(entry, trapped);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true: returned,
+    when_false: trapped,
+  });
+  const wrong = builder.add_node(
+    trapped,
+    origin,
+    { start: 11, end: 13 },
+    { tag: "constant", value: 42 },
+    [],
+    [i32_type],
+  )[0];
+  if (wrong === undefined) {
+    throw new Error("Expected statically unreachable return value.");
+  }
+  builder.terminate(returned, { tag: "return", value: parameter });
+  builder.terminate(trapped, { tag: "return", value: wrong });
+  builder.terminate(unreachable, { tag: "trap", reason: "does not return" });
+  const fixture = return_identity_fixture("live", builder.finish(), parameter);
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic return identity certificates ignore diverging paths", () => {
+  const builder = new SemanticCfgBuilder("return-identity-diverging");
+  const entry = builder.add_block(origin);
+  const returned = builder.add_block(origin);
+  const loop = builder.add_block(origin);
+  const parameter = "return-identity-diverging-parameter" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 5,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 6, end: 10 },
+    { tag: "constant", value: true },
+    [],
+    [bool_type],
+  )[0];
+  if (condition === undefined) {
+    throw new Error("Expected diverging return identity condition.");
+  }
+  builder.connect(entry, returned);
+  builder.connect(entry, loop);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true: returned,
+    when_false: loop,
+  });
+  builder.terminate(returned, { tag: "return", value: parameter });
+  builder.connect(loop, loop);
+  builder.terminate(loop, { tag: "jump", target: loop });
+  const fixture = return_identity_fixture(
+    "diverging",
+    builder.finish(),
+    parameter,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic return identity certificates ignore trapping paths", () => {
+  const builder = new SemanticCfgBuilder("return-identity-trapping");
+  const entry = builder.add_block(origin);
+  const parameter = "return-identity-trapping-parameter" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 5,
+  });
+  builder.terminate(entry, { tag: "trap", reason: "does not return" });
+  const fixture = return_identity_fixture(
+    "trapping",
+    builder.finish(),
+    parameter,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic return identity certificates reject one wrong live return", () => {
+  const builder = new SemanticCfgBuilder("return-identity-wrong");
+  const entry = builder.add_block(origin);
+  const left = builder.add_block(origin);
+  const right = builder.add_block(origin);
+  const parameter = "return-identity-wrong-parameter" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 5,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 6, end: 10 },
+    { tag: "primitive", name: "unknown-condition" },
+    [],
+    [bool_type],
+  )[0];
+  const wrong = builder.add_node(
+    right,
+    origin,
+    { start: 11, end: 13 },
+    { tag: "constant", value: 42 },
+    [],
+    [i32_type],
+  )[0];
+  if (condition === undefined || wrong === undefined) {
+    throw new Error("Expected wrong return identity values.");
+  }
+  builder.connect(entry, left);
+  builder.connect(entry, right);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true: left,
+    when_false: right,
+  });
+  builder.terminate(left, { tag: "return", value: parameter });
+  builder.terminate(right, { tag: "return", value: wrong });
+  const fixture = return_identity_fixture("wrong", builder.finish(), parameter);
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic return identity certificates reject loop-header phi aliases", () => {
+  const builder = new SemanticCfgBuilder("return-identity-loop-phi");
+  const entry = builder.add_block(origin);
+  const header = builder.add_block(origin);
+  const returned = builder.add_block(origin);
+  const parameter = "return-identity-loop-parameter" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 5,
+  });
+  const initial = builder.add_node(
+    entry,
+    origin,
+    { start: 6, end: 8 },
+    { tag: "constant", value: 42 },
+    [],
+    [i32_type],
+  )[0];
+  if (initial === undefined) {
+    throw new Error("Expected loop-header initial value.");
+  }
+  builder.connect(entry, header);
+  builder.terminate(entry, { tag: "jump", target: header });
+  const current = builder.add_phi(
+    header,
+    origin,
+    { start: 9, end: 11 },
+    new Map([[entry, initial]]),
+    i32_type,
+  );
+  const condition = builder.add_node(
+    header,
+    origin,
+    { start: 12, end: 14 },
+    { tag: "primitive", name: "unknown-condition" },
+    [],
+    [bool_type],
+  )[0];
+  if (condition === undefined) {
+    throw new Error("Expected loop-header branch condition.");
+  }
+  builder.connect(header, returned);
+  builder.connect(header, header);
+  builder.add_phi_input(current, header, parameter);
+  builder.terminate(header, {
+    tag: "branch",
+    condition,
+    when_true: returned,
+    when_false: header,
+  });
+  builder.terminate(returned, { tag: "return", value: current });
+  const fixture = return_identity_fixture(
+    "loop-phi",
+    builder.finish(),
+    parameter,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic return identity certificates bind callable metadata", () => {
+  const builder = new SemanticCfgBuilder("return-identity-metadata");
+  const entry = builder.add_block(origin);
+  const parameter = "return-identity-metadata-parameter" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 5,
+  });
+  builder.terminate(entry, { tag: "return", value: parameter });
+  const fixture = return_identity_fixture(
+    "metadata",
+    builder.finish(),
+    parameter,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      { ...fixture.callable, callable: "forged-callable" as ValueId },
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      {
+        ...fixture.callable,
+        captures: Array(proof_limits.compiler_search_steps + 1).fill(
+          parameter,
+        ),
+      },
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      {
+        ...fixture.callable,
+        parameters: ["forged-capture" as ValueId],
+        captures: [parameter],
+      },
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      { ...fixture.requirement, parameter_ordinal: 1 },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      fixture.callable,
+      fixture.contract_span,
+      fixture.definition_span,
+      { ...fixture.requirement, result_type: i64_type },
+    ),
+    false,
+  );
+  const invalid_span = { start: 0, end: Number.POSITIVE_INFINITY };
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      { ...fixture.certificate, contract_span: invalid_span },
+      fixture.callable,
+      invalid_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+  const only_block = fixture.callable.control_flow.blocks[0];
+  if (only_block === undefined) {
+    throw new Error("Expected return identity metadata block.");
+  }
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      {
+        ...fixture.callable,
+        control_flow: {
+          ...fixture.callable.control_flow,
+          blocks: [{
+            ...only_block,
+            terminator: { tag: "return", value: undefined },
+          }],
+        },
+      },
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+  const excessive_node = {
+    id: 0,
+    origin,
+    span: { start: 0, end: 0 },
+    inputs: [],
+    outputs: [],
+    operation: { tag: "constant", value: 0 },
+  } as const;
+  assert_equals(
+    verify_semantic_return_identity_certificate(
+      fixture.certificate,
+      {
+        ...fixture.callable,
+        control_flow: {
+          ...fixture.callable.control_flow,
+          blocks: [{
+            ...only_block,
+            nodes: Array(proof_limits.compiler_search_steps + 1).fill(
+              excessive_node,
+            ),
+          }],
+        },
+      },
+      fixture.contract_span,
+      fixture.definition_span,
+      fixture.requirement,
+    ),
+    false,
+  );
+  assert_throws(
+    () =>
+      verify_semantic_return_identity_certificate(
+        { ...fixture.certificate, tag: "forged" } as never,
+        fixture.callable,
+        fixture.contract_span,
+        fixture.definition_span,
+        fixture.requirement,
+      ),
+    "Semantic return identity certificate has an invalid tag.",
+  );
+});
 
 Deno.test("semantic primitive certificates verify integer trap conditions", () => {
   const builder = new SemanticCfgBuilder("primitive-safety");

@@ -16,6 +16,7 @@ import {
   semantic_cfg_is_well_formed,
   type SemanticBlock,
   type SemanticBlockId,
+  type SemanticCallableControlFlow,
   type SemanticCfg,
   type SemanticNode,
   unique_semantic_call_at_span,
@@ -29,6 +30,7 @@ import type { ValueId } from "./semantic_identity.ts";
 import {
   type RepresentationType,
   same_representation_type,
+  snapshot_representation_type,
 } from "./representation_type.ts";
 import type { SourceSpan } from "./syntax.ts";
 
@@ -214,6 +216,21 @@ export type SemanticUnreachableCertificate = {
   call_span: SourceSpan;
 };
 
+export type SemanticReturnIdentityRequirement = {
+  callable: ValueId;
+  parameter: ValueId;
+  parameter_ordinal: number;
+  parameter_type: RepresentationType;
+  result_type: RepresentationType;
+};
+
+export type SemanticReturnIdentityCertificate = {
+  tag: "return_identity";
+  contract_span: SourceSpan;
+  definition_span: SourceSpan;
+  requirement: SemanticReturnIdentityRequirement;
+};
+
 export type SemanticControlFlowCertificate =
   | SemanticBoundedOffsetCertificate
   | SemanticIndexBoundsCertificate
@@ -225,7 +242,8 @@ export type SemanticControlFlowCertificate =
   | SemanticRemainderCertificate
   | SemanticSliceBoundsCertificate
   | SemanticTypeCertificate
-  | SemanticUnreachableCertificate;
+  | SemanticUnreachableCertificate
+  | SemanticReturnIdentityCertificate;
 
 type VerificationState = {
   block: SemanticBlockId;
@@ -401,6 +419,253 @@ export function semantic_unreachable_certificate(
       end: call_span.end,
     }),
   });
+}
+
+export function semantic_return_identity_certificate(
+  contract_span: SourceSpan,
+  definition_span: SourceSpan,
+  requirement: SemanticReturnIdentityRequirement,
+): SemanticReturnIdentityCertificate {
+  expect(
+    Number.isSafeInteger(requirement.parameter_ordinal) &&
+      requirement.parameter_ordinal >= 0,
+    "Semantic return identity parameter ordinal must be a non-negative safe integer.",
+  );
+  return Object.freeze({
+    tag: "return_identity",
+    contract_span: Object.freeze({
+      start: contract_span.start,
+      end: contract_span.end,
+    }),
+    definition_span: Object.freeze({
+      start: definition_span.start,
+      end: definition_span.end,
+    }),
+    requirement: Object.freeze({
+      callable: requirement.callable,
+      parameter: requirement.parameter,
+      parameter_ordinal: requirement.parameter_ordinal,
+      parameter_type: snapshot_representation_type(requirement.parameter_type),
+      result_type: snapshot_representation_type(requirement.result_type),
+    }),
+  });
+}
+
+export function verify_semantic_return_identity_certificate(
+  certificate: SemanticReturnIdentityCertificate,
+  callable: SemanticCallableControlFlow,
+  contract_span: SourceSpan,
+  definition_span: SourceSpan,
+  requirement: SemanticReturnIdentityRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic return identity certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "return_identity",
+    "Semantic return identity certificate has an invalid tag.",
+  );
+  if (
+    certificate.contract_span.start !== contract_span.start ||
+    certificate.contract_span.end !== contract_span.end ||
+    certificate.definition_span.start !== definition_span.start ||
+    certificate.definition_span.end !== definition_span.end ||
+    certificate.requirement.callable !== requirement.callable ||
+    certificate.requirement.parameter !== requirement.parameter ||
+    certificate.requirement.parameter_ordinal !==
+      requirement.parameter_ordinal ||
+    !same_representation_type(
+      certificate.requirement.parameter_type,
+      requirement.parameter_type,
+    ) ||
+    !same_representation_type(
+      certificate.requirement.result_type,
+      requirement.result_type,
+    )
+  ) {
+    return false;
+  }
+  if (
+    !Number.isSafeInteger(contract_span.start) || contract_span.start < 0 ||
+    !Number.isSafeInteger(contract_span.end) ||
+    contract_span.end < contract_span.start ||
+    !Number.isSafeInteger(definition_span.start) ||
+    definition_span.start < 0 ||
+    !Number.isSafeInteger(definition_span.end) ||
+    definition_span.end < definition_span.start ||
+    !Number.isSafeInteger(requirement.parameter_ordinal) ||
+    requirement.parameter_ordinal < 0 ||
+    callable.callable !== requirement.callable ||
+    callable.control_flow.blocks.length > proof_limits.compiler_search_steps ||
+    callable.control_flow.values.length > proof_limits.compiler_search_steps ||
+    !same_representation_type(
+      requirement.parameter_type,
+      requirement.result_type,
+    )
+  ) {
+    return false;
+  }
+  let structural_steps = callable.control_flow.parameters.length;
+  for (const block of callable.control_flow.blocks) {
+    structural_steps += 1 + block.nodes.length + block.predecessors.length +
+      block.successors.length;
+    if (structural_steps > proof_limits.compiler_search_steps) return false;
+    for (const node of block.nodes) {
+      structural_steps += node.inputs.length + node.outputs.length;
+      if (node.operation.tag === "phi") {
+        structural_steps += node.operation.incoming.length;
+      }
+      if (structural_steps > proof_limits.compiler_search_steps) return false;
+    }
+  }
+  if (!semantic_cfg_is_well_formed(callable.control_flow)) return false;
+  const parameter = callable.parameters[requirement.parameter_ordinal];
+  if (
+    callable.parameters.length > proof_limits.compiler_search_steps ||
+    callable.captures.length > proof_limits.compiler_search_steps ||
+    callable.recursive_group.length > proof_limits.compiler_search_steps
+  ) {
+    return false;
+  }
+  const callable_parameters = new Set(callable.parameters);
+  const callable_captures = new Set(callable.captures);
+  const recursive_values = new Set(callable.recursive_group);
+  if (
+    parameter === undefined || parameter !== requirement.parameter ||
+    callable_parameters.size !== callable.parameters.length ||
+    callable_captures.size !== callable.captures.length ||
+    recursive_values.size !== callable.recursive_group.length
+  ) {
+    return false;
+  }
+  for (const capture of callable.captures) {
+    if (callable_parameters.has(capture)) return false;
+  }
+  for (const recursive of callable.recursive_group) {
+    if (
+      callable_parameters.has(recursive) || callable_captures.has(recursive)
+    ) {
+      return false;
+    }
+  }
+  if (
+    callable.recursive_self !== undefined &&
+    (callable.recursive_self !== callable.callable ||
+      !recursive_values.has(callable.recursive_self))
+  ) {
+    return false;
+  }
+  const fixed_parameters = [...callable.parameters, ...callable.captures];
+  if (callable.control_flow.parameters.length < fixed_parameters.length) {
+    return false;
+  }
+  for (let index = 0; index < fixed_parameters.length; index += 1) {
+    if (callable.control_flow.parameters[index] !== fixed_parameters[index]) {
+      return false;
+    }
+  }
+  for (
+    let index = fixed_parameters.length;
+    index < callable.control_flow.parameters.length;
+    index += 1
+  ) {
+    const recursive = callable.control_flow.parameters[index];
+    if (recursive === undefined || !recursive_values.has(recursive)) {
+      return false;
+    }
+  }
+  const values = new Map(
+    callable.control_flow.values.map((value) => [value.value, value.type]),
+  );
+  const parameter_type = values.get(parameter);
+  if (
+    parameter_type === undefined ||
+    !same_representation_type(parameter_type, requirement.parameter_type)
+  ) {
+    return false;
+  }
+  const blocks = new Map(
+    callable.control_flow.blocks.map((block) => [block.id, block]),
+  );
+  const producers = new Map<
+    ValueId,
+    { block: SemanticBlockId; node: SemanticNode }
+  >();
+  let steps = 0;
+  for (const block of callable.control_flow.blocks) {
+    for (const node of block.nodes) {
+      steps += 1;
+      if (steps > proof_limits.compiler_search_steps) return false;
+      for (const output of node.outputs) {
+        producers.set(output, { block: block.id, node });
+      }
+    }
+  }
+  const pending: {
+    block: SemanticBlockId;
+    predecessor: SemanticBlockId | undefined;
+  }[] = [{ block: callable.control_flow.entry, predecessor: undefined }];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) return false;
+    const state = pending.pop();
+    expect(state !== undefined, "Return identity worklist disappeared.");
+    const visit_key = state.block.toString() + ":" +
+      String(state.predecessor);
+    if (visited.has(visit_key)) continue;
+    visited.add(visit_key);
+    const block = blocks.get(state.block);
+    if (block === undefined) return false;
+    if (block.terminator.tag === "return") {
+      let returned = block.terminator.value;
+      const resolved = new Set<ValueId>();
+      while (returned !== undefined && returned !== parameter) {
+        if (resolved.has(returned)) return false;
+        resolved.add(returned);
+        const producer = producers.get(returned);
+        if (
+          producer === undefined || producer.block !== block.id ||
+          producer.node.operation.tag !== "phi" ||
+          state.predecessor === undefined
+        ) {
+          return false;
+        }
+        returned = producer.node.operation.incoming.find((incoming) =>
+          incoming.predecessor === state.predecessor
+        )?.value;
+      }
+      if (returned === undefined) return false;
+      const returned_type = values.get(returned);
+      if (
+        returned_type === undefined ||
+        !same_representation_type(returned_type, requirement.result_type)
+      ) {
+        return false;
+      }
+    }
+    let successors = block.successors;
+    if (block.terminator.tag === "branch") {
+      const producer = producers.get(block.terminator.condition)?.node;
+      if (
+        producer?.operation.tag === "constant" &&
+        typeof producer.operation.value === "boolean"
+      ) {
+        if (producer.operation.value) {
+          successors = [block.terminator.when_true];
+        } else {
+          successors = [block.terminator.when_false];
+        }
+      }
+    }
+    for (const successor of successors) {
+      steps += 1;
+      if (steps > proof_limits.compiler_search_steps) return false;
+      pending.push({ block: successor, predecessor: block.id });
+    }
+  }
+  return true;
 }
 
 export function semantic_predicate_certificate(

@@ -2312,10 +2312,40 @@ function build_callable_control_flow_pass(
       capture_overrides.set(root, value);
     }
   }
-  for (const parameter of expression.params) {
+  for (let index = 0; index < expression.params.length; index += 1) {
+    const parameter = expression.params[index];
+    expect(
+      parameter !== undefined,
+      `Callable ${String(callable)} lost parameter ${index}.`,
+    );
     const entity = binding_entity(parameter, "name", parent);
     const output = semantic_output(entity, parent);
-    const type = binding_entity_type(entity, parent);
+    let type = binding_entity_type(entity, parent);
+    if (function_type.params.length === expression.params.length) {
+      const declared_type = function_type.params[index];
+      expect(
+        declared_type !== undefined,
+        `Callable ${String(callable)} lost declared parameter ${index}.`,
+      );
+      if (
+        !same_representation_type(type, declared_type) &&
+        !(
+          declared_type.tag === "variable" && type.tag === "variable"
+        ) &&
+        !(
+          declared_type.tag === "variable" && type.tag === "named" &&
+          type.name === "_forall_" + declared_type.id.toString() &&
+          type.args.length === 0
+        )
+      ) {
+        throw new SemanticCfgUnavailable(
+          `Callable ${
+            String(callable)
+          } parameter ${index} has incompatible representation evidence.`,
+        );
+      }
+      type = declared_type;
+    }
     builder.add_parameter(output.value, type, output.origin);
     declared_parameters.add(output.value);
     defined_values.add(output.value);

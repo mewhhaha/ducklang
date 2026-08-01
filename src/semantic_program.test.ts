@@ -1,8 +1,17 @@
 import { assert_equals, assert_throws } from "./assert.ts";
-import { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
+import {
+  analyze_duck_source,
+  lower_duck_source,
+  verify_return_identity_checked_certificate,
+} from "./semantic_program.ts";
 import { parse_duck_source } from "./frontend/baba_parser.ts";
 import { checked_value, diagnostics_of } from "./frontend/checked.ts";
-import { check_certificate } from "./frontend/proof_kernel.ts";
+import { check_certificate, check_proof } from "./frontend/proof_kernel.ts";
+import {
+  KernelEnvironment,
+  snapshot_kernel_context,
+  type_sort,
+} from "./frontend/kernel_terms.ts";
 
 Deno.test("semantic program stages preserve Baba input and stable symbols", () => {
   const parsed = parse_duck_source("let value = 1;\n");
@@ -1300,13 +1309,21 @@ Deno.test("mutual callable control flow predeclares recursive peers", () => {
   assert_equals(odd_flow.control_flow.parameters.includes(even), true);
 });
 
-Deno.test("unknown callable body representations do not poison root flow", () => {
+Deno.test("inferred callable parameters retain their semantic graph", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "let pair = (left, right) => right;\npair\n",
   ));
   assert_equals(analysis.diagnostics, []);
   assert_equals(analysis.control_flow !== undefined, true);
-  assert_equals(analysis.callable_control_flow.size, 0);
+  const pair = analysis.symbols.get("pair")?.[0];
+  if (pair === undefined) throw new Error("Expected pair callable identity.");
+  const callable = analysis.callable_control_flow.get(pair);
+  if (callable === undefined) throw new Error("Expected pair callable graph.");
+  assert_equals(callable.parameters.length, 2);
+  assert_equals(callable.control_flow.blocks[0]?.terminator, {
+    tag: "return",
+    value: callable.parameters[1],
+  });
 });
 
 Deno.test("callable graph omissions preserve valid elaboration examples", () => {
@@ -2094,11 +2111,35 @@ Deno.test("checked contracts erase before semantic Core construction", () => {
   const certificate = checked_certificate.certificate;
   assert_equals(certificate.safety, { tag: "safe" });
   assert_equals(certificate.proposition, {
-    tag: "equal",
-    type: { tag: "constant", name: "I32" },
-    left: { tag: "var", index: 0 },
-    right: { tag: "var", index: 0 },
+    tag: "implies",
+    premise: {
+      tag: "equal",
+      type: { tag: "constant", name: "I32" },
+      left: { tag: "var", index: 1 },
+      right: { tag: "var", index: 0 },
+    },
+    conclusion: {
+      tag: "equal",
+      type: { tag: "constant", name: "I32" },
+      left: { tag: "var", index: 1 },
+      right: { tag: "var", index: 0 },
+    },
   });
+  assert_equals(
+    checked_certificate.semantic_certificate?.tag,
+    "return_identity",
+  );
+  if (checked_certificate.semantic_certificate?.tag !== "return_identity") {
+    throw new Error("Expected a semantic return identity certificate.");
+  }
+  assert_equals(
+    checked_certificate.semantic_certificate.requirement.parameter_ordinal,
+    0,
+  );
+  assert_equals(
+    checked_certificate.semantic_certificate.requirement.callable,
+    contracted.symbols.get("identity")?.[0],
+  );
   assert_equals(
     check_certificate(certificate, certificate.proposition, {
       environment: checked_certificate.environment,
@@ -2106,6 +2147,106 @@ Deno.test("checked contracts erase before semantic Core construction", () => {
       require_safe: true,
     }),
     certificate,
+  );
+  const semantic_certificate = checked_certificate.semantic_certificate;
+  const callable = contracted.callable_control_flow.get(
+    semantic_certificate.requirement.callable,
+  );
+  if (callable === undefined) {
+    throw new Error("Expected contracted identity control flow.");
+  }
+  const unrelated_goal = {
+    tag: "implies" as const,
+    premise: { tag: "true" as const },
+    conclusion: { tag: "true" as const },
+  };
+  const unrelated = {
+    ...checked_certificate,
+    certificate: check_proof(
+      {
+        tag: "implies_intro",
+        premise: { tag: "true" },
+        body: { tag: "assumption", index: 0 },
+      },
+      unrelated_goal,
+      {
+        allow_unsafe: false,
+        environment: checked_certificate.environment,
+        term_context: checked_certificate.term_context,
+      },
+    ),
+  };
+  assert_equals(
+    verify_return_identity_checked_certificate(
+      unrelated,
+      callable,
+      semantic_certificate.contract_span,
+      semantic_certificate.definition_span,
+      semantic_certificate.requirement,
+      {
+        parameter_ordinal: 0,
+        parameter_representations: [{ tag: "scalar", name: "I32" }],
+        parameter_types: ["I32"],
+        result_representation: { tag: "scalar", name: "I32" },
+        result_type: "I32",
+        orientation: "result_equals_parameter",
+      },
+    ),
+    false,
+  );
+  const text_environment = KernelEnvironment.from(
+    new Map([["Text", type_sort(0)]]),
+  );
+  const text_context = snapshot_kernel_context([
+    { tag: "constant", name: "Text" },
+    { tag: "constant", name: "Text" },
+  ]);
+  const text_equality = {
+    tag: "equal" as const,
+    type: { tag: "constant" as const, name: "Text" },
+    left: { tag: "var" as const, index: 1 },
+    right: { tag: "var" as const, index: 0 },
+  };
+  const text_goal = {
+    tag: "implies" as const,
+    premise: text_equality,
+    conclusion: text_equality,
+  };
+  const mismatched_type = {
+    certificate: check_proof(
+      {
+        tag: "implies_intro" as const,
+        premise: text_equality,
+        body: { tag: "assumption" as const, index: 0 },
+      },
+      text_goal,
+      {
+        allow_unsafe: false,
+        environment: text_environment,
+        term_context: text_context,
+      },
+    ),
+    environment: text_environment,
+    term_context: text_context,
+    semantic_certificate,
+  };
+  assert_equals(
+    verify_return_identity_checked_certificate(
+      mismatched_type,
+      callable,
+      semantic_certificate.contract_span,
+      semantic_certificate.definition_span,
+      semantic_certificate.requirement,
+      {
+        parameter_ordinal: 0,
+        parameter_representations: [{ tag: "scalar", name: "I32" }],
+        parameter_types: ["Text"],
+        result_representation: { tag: "scalar", name: "I32" },
+        result_type: "Text",
+        orientation: "result_equals_parameter",
+      },
+    ),
+    false,
   );
 
   const contracted_program = checked_value(lower_duck_source(contracted));
@@ -8696,6 +8837,65 @@ Deno.test("semantic analysis checks identity postconditions against lambda bodie
     analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
     true,
   );
+});
+
+Deno.test("identity postconditions check every reachable normal return", () => {
+  const accepted = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(flag: Bool, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (flag, value) => do\n" +
+      "  if flag then return value; end;\n" +
+      "  value\n" +
+      "end;\n",
+  ));
+  assert_equals(accepted.diagnostics, []);
+  assert_equals(accepted.proofs.size, 1);
+
+  const constant_branch = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = value => if true then value else 0i32 end;\n",
+  ));
+  assert_equals(constant_branch.diagnostics, []);
+  assert_equals(constant_branch.proofs.size, 1);
+
+  const false_branch = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = value => if false then 0i32 else value end;\n",
+  ));
+  assert_equals(false_branch.diagnostics, []);
+  assert_equals(false_branch.proofs.size, 1);
+
+  const reversed = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(value: I32) -> (result: I32)\n" +
+      "ensures value = result\n" +
+      "let choose = value => value;\n",
+  ));
+  assert_equals(reversed.diagnostics, []);
+  assert_equals(reversed.proofs.size, 1);
+
+  const rejected = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(flag: Bool, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (flag, value) => do\n" +
+      "  if flag then return 0i32; end;\n" +
+      "  value\n" +
+      "end;\n",
+  ));
+  assert_equals(
+    rejected.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("on every normal return")
+    ),
+    true,
+  );
+  assert_equals(rejected.proofs.size, 0);
 });
 
 Deno.test("semantic analysis alpha-renames contract parameters positionally", () => {
