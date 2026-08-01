@@ -231,6 +231,21 @@ export type SemanticReturnIdentityCertificate = {
   requirement: SemanticReturnIdentityRequirement;
 };
 
+export type SemanticMonomorphicCallInstantiationRequirement = {
+  callable: ValueId;
+  parameter_ordinal: number;
+  argument: ValueId;
+  result: ValueId;
+  parameter_type: RepresentationType;
+  result_type: RepresentationType;
+};
+
+export type SemanticMonomorphicCallInstantiationCertificate = {
+  tag: "monomorphic_call_instantiation";
+  call_span: SourceSpan;
+  requirement: SemanticMonomorphicCallInstantiationRequirement;
+};
+
 export type SemanticControlFlowCertificate =
   | SemanticBoundedOffsetCertificate
   | SemanticIndexBoundsCertificate
@@ -243,7 +258,8 @@ export type SemanticControlFlowCertificate =
   | SemanticSliceBoundsCertificate
   | SemanticTypeCertificate
   | SemanticUnreachableCertificate
-  | SemanticReturnIdentityCertificate;
+  | SemanticReturnIdentityCertificate
+  | SemanticMonomorphicCallInstantiationCertificate;
 
 type VerificationState = {
   block: SemanticBlockId;
@@ -449,6 +465,130 @@ export function semantic_return_identity_certificate(
       result_type: snapshot_representation_type(requirement.result_type),
     }),
   });
+}
+
+export function semantic_monomorphic_call_instantiation_certificate(
+  call_span: SourceSpan,
+  requirement: SemanticMonomorphicCallInstantiationRequirement,
+): SemanticMonomorphicCallInstantiationCertificate {
+  expect(
+    Number.isSafeInteger(requirement.parameter_ordinal) &&
+      requirement.parameter_ordinal >= 0,
+    "Semantic monomorphic call instantiation parameter ordinal must be a non-negative safe integer.",
+  );
+  return Object.freeze({
+    tag: "monomorphic_call_instantiation",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    requirement: Object.freeze({
+      callable: requirement.callable,
+      parameter_ordinal: requirement.parameter_ordinal,
+      argument: requirement.argument,
+      result: requirement.result,
+      parameter_type: snapshot_representation_type(requirement.parameter_type),
+      result_type: snapshot_representation_type(requirement.result_type),
+    }),
+  });
+}
+
+export function verify_semantic_monomorphic_call_instantiation_certificate(
+  certificate: SemanticMonomorphicCallInstantiationCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticMonomorphicCallInstantiationRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic monomorphic call instantiation certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "monomorphic_call_instantiation",
+    "Semantic monomorphic call instantiation certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    certificate.requirement.callable !== requirement.callable ||
+    certificate.requirement.parameter_ordinal !==
+      requirement.parameter_ordinal ||
+    certificate.requirement.argument !== requirement.argument ||
+    certificate.requirement.result !== requirement.result ||
+    !same_representation_type(
+      certificate.requirement.parameter_type,
+      requirement.parameter_type,
+    ) ||
+    !same_representation_type(
+      certificate.requirement.result_type,
+      requirement.result_type,
+    )
+  ) {
+    return false;
+  }
+  if (
+    !Number.isSafeInteger(call_span.start) || call_span.start < 0 ||
+    !Number.isSafeInteger(call_span.end) || call_span.end < call_span.start ||
+    !Number.isSafeInteger(requirement.parameter_ordinal) ||
+    requirement.parameter_ordinal < 0 ||
+    !same_representation_type(
+      requirement.parameter_type,
+      requirement.result_type,
+    ) ||
+    control_flow.blocks.length > proof_limits.compiler_search_steps ||
+    control_flow.values.length > proof_limits.compiler_search_steps
+  ) {
+    return false;
+  }
+  const block_count = control_flow.blocks.length;
+  let structural_steps = control_flow.parameters.length +
+    block_count * block_count * block_count;
+  for (const block of control_flow.blocks) {
+    structural_steps += 1 + block.nodes.length + block.predecessors.length +
+      block.successors.length;
+    if (structural_steps > proof_limits.compiler_search_steps) return false;
+    for (const node of block.nodes) {
+      structural_steps += node.inputs.length + node.outputs.length;
+      if (node.operation.tag === "phi") {
+        structural_steps += node.operation.incoming.length;
+      }
+      if (structural_steps > proof_limits.compiler_search_steps) return false;
+    }
+  }
+  if (!semantic_cfg_is_well_formed(control_flow)) return false;
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (
+    target === undefined ||
+    target.node.inputs[0] !== requirement.callable ||
+    target.node.inputs[requirement.parameter_ordinal + 1] !==
+      requirement.argument ||
+    target.node.outputs.length !== 1 ||
+    target.node.outputs[0] !== requirement.result
+  ) {
+    return false;
+  }
+  const parameter = control_flow.values.find((value) =>
+    value.value === requirement.argument
+  );
+  const result = control_flow.values.find((value) =>
+    value.value === requirement.result
+  );
+  const callable = control_flow.values.find((value) =>
+    value.value === requirement.callable
+  );
+  const callable_type = callable?.type;
+  let callable_parameter: RepresentationType | undefined;
+  if (callable_type?.tag === "function") {
+    callable_parameter = callable_type.params[requirement.parameter_ordinal];
+  }
+  return parameter !== undefined && result !== undefined &&
+    callable_type?.tag === "function" &&
+    target.node.inputs.length === callable_type.params.length + 1 &&
+    callable_parameter !== undefined &&
+    same_representation_type(callable_parameter, requirement.parameter_type) &&
+    same_representation_type(callable_type.result, requirement.result_type) &&
+    same_representation_type(parameter.type, requirement.parameter_type) &&
+    same_representation_type(result.type, requirement.result_type);
 }
 
 export function verify_semantic_return_identity_certificate(

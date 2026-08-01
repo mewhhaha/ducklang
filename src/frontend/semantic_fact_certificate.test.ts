@@ -6,6 +6,7 @@ import {
   semantic_index_bounds_certificate,
   semantic_integer_narrowing_certificate,
   semantic_machine_certificate,
+  semantic_monomorphic_call_instantiation_certificate,
   semantic_predicate_certificate,
   semantic_primitive_safety_certificate,
   semantic_remainder_certificate,
@@ -18,6 +19,7 @@ import {
   type SemanticIndexBoundsRequirement,
   type SemanticIntegerNarrowingRequirement,
   type SemanticMachineRequirement,
+  type SemanticMonomorphicCallInstantiationRequirement,
   type SemanticPrimitiveSafetyRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
@@ -28,6 +30,7 @@ import {
   verify_semantic_index_bounds_certificate,
   verify_semantic_integer_narrowing_certificate,
   verify_semantic_machine_certificate,
+  verify_semantic_monomorphic_call_instantiation_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_primitive_disproved,
   verify_semantic_primitive_safety_certificate,
@@ -512,6 +515,255 @@ Deno.test("semantic return identity certificates bind callable metadata", () => 
         fixture.requirement,
       ),
     "Semantic return identity certificate has an invalid tag.",
+  );
+});
+
+Deno.test("semantic monomorphic call instantiation certificates bind one call shape", () => {
+  const builder = new SemanticCfgBuilder("call-identity");
+  const entry = builder.add_block(origin);
+  const callable = "call-identity-callable" as ValueId;
+  const argument = "call-identity-argument" as ValueId;
+  const callable_type = {
+    tag: "function",
+    params: [i32_type],
+    effects: [],
+    result: i32_type,
+  } as const;
+  builder.add_parameter(callable, callable_type, {
+    source_node: origin,
+    start: 0,
+    end: 8,
+  });
+  builder.add_parameter(argument, i32_type, {
+    source_node: origin,
+    start: 9,
+    end: 14,
+  });
+  const call_span = { start: 15, end: 30 };
+  const result = builder.add_node(
+    entry,
+    origin,
+    call_span,
+    { tag: "call", function_name: "identity" },
+    [callable, argument],
+    [i32_type],
+  )[0];
+  if (result === undefined) {
+    throw new Error("Expected semantic call instantiation result.");
+  }
+  builder.terminate(entry, { tag: "return", value: result });
+  const control_flow = builder.finish();
+  const requirement: SemanticMonomorphicCallInstantiationRequirement = {
+    callable,
+    parameter_ordinal: 0,
+    argument,
+    result,
+    parameter_type: i32_type,
+    result_type: i32_type,
+  };
+  const certificate = semantic_monomorphic_call_instantiation_certificate(
+    call_span,
+    requirement,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      { ...requirement, argument: callable },
+    ),
+    false,
+  );
+  const entry_block = control_flow.blocks[0];
+  if (entry_block === undefined) {
+    throw new Error("Expected semantic call instantiation entry block.");
+  }
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        blocks: [{
+          ...entry_block,
+          nodes: entry_block.nodes.map((node) => {
+            if (node.span.start !== call_span.start) return node;
+            return { ...node, inputs: [...node.inputs, argument] };
+          }),
+        }],
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      { ...requirement, result_type: i64_type },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      control_flow,
+      { start: call_span.start, end: call_span.end + 1 },
+      requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        values: control_flow.values.map((value) => {
+          if (value.value !== callable) return value;
+          return {
+            ...value,
+            type: {
+              ...callable_type,
+              params: [i64_type],
+            },
+          };
+        }),
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        values: control_flow.values.map((value) => {
+          if (value.value !== callable) return value;
+          return {
+            ...value,
+            type: {
+              ...callable_type,
+              result: i64_type,
+            },
+          };
+        }),
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        values: control_flow.values.map((value) => {
+          if (value.value !== callable) return value;
+          return { ...value, type: i32_type };
+        }),
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        values: control_flow.values.map((value) => {
+          if (value.value !== callable) return value;
+          return {
+            ...value,
+            type: {
+              tag: "forall",
+              quantified_variables: [0],
+              body: {
+                tag: "function",
+                params: [{ tag: "variable", id: 0, hint: "value" }],
+                effects: [],
+                result: { tag: "variable", id: 0, hint: "value" },
+              },
+            },
+          };
+        }),
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  const duplicate_result = "call-instantiation-duplicate" as ValueId;
+  const result_value = control_flow.values.find((value) =>
+    value.value === result
+  );
+  const call_node = entry_block.nodes.find((node) =>
+    node.span.start === call_span.start
+  );
+  if (result_value === undefined || call_node === undefined) {
+    throw new Error("Expected semantic call instantiation metadata.");
+  }
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        values: [
+          ...control_flow.values,
+          { ...result_value, value: duplicate_result },
+        ],
+        blocks: [{
+          ...entry_block,
+          nodes: [
+            ...entry_block.nodes,
+            {
+              ...call_node,
+              id: 999 as never,
+              outputs: [duplicate_result],
+            },
+          ],
+        }],
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_semantic_monomorphic_call_instantiation_certificate(
+      certificate,
+      {
+        ...control_flow,
+        blocks: Array(22).fill(entry_block),
+      },
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+  assert_throws(
+    () =>
+      verify_semantic_monomorphic_call_instantiation_certificate(
+        { ...certificate, tag: "forged" } as never,
+        control_flow,
+        call_span,
+        requirement,
+      ),
+    "Semantic monomorphic call instantiation certificate has an invalid tag.",
   );
 });
 
