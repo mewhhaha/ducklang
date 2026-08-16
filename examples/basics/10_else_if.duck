@@ -1,13 +1,13 @@
 let choice = 3;
 
-let result = if choice == 1 {
+let result = if choice == 1 then
   10
-} else if choice == 2 {
+else choice == 2 then
   20
-} else if choice == 3 {
+else choice == 3 then
   42
-} else {
+else
   0
-};
+end;
 
 result

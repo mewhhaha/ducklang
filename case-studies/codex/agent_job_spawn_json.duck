@@ -8,29 +8,29 @@ const { .decode_agent_job_spawn_numeric_options } = import "./agent_job_spawn_js
 
 type AgentJobSpawnJsonResult = AgentJobSpawnDecodeResult
 
-let decode_agent_job_spawn_json: Text -> AgentJobSpawnJsonResult = document => {
+let decode_agent_job_spawn_json: Text -> AgentJobSpawnJsonResult = document => do
   let required = decode_agent_job_spawn_required document;
-  if let `SpawnDecodeFailed reason = required {
-    `SpawnDecodeFailed reason
-  } else if let `SpawnDecoded required_args = required {
+  if let #SpawnDecodeFailed reason = required then
+    #SpawnDecodeFailed reason
+  else let #SpawnDecoded required_args = required then
     let text_options = decode_agent_job_spawn_text_options(document, required_args);
-    if let `SpawnDecodeFailed reason = text_options {
-      `SpawnDecodeFailed reason
-    } else if let `SpawnDecoded text_args = text_options {
+    if let #SpawnDecodeFailed reason = text_options then
+      #SpawnDecodeFailed reason
+    else let #SpawnDecoded text_args = text_options then
       let schema = decode_agent_job_spawn_schema(document, text_args);
-      if let `SpawnDecodeFailed reason = schema {
-        `SpawnDecodeFailed reason
-      } else if let `SpawnDecoded schema_args = schema {
+      if let #SpawnDecodeFailed reason = schema then
+        #SpawnDecodeFailed reason
+      else let #SpawnDecoded schema_args = schema then
         decode_agent_job_spawn_numeric_options(document, schema_args)
-      } else {
-        `SpawnDecodeFailed "output_schema decoder returned no result"
-      }
-    } else {
-      `SpawnDecodeFailed "text option decoder returned no result"
-    }
-  } else {
-    `SpawnDecodeFailed "required argument decoder returned no result"
-  }
-};
+      else
+        #SpawnDecodeFailed "output_schema decoder returned no result"
+      end;
+    else
+      #SpawnDecodeFailed "text option decoder returned no result"
+    end;
+  else
+    #SpawnDecodeFailed "required argument decoder returned no result"
+  end;
+end;
 
 return { .decode_agent_job_spawn_json };

@@ -2,20 +2,21 @@ module () where
 
 const {} = import "./code_mode_wait_types.duck" ();
 
-const plan_code_mode_wait_lifecycle: CodeModeWaitOutcome -> CodeModeWaitLifecyclePlan = outcome => {
-  if let `MissingCell _ = outcome {
-    return `NoCellToClose ();
-  }
+const plan_code_mode_wait_lifecycle: CodeModeWaitOutcome -> CodeModeWaitLifecyclePlan =
+  outcome => do
+    if let #MissingCell _ = outcome then
+      return #NoCellToClose;
+    end;
 
-  let `LiveCell cell = outcome else {
-    return `NoCellToClose ();
-  };
-  let [cell_id, status] = cell;
-  if let `Yielded () = status {
-    `CellRemainsOpen cell_id
-  } else {
-    `CloseCell cell_id
-  }
-};
+    let #LiveCell cell = outcome else do
+      return #NoCellToClose;
+    end;
+    let [cell_id, status] = cell;
+    if let #Yielded = status then
+      #CellRemainsOpen cell_id
+    else
+      #CloseCell cell_id
+    end;
+  end;
 
 return { .plan_code_mode_wait_lifecycle };

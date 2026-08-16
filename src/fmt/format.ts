@@ -1,37 +1,44 @@
 import type { FrontExpr, Token } from "../frontend/ast.ts";
-import { parse_source_with_diagnostics } from "../frontend/parser.ts";
+import { parse_duck_source } from "../frontend/baba_parser.ts";
+import {
+  baba_source_syntax,
+  parse_baba_source_with_diagnostics,
+} from "../frontend/source_parse.ts";
 import {
   has_source_span,
   source_span,
   type SourceSyntax,
 } from "../frontend/syntax.ts";
-import { scan_source, source_tokens } from "../frontend/tokenize.ts";
+import { source_tokens } from "../frontend/tokenize.ts";
 
 // The formatter is deliberately biased: it re-emits the comment-preserving
 // token stream with fixed spacing, two-space bracket indentation, collapsed
-// blank runs, canonical string escapes, and a 100-column layout budget. Wide
+// blank runs, canonical string escapes, and an 80-column layout budget. Wide
 // delimited expressions use one entry per line; other expressions break only
 // at existing whitespace boundaries. The token order (and therefore the
 // parsed program) is unchanged apart from redundant atomic-call parentheses.
 // Statement semicolons are retained as line terminators, while semicolons
 // inside brackets remain fixed-array separators.
 
-const maximum_line_width = 100;
+const maximum_line_width = 80;
 
 const keywords = new Set([
+  "as",
   "borrow",
   "break",
   "by",
+  "case",
   "comptime",
   "const",
   "continue",
   "declare",
+  "do",
   "dup",
   "effect",
   "else",
+  "end",
   "for",
   "freeze",
-  "from",
   "handler",
   "if",
   "import",
@@ -40,11 +47,16 @@ const keywords = new Set([
   "let",
   "loop",
   "module",
+  "of",
+  "open",
+  "pack",
   "rec",
   "return",
   "scalar",
   "scratch",
+  "some",
   "struct",
+  "then",
   "try",
   "type",
   "union",
@@ -54,10 +66,27 @@ const keywords = new Set([
 
 const openers = new Set(["{", "(", "["]);
 const closers = new Set(["}", ")", "]"]);
-const prefix_symbols = new Set(["!", "#", "@", "`"]);
+const prefix_symbols = new Set(["!", "#", "@"]);
 // `&` and `\` are prefix sigils in value position but binary operators in
 // type expressions such as `(Value :- Text) :& Int`; position decides.
 const positional_symbols = new Set(["&", "\\"]);
+const proof_term_operators = new Set([
+  "and_intro",
+  "and_left",
+  "and_right",
+  "congr",
+  "exists_elim",
+  "exists_intro",
+  "false_elim",
+  "forall_apply",
+  "implies_apply",
+  "or_cases",
+  "or_left",
+  "or_right",
+  "symm",
+  "trans",
+  "transport",
+]);
 const spaced_symbols = new Set([
   "=",
   "==",
@@ -89,8 +118,19 @@ type Bracket = {
   body_indent: number;
 };
 
+type Block = {
+  kind: "case" | "keyword";
+  open_indent: number;
+  body_indent: number;
+};
+
+type BlockState = {
+  blocks: Block[];
+  pending_cases: number;
+};
+
 export function format_text(text: string): string {
-  return format_syntax(scan_source(text));
+  return format_syntax(baba_source_syntax(parse_duck_source(text)));
 }
 
 export function format_syntax(syntax: SourceSyntax): string {
@@ -106,9 +146,12 @@ export function format_syntax(syntax: SourceSyntax): string {
       return !omitted_parentheses.has(token.span.start);
     }),
   );
-  const lines = join_continuation_lines(split_lines(tokens));
+  const lines = join_continuation_lines(
+    expand_inline_statement_scopes(split_lines(tokens)),
+  );
   const parts: string[] = [];
   const brackets: Bracket[] = [];
+  const blocks: BlockState = { blocks: [], pending_cases: 0 };
   let previous_blank = true;
   let previous_opened = false;
   let previous_continuation = false;
@@ -127,7 +170,10 @@ export function format_syntax(syntax: SourceSyntax): string {
 
       const first = next[0];
 
-      if (first?.kind === "symbol" && closers.has(first.text)) {
+      if (
+        (first?.kind === "symbol" && closers.has(first.text)) ||
+        line_starts_with_block_closer(next)
+      ) {
         continue;
       }
 
@@ -140,14 +186,19 @@ export function format_syntax(syntax: SourceSyntax): string {
     // opened it; otherwise it sits inside the innermost open bracket. All
     // brackets opened on one line share a single extra indent level.
     const enclosing = brackets[brackets.length - 1];
-    let indent = 0;
+    const block = blocks.blocks.at(-1);
+    let indent = block?.body_indent || 0;
 
     if (enclosing !== undefined) {
-      indent = enclosing.body_indent;
+      indent = Math.max(indent, enclosing.body_indent);
     }
 
     if (line_starts_with_closer(line) && enclosing !== undefined) {
       indent = enclosing.open_indent;
+    }
+
+    if (line_starts_with_block_closer(line) && block !== undefined) {
+      indent = block.open_indent;
     }
 
     const alternative = starts_with_alternative(line);
@@ -156,7 +207,9 @@ export function format_syntax(syntax: SourceSyntax): string {
       indent += 1;
     }
 
-    if (alternative && enclosing === undefined) {
+    if (
+      alternative && enclosing === undefined && block === undefined
+    ) {
       indent += 1;
     }
 
@@ -188,6 +241,17 @@ export function format_syntax(syntax: SourceSyntax): string {
         continue;
       }
 
+      const expanded_conditional = expand_wide_conditional(
+        line,
+        available_width,
+      );
+
+      if (expanded_conditional !== undefined) {
+        lines.splice(index, 1, ...expanded_conditional);
+        index -= 1;
+        continue;
+      }
+
       const wrapped = wrap_at_whitespace(line, available_width);
 
       if (wrapped !== undefined) {
@@ -205,15 +269,22 @@ export function format_syntax(syntax: SourceSyntax): string {
       }
 
       if (openers.has(token.text)) {
-        brackets.push({ open_indent: indent, body_indent: indent + 1 });
+        brackets.push({
+          open_indent: indent,
+          body_indent: indent + 1,
+        });
       } else if (closers.has(token.text)) {
         brackets.pop();
       }
     }
 
+    const previous_block_depth = blocks.blocks.length;
+    update_block_state(blocks, line, indent);
     previous_blank = false;
     const last = line[line.length - 1];
-    previous_opened = last?.kind === "symbol" && openers.has(last.text);
+    previous_opened = (last?.kind === "symbol" && openers.has(last.text)) ||
+      blocks.blocks.length > previous_block_depth ||
+      (last?.kind === "name" && last.text === "else");
     previous_continuation = last?.kind === "symbol" &&
       (last.text === "=" || last.text === "->" || last.text === "=>");
   }
@@ -223,7 +294,7 @@ export function format_syntax(syntax: SourceSyntax): string {
 
 function redundant_unary_call_parentheses(text: string): Set<number> {
   const omitted = new Set<number>();
-  const parsed = parse_source_with_diagnostics(text);
+  const parsed = parse_baba_source_with_diagnostics(text);
 
   if (parsed.diagnostics.length > 0) {
     return omitted;
@@ -254,8 +325,19 @@ function redundant_unary_call_parentheses(text: string): Set<number> {
         const argument_span = source_span(arg);
         const before = text.slice(function_span.end, argument_span.start);
         const after = text.slice(argument_span.end, expression_span.end);
+        const prefix = text.slice(0, function_span.start).trimEnd();
+        const function_text = text.slice(
+          function_span.start,
+          function_span.end,
+        ).trimStart();
+        const follows_bang = prefix.endsWith("!") ||
+          function_text.startsWith("!");
 
-        if (/^[ \t]*\([ \t]*$/.test(before) && /^[ \t]*\)$/.test(after)) {
+        if (
+          !follows_bang &&
+          /^[ \t]*\([ \t]*$/.test(before) &&
+          /^[ \t]*\)$/.test(after)
+        ) {
           omitted.add(function_span.end + before.lastIndexOf("("));
           omitted.add(argument_span.end + after.lastIndexOf(")"));
         }
@@ -287,6 +369,7 @@ function unary_argument_can_be_bare(expr: FrontExpr): boolean {
     expr.tag === "text" || expr.tag === "type_name" || expr.tag === "var" ||
     expr.tag === "field" || expr.tag === "index" || expr.tag === "linear" ||
     expr.tag === "shape" || expr.tag === "array" ||
+    (expr.tag === "product" && expr.template_literal === true) ||
     (expr.tag === "product" && expr.value_pack !== true);
 }
 
@@ -298,6 +381,11 @@ function mark_effect_rows(tokens: Token[]): FormatToken[] {
     const token = marked[index];
 
     if (token === undefined) {
+      continue;
+    }
+
+    if (token.kind === "newline") {
+      row_depth = 0;
       continue;
     }
 
@@ -317,8 +405,6 @@ function mark_effect_rows(tokens: Token[]): FormatToken[] {
     } else if (token.text === ">" && row_depth > 0) {
       token.row_close = true;
       row_depth -= 1;
-    } else if (token.kind === "symbol" && token.text === "\n") {
-      row_depth = 0;
     }
   }
 
@@ -418,6 +504,186 @@ function split_lines(tokens: FormatToken[]): FormatToken[][] {
   return lines;
 }
 
+function expand_inline_statement_scopes(
+  lines: FormatToken[][],
+): FormatToken[][] {
+  const expanded: FormatToken[][] = [];
+  const statement_keywords = new Set([
+    "break",
+    "const",
+    "continue",
+    "for",
+    "if",
+    "let",
+    "loop",
+    "return",
+  ]);
+
+  for (const line of lines) {
+    if (line.length === 0) {
+      expanded.push(line);
+      continue;
+    }
+
+    const breaks = new Set<number>();
+    const is_let_else = (else_index: number): boolean => {
+      const next = line[else_index + 1];
+      if (next?.kind !== "name" || next.text !== "do") {
+        return false;
+      }
+
+      for (let index = else_index - 1; index >= 0; index -= 1) {
+        const token = line[index];
+        if (token === undefined) {
+          continue;
+        }
+        if (
+          (token.kind === "symbol" && token.text === ";") ||
+          (token.kind === "name" &&
+            (token.text === "then" || token.text === "do" ||
+              token.text === "else"))
+        ) {
+          return false;
+        }
+        if (token.kind === "name" && token.text === "let") {
+          return true;
+        }
+      }
+
+      return false;
+    };
+    const matching_boundary = (
+      opener_index: number,
+      opener: "do" | "else" | "then",
+    ): number | undefined => {
+      let depth = 0;
+
+      for (let index = opener_index + 1; index < line.length; index += 1) {
+        const token = line[index];
+        if (token?.kind !== "name") {
+          continue;
+        }
+        if (
+          token.text === "do" || token.text === "then"
+        ) {
+          depth += 1;
+          continue;
+        }
+        if (token.text === "end") {
+          if (depth === 0) {
+            return index;
+          }
+          depth -= 1;
+          continue;
+        }
+        if (
+          token.text === "else" && opener === "then" && depth === 0 &&
+          !is_let_else(index)
+        ) {
+          return index;
+        }
+      }
+
+      return undefined;
+    };
+    const body_contains_statement = (
+      body_start: number,
+      boundary: number,
+    ): boolean => {
+      let depth = 0;
+      let delimiter_depth = 0;
+
+      for (let index = body_start; index < boundary; index += 1) {
+        const token = line[index];
+        if (token === undefined) {
+          continue;
+        }
+        if (
+          depth === 0 &&
+          ((token.kind === "name" && statement_keywords.has(token.text)) ||
+            (token.kind === "symbol" &&
+              (token.text === ";" || token.text === "<-" ||
+                (delimiter_depth === 0 &&
+                  (token.text === "=" || token.text === ":=")))))
+        ) {
+          return true;
+        }
+        if (token.kind === "symbol" && openers.has(token.text)) {
+          delimiter_depth += 1;
+        } else if (
+          token.kind === "symbol" && closers.has(token.text) &&
+          delimiter_depth > 0
+        ) {
+          delimiter_depth -= 1;
+        }
+        if (
+          token.kind === "name" &&
+          (token.text === "do" || token.text === "then")
+        ) {
+          depth += 1;
+        } else if (token.kind === "name" && token.text === "end" && depth > 0) {
+          depth -= 1;
+        }
+      }
+
+      return false;
+    };
+
+    for (let index = 0; index < line.length; index += 1) {
+      const token = line[index];
+      if (token?.kind !== "name") {
+        continue;
+      }
+      if (
+        token.text !== "do" && token.text !== "then" && token.text !== "else"
+      ) {
+        continue;
+      }
+      if (
+        token.text === "else" &&
+        (is_let_else(index) || else_has_chained_then(line, index))
+      ) {
+        continue;
+      }
+
+      const opener = token.text;
+      const boundary = matching_boundary(index, opener);
+      let body_end = line.length;
+      if (boundary !== undefined) {
+        body_end = boundary;
+      }
+      const statementful = opener === "do" ||
+        body_contains_statement(index + 1, body_end);
+      if (!statementful || index + 1 >= body_end) {
+        continue;
+      }
+
+      breaks.add(index + 1);
+      if (boundary !== undefined) {
+        breaks.add(boundary);
+      }
+    }
+
+    if (breaks.size === 0) {
+      expanded.push(line);
+      continue;
+    }
+
+    let start = 0;
+    for (const finish of [...breaks].sort((left, right) => left - right)) {
+      if (finish > start) {
+        expanded.push(line.slice(start, finish));
+      }
+      start = finish;
+    }
+    if (start < line.length) {
+      expanded.push(line.slice(start));
+    }
+  }
+
+  return expanded;
+}
+
 function join_continuation_lines(
   lines: FormatToken[][],
 ): FormatToken[][] {
@@ -426,6 +692,16 @@ function join_continuation_lines(
   for (const line of lines) {
     const first = line[0];
     const previous = joined.at(-1);
+    const starts_with_terminator = first?.kind === "symbol" &&
+      first.text === ";";
+
+    if (
+      starts_with_terminator && previous !== undefined && previous.length > 0
+    ) {
+      previous.push(...line);
+      continue;
+    }
+
     const starts_with_operator = first?.kind === "symbol" &&
       first.row_close !== true &&
       is_line_continuation_operator(first.text);
@@ -462,6 +738,119 @@ function line_starts_with_closer(line: FormatToken[]): boolean {
   const first = line[0];
   return first !== undefined && first.kind === "symbol" &&
     closers.has(first.text);
+}
+
+function line_starts_with_block_closer(line: FormatToken[]): boolean {
+  const first = line[0];
+  return first !== undefined && first.kind === "name" &&
+    (first.text === "else" || first.text === "end");
+}
+
+function update_block_state(
+  state: BlockState,
+  line: FormatToken[],
+  indent: number,
+): void {
+  for (let index = 0; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (token === undefined) {
+      continue;
+    }
+
+    if (token.kind === "symbol" && token.text === ";") {
+      if (state.blocks.at(-1)?.kind === "case") {
+        state.blocks.pop();
+      }
+      continue;
+    }
+
+    if (token.kind !== "name") {
+      continue;
+    }
+
+    const previous = line[index - 1];
+    if (previous?.kind === "symbol" && previous.text === ".") {
+      continue;
+    }
+
+    if (token.text === "case") {
+      state.pending_cases += 1;
+      continue;
+    }
+
+    if (token.text === "of" && state.pending_cases > 0) {
+      state.pending_cases -= 1;
+      state.blocks.push({
+        kind: "case",
+        open_indent: indent,
+        body_indent: indent + 1,
+      });
+      continue;
+    }
+
+    if (token.text === "do" || token.text === "then") {
+      state.blocks.push({
+        kind: "keyword",
+        open_indent: indent,
+        body_indent: indent + 1,
+      });
+      continue;
+    }
+
+    if (token.text === "else") {
+      const next = line[index + 1];
+
+      if (next?.kind === "name" && next.text === "do") {
+        continue;
+      }
+
+      state.blocks.pop();
+
+      if (!else_has_chained_then(line, index)) {
+        state.blocks.push({
+          kind: "keyword",
+          open_indent: indent,
+          body_indent: indent + 1,
+        });
+      }
+
+      continue;
+    }
+
+    if (token.text === "end") {
+      state.blocks.pop();
+    }
+  }
+}
+
+function else_has_chained_then(
+  line: FormatToken[],
+  else_index: number,
+): boolean {
+  const next = line[else_index + 1];
+
+  if (next?.kind === "name" && next.text === "if") {
+    return false;
+  }
+
+  for (let index = else_index + 1; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (token?.kind !== "name") {
+      continue;
+    }
+
+    if (token.text === "then") {
+      return true;
+    }
+
+    if (token.text === "else" || token.text === "end") {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function starts_with_alternative(line: FormatToken[]): boolean {
@@ -529,7 +918,14 @@ function expand_delimited_entries(
       continue;
     }
 
+    const next = line[index + 1];
+    const single_lambda_parameter = group.symbol === "(" &&
+      group.commas.length === 0 &&
+      next?.kind === "symbol" &&
+      next.text === "=>";
+
     if (
+      !single_lambda_parameter &&
       group.open + 1 < index &&
       (group.commas.length > 0 || group.symbol === "(") &&
       render_line(line.slice(0, index + 1)).length > available_width
@@ -633,6 +1029,75 @@ function wrap_at_whitespace(
   return [left, right];
 }
 
+function expand_wide_conditional(
+  line: FormatToken[],
+  available_width: number,
+): FormatToken[][] | undefined {
+  if (render_line(line).length <= available_width) {
+    return undefined;
+  }
+
+  const first = line[0];
+
+  if (first?.kind !== "name" || first.text !== "if") {
+    return undefined;
+  }
+
+  const then_index = line.findIndex((token) => {
+    return token.kind === "name" && token.text === "then";
+  });
+
+  if (then_index < 0) {
+    return undefined;
+  }
+
+  let nested_conditionals = 0;
+  let else_index = -1;
+  let end_index = -1;
+
+  for (let index = then_index + 1; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (token?.kind !== "name") {
+      continue;
+    }
+
+    if (token.text === "if") {
+      nested_conditionals += 1;
+      continue;
+    }
+
+    if (token.text === "end") {
+      if (nested_conditionals > 0) {
+        nested_conditionals -= 1;
+        continue;
+      }
+
+      end_index = index;
+      break;
+    }
+
+    if (token.text === "else" && nested_conditionals === 0) {
+      else_index = index;
+    }
+  }
+
+  if (
+    else_index < 0 || end_index < 0 || then_index + 1 === else_index ||
+    else_index + 1 === end_index
+  ) {
+    return undefined;
+  }
+
+  return [
+    line.slice(0, then_index + 1),
+    line.slice(then_index + 1, else_index),
+    line.slice(else_index, else_index + 1),
+    line.slice(else_index + 1, end_index),
+    line.slice(end_index),
+  ];
+}
+
 function wrap_definition(
   line: FormatToken[],
 ): [FormatToken[], FormatToken[]] | undefined {
@@ -721,6 +1186,12 @@ function render_token(token: FormatToken): string {
     return '"' + escape_literal(token.text, '"') + '"';
   }
 
+  if (token.kind === "template_text") {
+    return escape_literal(token.text, "`")
+      .replaceAll("{", "{{")
+      .replaceAll("}", "}}");
+  }
+
   if (token.kind === "character") {
     return "'" + escape_literal(token.text, "'") + "'";
   }
@@ -732,7 +1203,7 @@ function render_token(token: FormatToken): string {
   return token.text;
 }
 
-function escape_literal(value: string, quote: '"' | "'"): string {
+function escape_literal(value: string, quote: '"' | "'" | "`"): string {
   let escaped = "";
 
   for (const char of value) {
@@ -765,6 +1236,10 @@ function normalize_comment(text: string): string {
 }
 
 function is_value_end(token: FormatToken): boolean {
+  if (token.kind === "template_end") {
+    return true;
+  }
+
   if (token.kind === "name") {
     return !keywords.has(token.text);
   }
@@ -828,6 +1303,23 @@ function needs_space(
     return true;
   }
 
+  if (
+    previous.kind === "template_start" ||
+    previous.kind === "template_text" ||
+    previous.kind === "template_interpolation_start" ||
+    previous.kind === "template_interpolation_end"
+  ) {
+    return false;
+  }
+
+  if (
+    token.kind === "template_text" ||
+    token.kind === "template_interpolation_end" ||
+    token.kind === "template_end"
+  ) {
+    return false;
+  }
+
   // No space directly after an opener or a tight prefix.
   if (previous.kind === "symbol") {
     if (previous.text === "(" || previous.text === "[") {
@@ -838,7 +1330,20 @@ function needs_space(
       return false;
     }
 
-    if (previous.text === "." || previous.text === "..") {
+    if (previous.text === ".") {
+      const before_dot = line[index - 2];
+      if (
+        before_dot?.kind === "symbol" && before_dot.text === ")" &&
+        line.slice(0, index - 1).some((candidate) =>
+          candidate.kind === "name" && candidate.text === "some"
+        )
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    if (previous.text === "..") {
       return false;
     }
 
@@ -896,12 +1401,33 @@ function needs_space(
       return previous.span.end < token.span.start;
     }
 
-    // Parenthesized calls glue to the value they apply to.
+    // Parentheses are an ordinary argument expression, so application keeps
+    // its whitespace separator: `call (left, right)`.
     if (token.text === "(" && is_value_end(previous)) {
       const before_previous = line[index - 2];
 
-      if (before_previous?.kind === "symbol" && before_previous.text === "`") {
+      if (
+        previous.kind === "name" && proof_term_operators.has(previous.text) &&
+        line.slice(0, index).some((candidate) =>
+          candidate.kind === "name" && candidate.text === "by"
+        )
+      ) {
+        return false;
+      }
+
+      if (before_previous?.kind === "symbol" && before_previous.text === "#") {
         return true;
+      }
+
+      if (before_previous?.kind === "symbol" && before_previous.text === "@") {
+        return false;
+      }
+
+      if (
+        before_previous?.kind === "symbol" &&
+        before_previous.text === "!"
+      ) {
+        return false;
       }
 
       if (
@@ -911,7 +1437,7 @@ function needs_space(
         return true;
       }
 
-      return false;
+      return true;
     }
 
     // `rec (left, right) => ...` declares parameters; `rec(left, right)`

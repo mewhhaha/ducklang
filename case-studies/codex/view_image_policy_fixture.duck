@@ -17,30 +17,33 @@ let default_environment: FixtureEnvironment = [
   .cwd = "/workspace",
   .is_primary = true,
 ];
-let default_environments: FixtureEnvironments = `Cons (
-  [default_environment, `Nil ()] as FixtureEnvironmentNode
+let default_environments: FixtureEnvironments = #Cons (
+  [default_environment, #Nil] as FixtureEnvironmentNode
 );
 let default_args: FixtureArgs = [
   .path = "images/a.png",
-  .environment_id = `ImageEnvironmentMissing (),
-  .detail = `ImageDetailMissing (),
+  .environment_id = #ImageEnvironmentMissing,
+  .detail = #ImageDetailMissing,
 ];
 let default_detail = prepare_view_image("call-1", default_args, default_environments, true);
-if let `ReadImage prepared = default_detail {
-  if prepared.call_id == "call-1" && prepared.environment_id == "local" && prepared.path == "/workspace/images/a.png" {
-    if let `High () = prepared.detail { score = score + 1 }
-  }
-}
+if let #ReadImage prepared = default_detail then
+  if prepared.call_id == "call-1" && prepared.environment_id == "local" && prepared.path
+    == "/workspace/images/a.png" then
+      if let #High = prepared.detail then
+        score = score + 1
+      end;
+    end;
+end;
 
-let remote_id: FixtureTextOption = `ImageEnvironmentPresent "remote";
-let original_detail: FixtureDetailOption = `ImageDetailPresent (`Original ());
+let remote_id: FixtureTextOption = #ImageEnvironmentPresent "remote";
+let original_detail: FixtureDetailOption = #ImageDetailPresent (#Original);
 let original_environment: FixtureEnvironment = [
   .environment_id = "remote",
   .cwd = "/remote",
   .is_primary = false,
 ];
-let original_environments: FixtureEnvironments = `Cons (
-  [original_environment, `Nil ()] as FixtureEnvironmentNode
+let original_environments: FixtureEnvironments = #Cons (
+  [original_environment, #Nil] as FixtureEnvironmentNode
 );
 let original_args: FixtureArgs = [
   .path = "/image.png",
@@ -48,40 +51,46 @@ let original_args: FixtureArgs = [
   .detail = original_detail,
 ];
 let original = prepare_view_image("call-2", original_args, original_environments, true);
-if let `ReadImage prepared = original {
-  if prepared.environment_id == "remote" && prepared.path == "/image.png" {
-    if let `Original () = prepared.detail { score = score + 10 }
-  }
-}
+if let #ReadImage prepared = original then
+  if prepared.environment_id == "remote" && prepared.path == "/image.png" then
+    if let #Original = prepared.detail then
+      score = score + 10
+    end;
+  end;
+end;
 
 let downgraded_environment: FixtureEnvironment = [
   .environment_id = "remote",
   .cwd = "/remote",
   .is_primary = false,
 ];
-let downgraded_environments: FixtureEnvironments = `Cons (
-  [downgraded_environment, `Nil ()] as FixtureEnvironmentNode
+let downgraded_environments: FixtureEnvironments = #Cons (
+  [downgraded_environment, #Nil] as FixtureEnvironmentNode
 );
 let downgraded_args: FixtureArgs = [
   .path = "/image.png",
-  .environment_id = `ImageEnvironmentPresent "remote",
-  .detail = `ImageDetailPresent (`Original ()),
+  .environment_id = #ImageEnvironmentPresent "remote",
+  .detail = #ImageDetailPresent (#Original),
 ];
 let downgraded = prepare_view_image("call-3", downgraded_args, downgraded_environments, false);
-if let `ReadImage prepared = downgraded {
-  if let `High () = prepared.detail { score = score + 100 }
-}
+if let #ReadImage prepared = downgraded then
+  if let #High = prepared.detail then
+    score = score + 100
+  end;
+end;
 
-let missing_id: FixtureTextOption = `ImageEnvironmentPresent "missing";
+let missing_id: FixtureTextOption = #ImageEnvironmentPresent "missing";
 let missing_args: FixtureArgs = [
   .path = "a.png",
   .environment_id = missing_id,
-  .detail = `ImageDetailMissing (),
+  .detail = #ImageDetailMissing,
 ];
-let missing_environments: FixtureEnvironments = `Nil ();
+let missing_environments: FixtureEnvironments = #Nil;
 let unknown_environment = prepare_view_image("call-4", missing_args, missing_environments, true);
-if let `RejectRequest message = unknown_environment {
-  if message == "unknown turn environment id `missing`" { score = score + 1000 }
-}
+if let #RejectRequest message = unknown_environment then
+  if message == "unknown turn environment id `missing`" then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

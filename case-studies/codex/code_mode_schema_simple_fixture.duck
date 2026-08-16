@@ -6,6 +6,8 @@ const { .render_json_schema_to_typescript } = import "./code_mode_schema_rendere
 
 let schema = json_object(json_object_prepend("type", json_string "string", json_object_empty()));
 let score = 0;
-if render_json_schema_to_typescript schema == "string" { score = 1 }
+if render_json_schema_to_typescript schema == "string" then
+  score = 1
+end;
 
 return { .score = score };

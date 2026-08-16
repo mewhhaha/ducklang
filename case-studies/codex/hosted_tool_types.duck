@@ -3,14 +3,14 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type HostedWebSearchMode =
-  | `Cached Unit
-  | `Indexed Unit
-  | `Live Unit
-  | `Disabled Unit
+  | #Cached
+  | #Indexed
+  | #Live
+  | #Disabled
 
 type HostedWebSearchToolType =
-  | `TextOnly Unit
-  | `TextAndImage Unit
+  | #TextOnly
+  | #TextAndImage
 
 type HostedToolAvailabilityFacts = struct {
   .use_responses_lite = Bool,

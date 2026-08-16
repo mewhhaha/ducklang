@@ -1,0 +1,550 @@
+==================
+Foundational tactic blocks
+==================
+
+type prove = (evidence: Proof True) -> Proof True and True
+let prove = evidence => by {
+  constructor
+  exact evidence
+  assumption
+};
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))
+                      (prefix_and_keyword)
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command)
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier)))
+            (prefix_tactic_command)))))))
+
+==================
+Tactic keywords require boundaries
+==================
+
+type prove = () -> Proof True
+let prove = () => by { exacttrue_intro };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command
+              (ERROR
+                (lowercase_identifier))
+              (prefix_proof_term
+                (MISSING identifier))))))))
+  (expression_statement
+    (postfix_expression
+      (number))))
+
+==================
+Decision tactic
+==================
+
+type prove = () -> Proof 1i32 < 2i32
+let prove = () => by { decide };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (number)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (number)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command))))))
+  (expression_statement
+    (postfix_expression
+      (number))))
+
+==================
+Omega tactic
+==================
+
+type prove = () -> Proof True implies True
+let prove = () => by { omega };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))
+                  (prefix_implies_keyword)
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier))))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command))))))
+  (expression_statement
+    (postfix_expression
+      (number))))
+
+==================
+Explicit simplification lemmas
+==================
+
+type prove = (left: I32, right: I32, equality: Proof left = right) -> Proof left = right
+let prove = (left, right, equality) => by { simp [equality] };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command
+              (prefix_tactic_lemma_list
+                (identifier))))))))
+  (expression_statement
+    (postfix_expression
+      (number))))
+
+==================
+Rewrite tactic
+==================
+
+type prove = (left: I32, right: I32, equality: Proof left = right, evidence: Proof right = right) -> Proof left = left
+let prove = (left, right, equality, evidence) => by { rewrite equality exact evidence };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier))))))))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier))
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier)))
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier))))))))
+  (expression_statement
+    (postfix_expression
+      (number))))
+
+==================
+Cases tactic
+==================
+
+type prove = (choice: Proof True or True) -> Proof True
+let prove = choice => by { cases choice assumption assumption };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier))))))
+                      (prefix_or_keyword)
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier)))
+            (prefix_tactic_command)
+            (prefix_tactic_command))))))
+  (expression_statement
+    (postfix_expression
+      (number))))
+
+==================
+Apply tactic
+==================
+
+type prove = (theorem: Proof True implies True, evidence: Proof True) -> Proof True
+let prove = (theorem, evidence) => by { apply theorem exact evidence };
+42
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))
+                    (prefix_implies_keyword)
+                    (prefix_implication_proposition
+                      (prefix_disjunction_proposition
+                        (prefix_conjunction_proposition
+                          (prefix_negation_proposition
+                            (prefix_atomic_proposition
+                              (prefix_proposition_term
+                                (prefix_proposition_postfix_term
+                                  (identifier)))))))))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_tactic_block
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier)))
+            (prefix_tactic_command
+              (prefix_proof_term
+                (identifier))))))))
+  (expression_statement
+    (postfix_expression
+      (number))))

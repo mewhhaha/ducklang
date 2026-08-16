@@ -25,41 +25,42 @@ export function mark_hole_lambda(expr: FrontExpr): FrontExpr {
 
 /** Whether this expression is, or contains, a lambda lifted from a hole. */
 export function contains_hole_lambda(expr: FrontExpr): boolean {
-  if (hole_lambdas.has(expr)) {
-    return true;
-  }
-
-  if (expr.tag === "product") {
-    return expr.entries.some((entry) => contains_hole_lambda(entry.value));
-  }
-
-  if (expr.tag === "app") {
-    if (expr.arg !== undefined && contains_hole_lambda(expr.arg)) {
-      return true;
-    }
-
-    return contains_hole_lambda(expr.func);
-  }
-
-  return false;
+  return expression_tree_contains(expr, (value) => hole_lambdas.has(value));
 }
 
 /** Whether an unlifted hole survives anywhere in this expression. */
 export function contains_hole(expr: FrontExpr): boolean {
-  if (expr.tag === "var") {
-    return expr.name === hole_name;
-  }
+  return expression_tree_contains(expr, (value) => {
+    const candidate = value as { tag?: string; name?: string };
+    return candidate.tag === "var" && candidate.name === hole_name;
+  });
+}
 
-  if (expr.tag === "product") {
-    return expr.entries.some((entry) => contains_hole(entry.value));
-  }
+function expression_tree_contains(
+  expr: FrontExpr,
+  matches: (value: object) => boolean,
+): boolean {
+  const pending: object[] = [expr];
+  const visited = new WeakSet<object>();
 
-  if (expr.tag === "app") {
-    if (expr.arg !== undefined && contains_hole(expr.arg)) {
-      return true;
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (value === undefined || visited.has(value)) continue;
+    visited.add(value);
+    if (matches(value)) return true;
+
+    for (const child of Object.values(value)) {
+      if (child === null || typeof child !== "object") continue;
+      if (Array.isArray(child)) {
+        for (const entry of child) {
+          if (entry !== null && typeof entry === "object") {
+            pending.push(entry);
+          }
+        }
+        continue;
+      }
+      pending.push(child);
     }
-
-    return contains_hole(expr.func);
   }
 
   return false;

@@ -17,7 +17,7 @@ let run_spawn_agent = (
   call_id: Text,
   request: AgentSpawnExecutionRequest,
   options: AgentSpawnExecutionOptions,
-) => {
+) => do
   observed <- AgentCollaborationHost.spawn_override_facts()
   let facts: AgentSpawnExecutionFacts = observed;
   let override_input: AgentSpawnExecutionOverrideInput = [
@@ -32,19 +32,19 @@ let run_spawn_agent = (
   ];
   selected <- AgentCollaborationStages.spawn_override(&override_input)
   let override_result: AgentSpawnExecutionOverrideResult = selected;
-  if let `SpawnOverrideRejected message = override_result {
+  if let #SpawnOverrideRejected message = override_result then
     message
-  } else if let `SpawnOverrideSelected overrides = override_result {
+  else let #SpawnOverrideSelected overrides = override_result then
     let resolved_request: AgentSpawnExecutionRequest = [
       .path = request.path,
       .message = request.message,
       .fork_turns = request.fork_turns,
-      .model = `Some overrides.model,
+      .model = #Some overrides.model,
       .reasoning_effort = overrides.reasoning_effort,
     ];
     spawned <- AgentCollaborationHost.spawn(&resolved_request)
     let snapshot: AgentSpawnExecutionSnapshot = spawned;
-    let started: AgentSpawnExecutionEvent = `AgentStarted [call_id, snapshot.task_name];
+    let started: AgentSpawnExecutionEvent = #AgentStarted [call_id, snapshot.task_name];
     _ <- AgentCollaborationHost.event(&started)
     let telemetry: AgentSpawnExecutionTelemetry = [.role = "default", .version = "v2"];
     _ <- AgentCollaborationHost.spawn_telemetry(&telemetry)
@@ -55,9 +55,9 @@ let run_spawn_agent = (
     output <- AgentCollaborationStages.spawn_output(&input)
     let text: Text = output;
     text
-  } else {
+  else
     "spawn_agent override stage returned no result"
-  }
-};
+  end;
+end;
 
 return { .run_spawn_agent };

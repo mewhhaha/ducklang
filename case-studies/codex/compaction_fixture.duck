@@ -11,59 +11,59 @@ type FixtureMessage = HistoryMessage
 const items = comptime list FixtureItem;
 const contents = comptime list FixtureContent;
 
-const message_item = (role: Text, text: Text) => {
-  let message_contents = contents.singleton(`InputText text);
+const message_item = (role: Text, text: Text) => do
+  let message_contents = contents.singleton(#InputText text);
   let message: FixtureMessage = [role, false, message_contents];
-  `Message message
-};
+  #Message message
+end;
 
 let history = items.empty();
 history = items.prepend(message_item("user", "latest"), history)
 history = items.prepend(message_item("assistant", "intermediate"), history)
 history = items.prepend(message_item("user", "abcdefghijklmnopqrst"), history)
 history = items.prepend(
-  message_item("user", text_append [summary_prefix, "\nold summary"]),
+  message_item("user", text_append (summary_prefix, "\nold summary")),
   history,
 )
 history = items.prepend(message_item("user", "old message"), history)
 
 let compacted = compact_history(history, "fresh summary", 6);
 let score: I32 = items.length(compacted);
-let first = items.nth_or(`Other (), 0, compacted);
-let second = items.nth_or(`Other (), 1, compacted);
-let third = items.nth_or(`Other (), 2, compacted);
+let first = items.nth_or(#Other, 0, compacted);
+let second = items.nth_or(#Other, 1, compacted);
+let third = items.nth_or(#Other, 2, compacted);
 
-if let `Message message = first {
+if let #Message message = first then
   let [role, _, message_contents] = message;
   let text = content_items_to_text message_contents;
 
-  if let `Some value = text {
-    if role == "user" && value == "abcdefgh…1 tokens truncated…mnopqrst" {
+  if let #Some value = text then
+    if role == "user" && value == "abcdefgh…1 tokens truncated…mnopqrst" then
       score = score + 10
-    }
-  }
-}
+    end;
+  end;
+end;
 
-if let `Message message = second {
+if let #Message message = second then
   let [_, _, message_contents] = message;
   let text = content_items_to_text message_contents;
 
-  if let `Some value = text {
-    if value == "latest" {
+  if let #Some value = text then
+    if value == "latest" then
       score = score + 100
-    }
-  }
-}
+    end;
+  end;
+end;
 
-if let `Message message = third {
+if let #Message message = third then
   let [_, _, message_contents] = message;
   let text = content_items_to_text message_contents;
 
-  if let `Some value = text {
-    if value == "fresh summary" {
+  if let #Some value = text then
+    if value == "fresh summary" then
       score = score + 1000
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

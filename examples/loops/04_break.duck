@@ -1,11 +1,11 @@
 let total = 27;
 
-for value in 0..10 {
-  if value == 6 {
+for value in 0..10 do
+  if value == 6 then
     break;
-  }
+  end;
 
   total = total + value
-}
+end
 
 total

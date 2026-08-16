@@ -58,6 +58,60 @@ export abstract class ParserPrimary extends ParserBlock {
       return literal;
     }
 
+    if (this.match("template_start")) {
+      const strings: { value: FrontExpr }[] = [];
+      const values: { value: FrontExpr }[] = [];
+      const initial_text = this.peek();
+
+      if (initial_text.kind !== "template_text") {
+        throw this.error("Expected template literal text");
+      }
+
+      this.advance();
+      strings.push({
+        value: { tag: "text", value: initial_text.text },
+      });
+
+      while (this.match("template_interpolation_start")) {
+        this.skip_newlines();
+        values.push({ value: this.parse_expr() });
+        this.skip_newlines();
+
+        if (!this.match("template_interpolation_end")) {
+          throw this.error("Expected `}` to close template interpolation");
+        }
+
+        const following_text = this.peek();
+
+        if (following_text.kind !== "template_text") {
+          throw this.error("Expected template literal text");
+        }
+
+        this.advance();
+        strings.push({
+          value: { tag: "text", value: following_text.text },
+        });
+      }
+
+      if (!this.match("template_end")) {
+        throw this.error("Expected backtick to close template literal");
+      }
+
+      return {
+        tag: "product",
+        entries: [
+          {
+            value: { tag: "product", entries: strings },
+          },
+          {
+            value: { tag: "product", entries: values },
+          },
+        ],
+        value_pack: true,
+        template_literal: true,
+      };
+    }
+
     if (this.match_name("handler")) {
       const effect = this.expect_name(
         "Expected effect name after `handler`",
@@ -75,7 +129,7 @@ export abstract class ParserPrimary extends ParserBlock {
       return { tag: "comptime", expr: this.parse_expr() };
     }
 
-    if (this.match_name("do")) {
+    if (this.match_name("perform")) {
       const value = this.parse_expr();
       return {
         tag: "app",
@@ -121,13 +175,13 @@ export abstract class ParserPrimary extends ParserBlock {
       return this.parse_if_expr();
     }
 
-    if (this.match_name("match")) {
-      return this.parse_match_expr();
+    if (this.match_name("case")) {
+      return this.parse_case_expr();
     }
 
     if (
-      this.peek().kind === "name" && this.peek().text === "loop" &&
-      this.peek(1).kind === "symbol" && this.peek(1).text === "{"
+      this.at_keyword("loop") &&
+      this.peek(1).kind === "name" && this.peek(1).text === "do"
     ) {
       this.expect_name("Expected loop");
       const body = this.parse_block();
@@ -140,7 +194,7 @@ export abstract class ParserPrimary extends ParserBlock {
     }
 
     if (this.match_symbol("!")) {
-      const name = this.expect_name("Expected linear value name");
+      const name = this.expect_variable_name("Expected linear value name");
 
       if (name === "_") {
         throw this.error("`!_` is not supported");
@@ -150,32 +204,28 @@ export abstract class ParserPrimary extends ParserBlock {
       return { tag: "linear", name };
     }
 
-    if (this.match_symbol("`")) {
-      const name = this.expect_name("Expected union case name");
-      expect(
-        /^[A-Z][A-Za-z0-9]*$/.test(name),
-        "Union case must use PascalCase: " + name,
-      );
-      return {
-        tag: "union_case",
-        name,
-        value: undefined,
-        type_expr: undefined,
-      };
-    }
-
     if (this.match_symbol("#")) {
-      const name = this.expect_name("Expected atom name");
-      expect_snake_case(name, "Atom");
+      const name = this.expect_name("Expected tag or union case name");
+
+      if (/^[A-Z][A-Za-z0-9]*$/.test(name)) {
+        return {
+          tag: "union_case",
+          name,
+          value: undefined,
+          type_expr: undefined,
+        };
+      }
+
+      expect_snake_case(name, "Tag");
       return { tag: "atom", name };
     }
 
-    if (this.peek().kind === "symbol" && this.peek().text === "{") {
-      if (this.is_shape_literal()) {
-        return this.parse_shape_value();
-      }
-
+    if (this.at_keyword("do")) {
       return this.parse_block();
+    }
+
+    if (this.peek().kind === "symbol" && this.peek().text === "{") {
+      return this.parse_shape_value();
     }
 
     if (
@@ -214,6 +264,10 @@ export abstract class ParserPrimary extends ParserBlock {
     }
 
     if (token.kind === "name") {
+      if (token.text === "end") {
+        throw this.error("`end` is reserved and cannot be used as a variable");
+      }
+
       this.advance();
 
       if (token.text === "_") {

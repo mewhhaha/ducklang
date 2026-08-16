@@ -12,85 +12,97 @@ type SearchRankedEntryNode = ToolSearchRankedEntryNode
 type SearchRankedEntries = ToolSearchRankedEntries
 type SearchRankWords = List Text
 
-const word_count: [SearchRankWords, Text] -> I32 = (values: SearchRankWords, term: Text) => {
+const word_count: (SearchRankWords, Text) -> I32 = (values: SearchRankWords, term: Text) => do
   let current = values;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [word, tail] = node;
-      if text_equal_ascii_case_insensitive [word, term] { count = count + 1 }
+      if text_equal_ascii_case_insensitive (word, term) then
+        count = count + 1
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const word_list_length: SearchRankWords -> I32 = values => {
+const word_list_length: SearchRankWords -> I32 = values => do
   let current = values;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const search_info_count: SearchRankInfos -> I32 = values => {
+const search_info_count: SearchRankInfos -> I32 = values => do
   let current = values;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const document_frequency: [SearchRankInfos, Text] -> I32 = (
+const document_frequency: (SearchRankInfos, Text) -> I32 = (
   search_infos: SearchRankInfos,
   term: Text,
-) => {
+) => do
   let current = search_infos;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [search_info, tail] = node;
       let [entry, _] = search_info;
       let [search_text, _] = entry;
-      if word_count(text_ascii_words search_text, term) > 0 { count = count + 1 }
+      if word_count(text_ascii_words search_text, term) > 0 then
+        count = count + 1
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const entry_score: [SearchRankEntry, SearchRankInfos, SearchRankWords, I32] -> I32 = (
+const entry_score: (SearchRankEntry, SearchRankInfos, SearchRankWords, I32) -> I32 = (
   entry: SearchRankEntry,
   search_infos: SearchRankInfos,
   query_words: SearchRankWords,
   average_document_length: I32,
-) => {
+) => do
   let [search_text, _] = entry;
   let document_words = text_ascii_words search_text;
   let document_length = word_list_length document_words;
@@ -99,11 +111,11 @@ const entry_score: [SearchRankEntry, SearchRankInfos, SearchRankWords, I32] -> I
   let score = 0;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [term, tail] = node;
       let term_frequency = word_count(document_words, term);
-      if term_frequency > 0 {
+      if term_frequency > 0 then
         let matching_documents = document_frequency(search_infos, term);
         let inverse_frequency_input = 1024 + (
           (2 * (document_count - matching_documents) + 1) * 1024
@@ -112,143 +124,162 @@ const entry_score: [SearchRankEntry, SearchRankInfos, SearchRankWords, I32] -> I
         let length_normalization = 256 + (768 * document_length) / average_document_length;
         let saturation = term_frequency * 1024 + (1229 * length_normalization) / 1024;
         score = score + (inverse_frequency * term_frequency * 2253) / saturation
-      }
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   score
-};
+end;
 
-const ranked_before: [SearchRankedEntry, SearchRankedEntry] -> Bool = (
+const ranked_before: (SearchRankedEntry, SearchRankedEntry) -> Bool = (
   left: SearchRankedEntry,
   right: SearchRankedEntry,
-) => {
+) => do
   let [left_position, left_score, _] = left;
   let [right_position, right_score, _] = right;
-  if left_score == right_score { left_position < right_position } else { left_score > right_score }
-};
+  if left_score == right_score then left_position < right_position else left_score
+      > right_score end;
+end;
 
-const reverse_ranked: SearchRankedEntries -> SearchRankedEntries = values => {
+const reverse_ranked: SearchRankedEntries -> SearchRankedEntries = values => do
   let current = values;
-  let reversed: SearchRankedEntries = `Nil ();
+  let reversed: SearchRankedEntries = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      reversed = `Cons ([value, reversed] as SearchRankedEntryNode)
+      reversed = #Cons ([value, reversed] as SearchRankedEntryNode)
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   reversed
-};
+end;
 
-const insert_ranked: [SearchRankedEntries, SearchRankedEntry] -> SearchRankedEntries = (
+const insert_ranked: (SearchRankedEntries, SearchRankedEntry) -> SearchRankedEntries = (
   values: SearchRankedEntries,
   value: SearchRankedEntry,
-) => {
+) => do
   let remaining = values;
-  let prefix_reversed: SearchRankedEntries = `Nil ();
-  let inserted: SearchRankedEntries = `Nil ();
+  let prefix_reversed: SearchRankedEntries = #Nil;
+  let inserted: SearchRankedEntries = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = remaining {
+  loop do
+    if let #Cons node = remaining then
       let [current, tail] = node;
-      if ranked_before(value, current) {
-        inserted = `Cons ([value, remaining] as SearchRankedEntryNode)
+      if ranked_before(value, current) then
+        inserted = #Cons ([value, remaining] as SearchRankedEntryNode)
         done = true
-      } else {
-        prefix_reversed = `Cons ([current, prefix_reversed] as SearchRankedEntryNode)
+      else
+        prefix_reversed = #Cons ([current, prefix_reversed] as SearchRankedEntryNode)
         remaining = tail
-      }
-    } else {
-      inserted = `Cons ([value, `Nil ()] as SearchRankedEntryNode)
+      end;
+    else
+      inserted = #Cons ([value, #Nil] as SearchRankedEntryNode)
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   let prefix = prefix_reversed;
   done = false
-  loop {
-    if let `Cons node = prefix {
+  loop do
+    if let #Cons node = prefix then
       let [current, tail] = node;
-      inserted = `Cons ([current, inserted] as SearchRankedEntryNode)
+      inserted = #Cons ([current, inserted] as SearchRankedEntryNode)
       prefix = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   inserted
-};
+end;
 
-const take_ranked: [I32, SearchRankedEntries] -> SearchRankedEntries = (
+const take_ranked: (I32, SearchRankedEntries) -> SearchRankedEntries = (
   count: I32,
   values: SearchRankedEntries,
-) => {
+) => do
   let current = values;
   let remaining = count;
-  let reversed: SearchRankedEntries = `Nil ();
+  let reversed: SearchRankedEntries = #Nil;
   let done = remaining <= 0;
-  loop {
-    if done { break; }
-    if let `Cons node = current {
+  loop do
+    if done then
+      break;
+    end;
+    if let #Cons node = current then
       let [value, tail] = node;
-      reversed = `Cons ([value, reversed] as SearchRankedEntryNode)
+      reversed = #Cons ([value, reversed] as SearchRankedEntryNode)
       current = tail
       remaining = remaining - 1
-      if remaining <= 0 { done = true }
-    } else {
+      if remaining <= 0 then
+        done = true
+      end;
+    else
       done = true
-    }
-  }
+    end;
+  end;
   reverse_ranked reversed
-};
+end;
 
-const rank_tool_search: [Text, I32, SearchRankInfos] -> SearchRankedEntries = (
+const rank_tool_search: (Text, I32, SearchRankInfos) -> SearchRankedEntries = (
   query: Text,
   limit: I32,
   search_infos: SearchRankInfos,
-) => {
+) => do
   let document_count = search_info_count search_infos;
-  if document_count == 0 || limit <= 0 {
-    let empty: SearchRankedEntries = `Nil ();
+  if document_count == 0 || limit <= 0 then
+    let empty: SearchRankedEntries = #Nil;
     return empty;
-  }
+  end;
 
   let current = search_infos;
   let total_document_words = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [search_info, tail] = node;
       let [entry, _] = search_info;
       let [search_text, _] = entry;
-      total_document_words = total_document_words + word_list_length(text_ascii_words search_text)
+      total_document_words = total_document_words + word_list_length(
+        text_ascii_words search_text
+      )
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   let average_document_length = total_document_words / document_count;
-  if average_document_length <= 0 { average_document_length = 1 }
+  if average_document_length <= 0 then
+    average_document_length = 1
+  end;
 
   let query_words = text_ascii_words query;
-  let ranked: SearchRankedEntries = `Nil ();
+  let ranked: SearchRankedEntries = #Nil;
   current = search_infos
   let position = 0;
   done = false
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [search_info, tail] = node;
       let [entry, _] = search_info;
       let result: SearchRankedEntry = [
@@ -259,14 +290,16 @@ const rank_tool_search: [Text, I32, SearchRankInfos] -> SearchRankedEntries = (
       ranked = insert_ranked(ranked, result)
       position = position + 1
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   take_ranked(limit, ranked)
-};
+end;
 
 return {
   .natural_log_positive_q10,

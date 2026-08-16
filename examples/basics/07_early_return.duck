@@ -1,9 +1,9 @@
-let choose = value => {
-  if value {
+let choose = value => do
+  if value then
     return 42;
-  }
+  end;
 
   0
-};
+end;
 
 choose 1

@@ -12,186 +12,191 @@ type AppServerGenerateTsOptions = CodexAppServerGenerateTsOptions
 type AppServerGenerateJsonOptions = CodexAppServerGenerateJsonOptions
 
 type AppServerGenerateTarget =
-  | `GenerateTypeScript Unit
-  | `GenerateJsonSchema Unit
-  | `GenerateInternalJsonSchema Unit
+  | #GenerateTypeScript
+  | #GenerateJsonSchema
+  | #GenerateInternalJsonSchema
 
 const parse_app_server_daemon: AppServerToolArgs -> AppServerToolCommandResult = (
-  args: AppServerToolArgs ) => {
-  if let `Cons node = args {
-    let [operation, remaining] = node;
-    if operation == "bootstrap" {
-      if let `Nil () = remaining {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonBootstrap false))
-      } else if let `Cons option_node = remaining {
-        let [option, tail] = option_node;
-        if option == "--remote-control" {
-          if let `Nil () = tail {
-            `Ok (`ManageAppServerDaemon (`AppServerDaemonBootstrap true))
-          } else {
-            `Err "app-server daemon bootstrap accepts only --remote-control"
-          }
-        } else {
-          `Err (text_append("unknown app-server daemon bootstrap option: ", option))
-        }
-      } else {
-        `Err "app-server daemon bootstrap arguments have an unknown shape"
-      }
-    } else if let `Nil () = remaining {
-      if operation == "start" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonStart ()))
-      } else if operation == "restart" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonRestart ()))
-      } else if operation == "enable-remote-control" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonEnableRemoteControl ()))
-      } else if operation == "disable-remote-control" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonDisableRemoteControl ()))
-      } else if operation == "stop" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonStop ()))
-      } else if operation == "version" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonVersion ()))
-      } else if operation == "pid-update-loop" {
-        `Ok (`ManageAppServerDaemon (`AppServerDaemonPidUpdateLoop ()))
-      } else {
-        `Err (text_append("unknown app-server daemon operation: ", operation))
-      }
-    } else {
-      `Err (text_append(text_append("app-server daemon ", operation), " does not accept arguments"))
-    }
-  } else {
-    `Err "app-server daemon requires an operation"
-  }
-};
+  args: AppServerToolArgs) => do
+    if let #Cons node = args then
+      let [operation, remaining] = node;
+      if operation == "bootstrap" then
+        if let #Nil = remaining then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonBootstrap false))
+        else let #Cons option_node = remaining then
+          let [option, tail] = option_node;
+          if option == "--remote-control" then
+            if let #Nil = tail then
+              #Ok (#ManageAppServerDaemon (#AppServerDaemonBootstrap true))
+            else
+              #Err "app-server daemon bootstrap accepts only --remote-control"
+            end;
+          else
+            #Err (text_append("unknown app-server daemon bootstrap option: ", option))
+          end;
+        else
+          #Err "app-server daemon bootstrap arguments have an unknown shape"
+        end;
+      else let #Nil = remaining then
+        if operation == "start" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonStart))
+        else operation == "restart" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonRestart))
+        else operation == "enable-remote-control" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonEnableRemoteControl))
+        else operation == "disable-remote-control" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonDisableRemoteControl))
+        else operation == "stop" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonStop))
+        else operation == "version" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonVersion))
+        else operation == "pid-update-loop" then
+          #Ok (#ManageAppServerDaemon (#AppServerDaemonPidUpdateLoop))
+        else
+          #Err (text_append("unknown app-server daemon operation: ", operation))
+        end;
+      else
+        #Err (
+          text_append(text_append("app-server daemon ", operation), " does not accept arguments")
+        )
+      end;
+    else
+      #Err "app-server daemon requires an operation"
+    end;
+  end;
 
-let rec scan_app_server_proxy_from: [AppServerToolArgs, AppServerToolTextOption] -> AppServerToolCommandResult = (
+let rec scan_app_server_proxy_from: (AppServerToolArgs, AppServerToolTextOption) -> AppServerToolCommandResult =
+  (
     args: AppServerToolArgs,
     socket_path: AppServerToolTextOption,
-  ) => {
-    if let `Cons node = args {
+  ) => do
+    if let #Cons node = args then
       let [argument, tail] = node;
-      if argument == "--sock" {
-        if let `Cons value_node = tail {
+      if argument == "--sock" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
-          scan_app_server_proxy_from(remaining, `Some value)
-        } else {
-          `Err "missing value for --sock"
-        }
-      } else {
-        `Err (text_append("unknown app-server proxy option: ", argument))
-      }
-    } else {
-      `Ok (`ProxyAppServer socket_path)
-    }
-  };
+          scan_app_server_proxy_from(remaining, #Some value)
+        else
+          #Err "missing value for --sock"
+        end;
+      else
+        #Err (text_append("unknown app-server proxy option: ", argument))
+      end;
+    else
+      #Ok (#ProxyAppServer socket_path)
+    end;
+  end;
 
 let parse_app_server_proxy: AppServerToolArgs -> AppServerToolCommandResult = (
-  args: AppServerToolArgs ) => {
-  scan_app_server_proxy_from(args, `None ())
-};
+  args: AppServerToolArgs) => do
+    scan_app_server_proxy_from(args, #None)
+  end;
 
-let rec scan_app_server_generate_from: [
+let rec scan_app_server_generate_from: (
   AppServerToolArgs,
   AppServerGenerateFacts,
   AppServerGenerateTarget,
-] -> AppServerGenerateFactsResult = (
+) -> AppServerGenerateFactsResult = (
   args: AppServerToolArgs,
   facts: AppServerGenerateFacts,
   target: AppServerGenerateTarget,
-) => {
-  if let `Cons node = args {
+) => do
+  if let #Cons node = args then
     let [argument, tail] = node;
-    if argument == "--out" || argument == "-o" {
-      if let `Cons value_node = tail {
+    if argument == "--out" || argument == "-o" then
+      if let #Cons value_node = tail then
         let [value, remaining] = value_node;
-        scan_app_server_generate_from(remaining, facts <& { .out_dir = `Some value }, target)
-      } else {
-        `Err (text_append("missing value for ", argument))
-      }
-    } else if argument == "--prettier" || argument == "-p" {
-      if let `GenerateTypeScript () = target {
-        if let `Cons value_node = tail {
+        scan_app_server_generate_from(remaining, facts <& { .out_dir = #Some value }, target)
+      else
+        #Err (text_append("missing value for ", argument))
+      end;
+    else argument == "--prettier" || argument == "-p" then
+      if let #GenerateTypeScript = target then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
-          scan_app_server_generate_from(remaining, facts <& { .prettier = `Some value }, target)
-        } else {
-          `Err (text_append("missing value for ", argument))
-        }
-      } else {
-        `Err "--prettier is only valid for app-server generate-ts"
-      }
-    } else if argument == "--experimental" {
-      if let `GenerateInternalJsonSchema () = target {
-        `Err "--experimental is not valid for app-server generate-internal-json-schema"
-      } else {
+          scan_app_server_generate_from(remaining, facts <& { .prettier = #Some value }, target)
+        else
+          #Err (text_append("missing value for ", argument))
+        end;
+      else
+        #Err "--prettier is only valid for app-server generate-ts"
+      end;
+    else argument == "--experimental" then
+      if let #GenerateInternalJsonSchema = target then
+        #Err "--experimental is not valid for app-server generate-internal-json-schema"
+      else
         scan_app_server_generate_from(tail, facts <& { .experimental = true }, target)
-      }
-    } else if text_starts_with(argument, "-") {
-      `Err (text_append("unknown app-server generation option: ", argument))
-    } else {
-      `Err "app-server generation commands do not accept positional arguments"
-    }
-  } else {
-    `Ok facts
-  }
-};
+      end;
+    else text_starts_with(argument, "-") then
+      #Err (text_append("unknown app-server generation option: ", argument))
+    else
+      #Err "app-server generation commands do not accept positional arguments"
+    end;
+  else
+    #Ok facts
+  end;
+end;
 
-let parse_app_server_generate: [AppServerGenerateTarget, AppServerToolArgs] -> AppServerToolCommandResult = (
+let parse_app_server_generate: (AppServerGenerateTarget, AppServerToolArgs) -> AppServerToolCommandResult =
+  (
     target: AppServerGenerateTarget,
     args: AppServerToolArgs,
-  ) => {
+  ) => do
     let initial: AppServerGenerateFacts = [
-      .out_dir = `None (),
-      .prettier = `None (),
+      .out_dir = #None,
+      .prettier = #None,
       .experimental = false,
     ];
-    let scanned: AppServerGenerateFactsResult = scan_app_server_generate_from(args, initial, target);
-    if let `Err message = scanned {
-      `Err message
-    } else if let `Ok facts = scanned {
-      if let `Some out_dir = facts.out_dir {
-        if let `GenerateTypeScript () = target {
+    let scanned: AppServerGenerateFactsResult =
+      scan_app_server_generate_from(args, initial, target);
+    if let #Err message = scanned then
+      #Err message
+    else let #Ok facts = scanned then
+      if let #Some out_dir = facts.out_dir then
+        if let #GenerateTypeScript = target then
           let options: AppServerGenerateTsOptions = [
             .out_dir = out_dir,
             .prettier = facts.prettier,
             .experimental = facts.experimental,
           ];
-          `Ok (`GenerateAppServerTs options);
-        } else if let `GenerateJsonSchema () = target {
+          #Ok (#GenerateAppServerTs options);
+        else let #GenerateJsonSchema = target then
           let options: AppServerGenerateJsonOptions = [
             .out_dir = out_dir,
             .experimental = facts.experimental,
           ];
-          `Ok (`GenerateAppServerJsonSchema options);
-        } else if let `GenerateInternalJsonSchema () = target {
-          `Ok (`GenerateAppServerInternalJsonSchema out_dir)
-        } else {
-          `Err "app-server generation target has an unknown shape"
-        }
-      } else {
-        `Err "app-server generation command requires --out"
-      }
-    } else {
-      `Err "app-server generation scanner returned an unknown result"
-    }
-  };
+          #Ok (#GenerateAppServerJsonSchema options);
+        else let #GenerateInternalJsonSchema = target then
+          #Ok (#GenerateAppServerInternalJsonSchema out_dir)
+        else
+          #Err "app-server generation target has an unknown shape"
+        end;
+      else
+        #Err "app-server generation command requires --out"
+      end;
+    else
+      #Err "app-server generation scanner returned an unknown result"
+    end;
+  end;
 
-let parse_app_server_tools: [Text, AppServerToolArgs] -> AppServerToolCommandResult = (
+let parse_app_server_tools: (Text, AppServerToolArgs) -> AppServerToolCommandResult = (
   command: Text,
   args: AppServerToolArgs,
-) => {
-  if command == "daemon" {
+) => do
+  if command == "daemon" then
     parse_app_server_daemon args
-  } else if command == "proxy" {
+  else command == "proxy" then
     parse_app_server_proxy args
-  } else if command == "generate-ts" {
-    parse_app_server_generate(`GenerateTypeScript (), args)
-  } else if command == "generate-json-schema" {
-    parse_app_server_generate(`GenerateJsonSchema (), args)
-  } else if command == "generate-internal-json-schema" {
-    parse_app_server_generate(`GenerateInternalJsonSchema (), args)
-  } else {
-    `Err (text_append("unknown app-server tool command: ", command))
-  }
-};
+  else command == "generate-ts" then
+    parse_app_server_generate(#GenerateTypeScript, args)
+  else command == "generate-json-schema" then
+    parse_app_server_generate(#GenerateJsonSchema, args)
+  else command == "generate-internal-json-schema" then
+    parse_app_server_generate(#GenerateInternalJsonSchema, args)
+  else
+    #Err (text_append("unknown app-server tool command: ", command))
+  end;
+end;
 
 return {
   .parse_app_server_daemon,

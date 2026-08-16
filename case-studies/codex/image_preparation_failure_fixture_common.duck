@@ -11,24 +11,24 @@ type FailureFixtureResultNode = ImageProcessingResultNode
 type FailureFixtureResults = ImageProcessingResults
 type FailureFixtureDetailOption = OutputImageDetailOption
 
-const single_image_processing_fixture_response: () -> FailureFixtureResponses = () => {
-  let detail: FailureFixtureDetailOption = `None ();
-  let contents: FailureFixtureContents = `Nil ();
+const single_image_processing_fixture_response: () -> FailureFixtureResponses = () => do
+  let detail: FailureFixtureDetailOption = #None;
+  let contents: FailureFixtureContents = #Nil;
   let content_node: FailureFixtureContentNode = [
-    `InputImage (["data:image/png;base64,AA==", detail]),
+    #InputImage (["data:image/png;base64,AA==", detail]),
     contents,
   ];
-  contents = `Cons content_node
-  let responses: FailureFixtureResponses = `Nil ();
-  let response_node: FailureFixtureResponseNode = [`Message (["user", false, contents]), responses];
-  `Cons response_node
-};
+  contents = #Cons content_node
+  let responses: FailureFixtureResponses = #Nil;
+  let response_node: FailureFixtureResponseNode = [#Message (["user", false, contents]), responses];
+  #Cons response_node
+end;
 
-const single_image_processing_fixture_result: [I32, Text] -> FailureFixtureResults = (
+const single_image_processing_fixture_result: (I32, Text) -> FailureFixtureResults = (
   status_code,
   image_url,
-) => {
-  let results: FailureFixtureResults = `ImageResultsNil ();
+) => do
+  let results: FailureFixtureResults = #ImageResultsNil;
   let result: FailureFixtureResult = [
     .status_code = status_code,
     .image_url = image_url,
@@ -36,8 +36,8 @@ const single_image_processing_fixture_result: [I32, Text] -> FailureFixtureResul
     .size = 0,
   ];
   let result_node: FailureFixtureResultNode = [result, results];
-  `ImageResultsCons result_node
-};
+  #ImageResultsCons result_node
+end;
 
 return {
   .single_image_processing_fixture_response,

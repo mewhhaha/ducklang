@@ -4,7 +4,7 @@ import { tokenize } from "./frontend/tokenize.ts";
 import { format_type_expr, parse_type_expr } from "./frontend/type_expr.ts";
 import { substitute_front_expr } from "./frontend/substitute.ts";
 import { fixed_array_length } from "./frontend/fixed_array_type.ts";
-import { integer_type_from_name, integer_val_type } from "./integer.ts";
+import { classify_abi_primitive } from "./abi_primitive.ts";
 
 export type AbiOwnership =
   | "scalar"
@@ -176,7 +176,10 @@ export function build_abi_manifest(
   }
 
   function resolve_named(name: string): AbiType {
-    reject_resume_abi_type(name);
+    const classification = classify_abi_primitive(name);
+    if (classification.tag === "unsupported") {
+      throw new Error(classification.message);
+    }
     materialize_applied_abi_type_value(name, values);
     const existing = types[name];
 
@@ -706,6 +709,15 @@ function collect_type_values(source: Source): Map<string, FrontExpr> {
 
   for (const stmt of source.statements) {
     if (stmt.tag === "bind" && stmt.kind === "const") {
+      if (
+        stmt.value.tag === "struct_update" &&
+        stmt.value.base.tag === "var" &&
+        stmt.value.base.name === stmt.name &&
+        values.has(stmt.name)
+      ) {
+        continue;
+      }
+
       values.set(stmt.name, stmt.value);
     }
   }
@@ -888,73 +900,10 @@ function primitive_abi_type_alias(
 }
 
 function primitive_abi_type_ref(name: string): AbiTypeRef | undefined {
-  reject_resume_abi_type(name);
-  const integer = integer_type_from_name(name);
-
-  if (integer) {
-    const type = integer_val_type(integer);
-
-    if (type === "i32") {
-      return { tag: "i32" };
-    }
-
-    if (type === "i64") {
-      return { tag: "i64" };
-    }
-
-    throw new Error(
-      "Gpufuck ABI cannot expose wide integer values directly: " + name,
-    );
+  const classification = classify_abi_primitive(name);
+  if (classification.tag === "unknown") return undefined;
+  if (classification.tag === "unsupported") {
+    throw new Error(classification.message);
   }
-
-  if (name === "F32x4") {
-    throw new Error("Gpufuck ABI cannot expose F32x4 values");
-  }
-
-  if (
-    name === "Bool" || name === "Char" || name === "Int" ||
-    name === "I32" || name === "U32"
-  ) {
-    return { tag: "i32" };
-  }
-
-  if (name === "I64") {
-    return { tag: "i64" };
-  }
-
-  if (name === "F32") {
-    return { tag: "f32" };
-  }
-
-  if (name === "F64") {
-    return { tag: "f64" };
-  }
-
-  if (name === "Unit") {
-    return { tag: "unit" };
-  }
-
-  if (name === "Text") {
-    return { tag: "text" };
-  }
-
-  if (name === "Bytes") {
-    return { tag: "bytes" };
-  }
-
-  if (name === "I32Slice") {
-    return { tag: "i32_slice" };
-  }
-
-  if (name === "TextSlice") {
-    return { tag: "text_slice" };
-  }
-
-  return undefined;
-}
-
-function reject_resume_abi_type(name: string): void {
-  if (name === "Resume") {
-    throw new Error("Gpufuck ABI cannot expose Resume values");
-  }
+  return { tag: classification.kind };
 }

@@ -9,16 +9,16 @@ declare Init {
   io: Io
 }
 
-let read_name: () -> <Io.read> Text = () => {
+let read_name: () -> <Io.read> Text = () => do
   name <- Io.read()
   name
-};
+end;
 
-let greet: () -> <Io.read :| Io.print> Text = () => {
+let greet: () -> <Io.read :| Io.print> Text = () => do
   name <- read_name();
   _ <- Io.print(&name)
   name
-};
+end;
 
 result <- greet();
 return { .result = result };

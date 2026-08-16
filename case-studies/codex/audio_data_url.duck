@@ -2,69 +2,70 @@ module () where
 
 const {} = import "./audio_types.duck" ();
 
-const ascii_lowercase = (byte: I32) => {
-  if byte >= 65 && byte <= 90 { byte + 32 } else { byte }
-};
+const ascii_lowercase = (byte: I32) => do
+  if byte >= 65 && byte <= 90 then byte + 32 else byte end;
+end;
 
-const parse_audio_data_url: Text -> AudioDataUrlResult = audio_url => {
+const parse_audio_data_url: Text -> AudioDataUrlResult = audio_url => do
   let status_code = 0;
   let failure_reason: Text = "";
   let failure_size = 0;
   let source_length = @len audio_url;
 
-  if source_length < 5 {
+  if source_length < 5 then
     status_code = 1
     failure_reason = "audio input must be a data URL"
-  } else {
+  else
     let prefix_matches = ascii_lowercase(@get(audio_url, 0)) == 100 && ascii_lowercase(
       @get(audio_url, 1)
-    ) == 97 && ascii_lowercase(@get(audio_url, 2)) == 116 && ascii_lowercase(@get(audio_url, 3)) == 97 && @get(
-      audio_url,
-      4,
-    ) == 58;
-    if !(prefix_matches) {
+    ) == 97 && ascii_lowercase(@get(audio_url, 2)) == 116 && ascii_lowercase(@get(audio_url, 3))
+      == 97 && @get(
+        audio_url,
+        4,
+      ) == 58;
+    if !(prefix_matches) then
       status_code = 1
       failure_reason = "audio input must be a data URL"
-    }
-  }
+    end;
+  end;
 
   let payload_separator = -1;
-  if status_code == 0 {
-    for index in 5..source_length {
-      if payload_separator < 0 && @get(audio_url, index) == 44 {
+  if status_code == 0 then
+    for index in 5..source_length do
+      if payload_separator < 0 && @get(audio_url, index) == 44 then
         payload_separator = index
-      }
-    }
-    if payload_separator < 0 {
+      end;
+    end
+    if payload_separator < 0 then
       status_code = 1
       failure_reason = "missing payload separator"
-    }
-  }
+    end;
+  end;
 
   let mime_end = -1;
   let mime: Text = "";
-  if status_code == 0 {
-    for index in 5..payload_separator {
-      if mime_end < 0 && @get(audio_url, index) == 59 {
+  if status_code == 0 then
+    for index in 5..payload_separator do
+      if mime_end < 0 && @get(audio_url, index) == 59 then
         mime_end = index
-      }
-    }
-    if mime_end < 0 {
+      end;
+    end
+    if mime_end < 0 then
       mime_end = payload_separator
-    }
+    end;
     mime = @slice(audio_url, 5, mime_end)
-    if mime == "" {
+    if mime == "" then
       status_code = 1
       failure_reason = "missing media type"
-    }
-  }
+    end;
+  end;
 
-  if status_code == 0 {
+  if status_code == 0 then
     let parameter_start = mime_end + 1;
     let has_base64_parameter = false;
 
-    for index in (mime_end + 1)..(payload_separator + 1) {
-      if index == payload_separator || @get(audio_url, index) == 59 {
+    for index in (mime_end + 1)..(payload_separator + 1) do
+      if index == payload_separator || @get(audio_url, index) == 59 then
         let parameter_matches = index - parameter_start == 6 && ascii_lowercase(
           @get(audio_url, parameter_start)
         ) == 98 && ascii_lowercase(@get(audio_url, parameter_start + 1)) == 97 && ascii_lowercase(
@@ -72,27 +73,27 @@ const parse_audio_data_url: Text -> AudioDataUrlResult = audio_url => {
         ) == 115 && ascii_lowercase(@get(audio_url, parameter_start + 3)) == 101 && ascii_lowercase(
           @get(audio_url, parameter_start + 4)
         ) == 54 && ascii_lowercase(@get(audio_url, parameter_start + 5)) == 52;
-        if parameter_matches {
+        if parameter_matches then
           has_base64_parameter = true
-        }
+        end;
         parameter_start = index + 1
-      }
-    }
+      end;
+    end
 
-    if !(has_base64_parameter) {
+    if !(has_base64_parameter) then
       status_code = 1
       failure_reason = "audio payload is not base64 encoded"
-    }
-  }
+    end;
+  end;
 
   let payload: Text = "";
-  if status_code == 0 {
+  if status_code == 0 then
     payload = @slice(audio_url, payload_separator + 1, source_length)
-    if @len payload > 69905068 {
+    if @len payload > 69905068 then
       status_code = 2
       failure_size = @len payload
-    }
-  }
+    end;
+  end;
 
   [
     .status_code = status_code,
@@ -101,6 +102,6 @@ const parse_audio_data_url: Text -> AudioDataUrlResult = audio_url => {
     .mime = mime,
     .payload = payload,
   ]
-};
+end;
 
 return { .parse_audio_data_url };

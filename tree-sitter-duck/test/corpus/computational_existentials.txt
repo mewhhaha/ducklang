@@ -1,0 +1,116 @@
+==================
+Computational existential package
+==================
+type make = (value: I32) -> some (witness: I32). { payload: I32 | payload = witness }
+let make = value => pack value, value + 0i32 as some (hidden: I32). { element: I32 | element = hidden };
+let package = make(1i32);
+open package as (witness, payload);
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_computational_existential_type
+              (prefix_some_keyword)
+              (lowercase_identifier)
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))
+              (prefix_refinement_type
+                (lowercase_identifier)
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (identifier)))))
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier))))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (computational_pack_expression
+          (prefix_pack_keyword)
+          (postfix_expression
+            (identifier))
+          (condition_expression
+            (condition_binary_expression
+              (condition_expression
+                (condition_postfix_expression
+                  (identifier)))
+              (operator_symbol)
+              (condition_expression
+                (condition_postfix_expression
+                  (number)))))
+          (prefix_computational_existential_type
+            (prefix_some_keyword)
+            (lowercase_identifier)
+            (type_reference
+              (type_union
+                (type_intersection
+                  (type_difference
+                    (identifier)))))
+            (prefix_refinement_type
+              (lowercase_identifier)
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (call_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (number)))))))
+  (computational_open_statement
+    (prefix_open_keyword)
+    (condition_expression
+      (condition_postfix_expression
+        (identifier)))
+    (identifier)
+    (identifier)))

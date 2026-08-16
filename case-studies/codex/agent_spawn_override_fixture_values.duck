@@ -3,51 +3,51 @@ module () where
 const {} = import "./agent_spawn_override_types.duck" ();
 const {} = import "./agent_types.duck" ();
 
-const fixture_override_efforts: [Text, Text] -> AgentSpawnOverrideEfforts = (first, second) => {
-  `Cons [first, `Cons [second, `Nil ()]]
-};
+const fixture_override_efforts: (Text, Text) -> AgentSpawnOverrideEfforts = (first, second) => do
+  #Cons [first, #Cons [second, #Nil]]
+end;
 
-const fixture_override_models: () -> AgentSpawnOverrideModels = () => {
-  `Cons [
+const fixture_override_models: () -> AgentSpawnOverrideModels = () => do
+  #Cons [
     [
       .name = "alpha",
       .v2_supported = true,
       .visible = true,
-      .default_reasoning_effort = `Some "high",
+      .default_reasoning_effort = #Some "high",
       .supported_reasoning_efforts = fixture_override_efforts("low", "high"),
     ],
-    `Cons [
+    #Cons [
       [
         .name = "legacy",
         .v2_supported = false,
         .visible = true,
-        .default_reasoning_effort = `None (),
-        .supported_reasoning_efforts = `Nil (),
+        .default_reasoning_effort = #None,
+        .supported_reasoning_efforts = #Nil,
       ],
-      `Cons [
+      #Cons [
         [
           .name = "hidden",
           .v2_supported = true,
           .visible = false,
-          .default_reasoning_effort = `Some "medium",
+          .default_reasoning_effort = #Some "medium",
           .supported_reasoning_efforts = fixture_override_efforts("medium", "medium"),
         ],
-        `Nil (),
+        #Nil,
       ],
     ],
   ]
-};
+end;
 
-const fixture_override_input: [AgentTextOption, AgentTextOption, AgentTextOption,
-  AgentTextOption] -> AgentSpawnOverrideInput = (
+const fixture_override_input: (AgentTextOption, AgentTextOption, AgentTextOption,
+  AgentTextOption) -> AgentSpawnOverrideInput = (
     requested_model,
     requested_effort,
     default_model,
     default_effort,
-  ) => {
+  ) => do
     [
       .parent_model = "parent",
-      .parent_reasoning_effort = `Some "medium",
+      .parent_reasoning_effort = #Some "medium",
       .parent_supported_reasoning_efforts = fixture_override_efforts("medium", "high"),
       .default_model = default_model,
       .default_reasoning_effort = default_effort,
@@ -55,6 +55,6 @@ const fixture_override_input: [AgentTextOption, AgentTextOption, AgentTextOption
       .requested_reasoning_effort = requested_effort,
       .available_models = fixture_override_models(),
     ]
-  };
+  end;
 
 return { .fixture_override_input };

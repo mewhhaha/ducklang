@@ -18,12 +18,15 @@ fields = json_object_prepend("path", json_string "", fields)
 fields = json_object_prepend("history", json_array(json_array_empty()), fields)
 fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let decoded: FixtureResult = decode_thread_resume(json_object fields);
-let score = if let `MethodOk method = decoded {
-  if let `ThreadResume params = method {
-    let history_valid = if let `Some value = params.history { if let `Array _ = value { true } else { false } } else { false };
-    let path_absent = if let `None () = params.path { true } else { false };
-    if params.thread_id == "thread-1" && history_valid && path_absent { 1 } else { 0 }
-  } else { 0 }
-} else { 0 };
+let score = if let #MethodOk method = decoded then
+  if let #ThreadResume params = method then
+    let history_valid =
+      if let #Some value = params.history then
+        if let #Array _ = value then true else false end;
+      else false end;
+    let path_absent = if let #None = params.path then true else false end;
+    if params.thread_id == "thread-1" && history_valid && path_absent then 1 else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

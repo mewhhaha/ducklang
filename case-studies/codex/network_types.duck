@@ -3,35 +3,35 @@ module () where
 type NetworkTextOption = Option Text
 
 type NetworkApprovalProtocol =
-  | `Http Unit
-  | `Https Unit
-  | `Socks5Tcp Unit
-  | `Socks5Udp Unit
+  | #Http
+  | #Https
+  | #Socks5Tcp
+  | #Socks5Udp
 
 type NetworkApprovalMode =
-  | `Immediate Unit
-  | `Deferred Unit
+  | #Immediate
+  | #Deferred
 
 type NetworkPermissionProfile =
-  | `Managed Unit
-  | `Disabled Unit
-  | `External Unit
+  | #Managed
+  | #Disabled
+  | #External
 
 type NetworkApprovalPolicy =
-  | `UnlessTrusted Unit
-  | `OnRequest Unit
-  | `Granular Unit
-  | `Never Unit
+  | #UnlessTrusted
+  | #OnRequest
+  | #Granular
+  | #Never
 
 type NetworkHostApprovalDecision =
-  | `AllowOnce Unit
-  | `AllowForSession Unit
-  | `Deny Unit
+  | #AllowOnce
+  | #AllowForSession
+  | #Deny
 
 type NetworkApprovalOutcome =
-  | `NoOutcome Unit
-  | `DeniedByUser Unit
-  | `DeniedByPolicy Text
+  | #NoOutcome
+  | #DeniedByUser
+  | #DeniedByPolicy Text
 
 type NetworkHostKey = [Text, Text, NetworkApprovalProtocol, I32]
 type NetworkHostKeys = List NetworkHostKey
@@ -44,29 +44,29 @@ type NetworkApprovalState = [
   NetworkApprovalCalls,
   NetworkHostKeys,
   NetworkHostKeys,
-  NetworkHostKeys ]
+  NetworkHostKeys]
 
 type NetworkRequest = [Text, NetworkApprovalProtocol, I32, NetworkTextOption, NetworkTextOption]
 
 type NetworkRequestAttribution =
-  | `Owner NetworkApprovalCall
-  | `Environment Text
-  | `Missing Unit
-  | `Invalid Unit
-  | `Ambiguous Unit
+  | #Owner NetworkApprovalCall
+  | #Environment Text
+  | #Missing
+  | #Invalid
+  | #Ambiguous
 
 type NetworkApprovalPrompt = [NetworkHostKey, NetworkTextOption, Text, Text, Bool]
 type NetworkPolicyDecision =
-  | `Allow Unit
-  | `Prompt NetworkApprovalPrompt
-  | `Await NetworkApprovalPrompt
-  | `Reject Text
+  | #Allow
+  | #Prompt NetworkApprovalPrompt
+  | #Await NetworkApprovalPrompt
+  | #Reject Text
 
 type NetworkPolicyResult = [NetworkApprovalState, NetworkPolicyDecision]
 
 type NetworkFinishOutcome =
-  | `Finished Unit
-  | `Rejected Text
+  | #Finished
+  | #Rejected Text
 
 type NetworkFinishResult = [NetworkApprovalState, NetworkFinishOutcome]
 

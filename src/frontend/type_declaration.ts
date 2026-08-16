@@ -396,7 +396,11 @@ function packed_type_value(declaration: TypeDeclaration): FrontExpr {
     name: "pack",
     value: {
       tag: "lam" as const,
-      pattern: { tag: "product" as const, entries: pattern_entries },
+      pattern: {
+        tag: "product" as const,
+        entries: pattern_entries,
+        value_pack: true,
+      },
       params,
       body: packed_value,
     },
@@ -499,6 +503,7 @@ function packed_type_value(declaration: TypeDeclaration): FrontExpr {
               },
             },
           ],
+          value_pack: true,
         },
         params: [
           {
@@ -535,6 +540,7 @@ function compiler_binary_expr(
   const arg: FrontExpr = {
     tag: "product",
     entries: [{ value: left }, { value: right }],
+    value_pack: true,
   };
   return {
     tag: "app",

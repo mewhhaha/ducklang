@@ -14,451 +14,453 @@ type HooksConfiguredHandlers = HookConfiguredHandlers
 const texts = comptime list Text;
 const handlers = comptime list HooksConfiguredHandler;
 
-const hook_event_label = (event: HooksEvent) => {
-  if let `PreToolUse () = event {
+const hook_event_label = (event: HooksEvent) => do
+  if let #PreToolUse = event then
     "PreToolUse"
-  } else if let `PermissionRequest () = event {
+  else let #PermissionRequest = event then
     "PermissionRequest"
-  } else if let `PostToolUse () = event {
+  else let #PostToolUse = event then
     "PostToolUse"
-  } else if let `PreCompact () = event {
+  else let #PreCompact = event then
     "PreCompact"
-  } else if let `PostCompact () = event {
+  else let #PostCompact = event then
     "PostCompact"
-  } else if let `SessionStart () = event {
+  else let #SessionStart = event then
     "SessionStart"
-  } else if let `SessionEnd () = event {
+  else let #SessionEnd = event then
     "SessionEnd"
-  } else if let `UserPromptSubmit () = event {
+  else let #UserPromptSubmit = event then
     "UserPromptSubmit"
-  } else if let `SubagentStart () = event {
+  else let #SubagentStart = event then
     "SubagentStart"
-  } else if let `SubagentStop () = event {
+  else let #SubagentStop = event then
     "SubagentStop"
-  } else {
+  else
     "Stop"
-  }
-};
+  end;
+end;
 
-const event_uses_matcher = (event: HooksEvent) => {
-  if let `UserPromptSubmit () = event {
+const event_uses_matcher = (event: HooksEvent) => do
+  if let #UserPromptSubmit = event then
     false
-  } else if let `Stop () = event {
+  else let #Stop = event then
     false
-  } else {
+  else
     true
-  }
-};
+  end;
+end;
 
-const exact_matcher_pattern = (pattern: Text) => {
+const exact_matcher_pattern = (pattern: Text) => do
   let exact = true;
 
-  for byte in pattern {
-    if text_byte_is_ascii_alphanumeric byte || byte == 95 || byte == 124 {
+  for byte in pattern do
+    if text_byte_is_ascii_alphanumeric byte || byte == 95 || byte == 124 then
       ()
-    } else {
+    else
       exact = false
-    }
-  }
+    end;
+  end
 
   exact
-};
+end;
 
-let rec split_exact_matcher: [Text, I32, HooksTexts] -> HooksTexts = (
+let rec split_exact_matcher: (Text, I32, HooksTexts) -> HooksTexts = (
   pattern: Text,
   start: I32,
   reversed: HooksTexts,
-) => {
+) => do
   let separator = -1;
 
-  if start < text_length pattern {
-    for index in start..text_length pattern {
-      if separator < 0 && text_get [pattern, index] == 124 {
+  if start < text_length pattern then
+    for index in start..text_length pattern do
+      if separator < 0 && text_get (pattern, index) == 124 then
         separator = index
-      }
-    }
-  }
+      end;
+    end
+  end;
 
-  if separator < 0 {
-    texts.reverse(texts.prepend(text_slice [pattern, start, text_length pattern], reversed))
-  } else {
+  if separator < 0 then
+    texts.reverse(texts.prepend(text_slice (pattern, start, text_length pattern), reversed))
+  else
     split_exact_matcher(
       pattern,
       separator + 1,
-      texts.prepend(text_slice [pattern, start, separator], reversed),
+      texts.prepend(text_slice (pattern, start, separator), reversed),
     )
-  }
-};
+  end;
+end;
 
-const basic_regex_validation_error = (pattern: Text) => {
+const basic_regex_validation_error = (pattern: Text) => do
   let index = 0;
   let in_class = false;
   let class_has_member = false;
   let atom_available = false;
-  let error: HooksTextOption = `None ();
+  let error: HooksTextOption = #None;
 
-  loop {
-    if index >= text_length pattern {
+  loop do
+    if index >= text_length pattern then
       break;
-    }
+    end;
 
-    let byte = text_get [pattern, index];
+    let byte = text_get (pattern, index);
 
-    if in_class {
-      if byte == 93 {
-        if class_has_member {
+    if in_class then
+      if byte == 93 then
+        if class_has_member then
           in_class = false
           atom_available = true
-        } else {
-          error = `Some "empty character class in hook matcher"
+        else
+          error = #Some "empty character class in hook matcher"
           break;
-        }
-      } else if byte == 92 {
-        if index + 1 >= text_length pattern {
-          error = `Some "unterminated escape in hook matcher character class"
+        end;
+      else byte == 92 then
+        if index + 1 >= text_length pattern then
+          error = #Some "unterminated escape in hook matcher character class"
           break;
-        }
+        end;
 
         index = index + 1
         class_has_member = true
-      } else {
+      else
         class_has_member = true
-      }
-    } else if byte == 92 {
-      if index + 1 >= text_length pattern {
-        error = `Some "unterminated escape in hook matcher"
+      end;
+    else byte == 92 then
+      if index + 1 >= text_length pattern then
+        error = #Some "unterminated escape in hook matcher"
         break;
-      }
+      end;
 
       index = index + 1
       atom_available = true
-    } else if byte == 91 {
+    else byte == 91 then
       in_class = true
       class_has_member = false
       atom_available = false
-    } else if byte == 40 || byte == 41 || byte == 123 || byte == 125 {
-      error = `Some "hook matcher uses a regex construct that is not supported by the source runtime"
+    else byte == 40 || byte == 41 || byte == 123 || byte == 125 then
+      error = #Some "hook matcher uses a regex construct that is not supported by the source runtime"
       break;
-    } else if byte == 42 || byte == 43 || byte == 63 {
-      if atom_available {
+    else byte == 42 || byte == 43 || byte == 63 then
+      if atom_available then
         atom_available = false
-      } else {
-        error = `Some "hook matcher quantifier has no preceding atom"
+      else
+        error = #Some "hook matcher quantifier has no preceding atom"
         break;
-      }
-    } else if byte == 124 {
+      end;
+    else byte == 124 then
       atom_available = false
-    } else if byte == 94 || byte == 36 {
+    else byte == 94 || byte == 36 then
       atom_available = false
-    } else {
+    else
       atom_available = true
-    }
+    end;
 
     index = index + 1
-  }
+  end;
 
-  if let `Some message = error {
-    `Some message
-  } else if in_class {
-    `Some "unterminated character class in hook matcher"
-  } else {
-    `None ()
-  }
-};
+  if let #Some message = error then
+    #Some message
+  else in_class then
+    #Some "unterminated character class in hook matcher"
+  else
+    #None
+  end;
+end;
 
-let parse_hook_matcher = (event: HooksEvent, configured: HooksTextOption) => {
-  if event_uses_matcher event {
-    if let `Some pattern = configured {
-      if pattern == "" || pattern == "*" {
-        `Ok (`MatchAll ())
-      } else if exact_matcher_pattern pattern {
-        `Ok (`Exact (split_exact_matcher(pattern, 0, texts.empty())))
-      } else if let `Some message = basic_regex_validation_error pattern {
-        `Err message
-      } else {
-        `Ok (`Regex pattern)
-      }
-    } else {
-      `Ok (`MatchAll ())
-    }
-  } else {
-    `Ok (`MatchAll ())
-  }
-};
+let parse_hook_matcher = (event: HooksEvent, configured: HooksTextOption) => do
+  if event_uses_matcher event then
+    if let #Some pattern = configured then
+      if pattern == "" || pattern == "*" then
+        #Ok (#MatchAll)
+      else exact_matcher_pattern pattern then
+        #Ok (#Exact (split_exact_matcher(pattern, 0, texts.empty())))
+      else let #Some message = basic_regex_validation_error pattern then
+        #Err message
+      else
+        #Ok (#Regex pattern)
+      end;
+    else
+      #Ok (#MatchAll)
+    end;
+  else
+    #Ok (#MatchAll)
+  end;
+end;
 
-let rec class_end_from: [Text, I32] -> I32 = (pattern: Text, index: I32) => {
-  if index >= text_length pattern {
-    -1
-  } else if text_get [pattern, index] == 92 {
+let rec class_end_from: (Text, I32) -> I32 = (pattern: Text, index: I32) => do
+  if index >= text_length pattern then -1
+  else text_get (pattern, index) == 92 then
     class_end_from(pattern, index + 2)
-  } else if text_get [pattern, index] == 93 {
+  else text_get (pattern, index) == 93 then
     index
-  } else {
+  else
     class_end_from(pattern, index + 1)
-  }
-};
+  end;
+end;
 
 const class_end = (pattern: Text, start: I32) => class_end_from(pattern, start + 1);
 
-const class_atom_value = (pattern: Text, index: I32) => {
-  if text_get [pattern, index] == 92 { text_get [pattern, index + 1] } else { text_get [
+const class_atom_value = (pattern: Text, index: I32) => do
+  if text_get (pattern, index) == 92 then text_get (pattern, index + 1) else text_get (
     pattern,
     index,
-  ] }
-};
+  ) end;
+end;
 
-const class_atom_next = (pattern: Text, index: I32) => {
-  if text_get [pattern, index] == 92 { index + 2 } else { index + 1 }
-};
+const class_atom_next = (pattern: Text, index: I32) => do
+  if text_get (pattern, index) == 92 then index + 2 else index + 1 end;
+end;
 
-let rec class_content_matches: [Text, I32, I32, I32] -> Bool = (
+let rec class_content_matches: (Text, I32, I32, I32) -> Bool = (
   pattern: Text,
   index: I32,
-  end: I32,
+  finish: I32,
   byte: I32,
-) => {
-  if index >= end {
+) => do
+  if index >= finish then
     false
-  } else {
+  else
     let first = class_atom_value(pattern, index);
     let next = class_atom_next(pattern, index);
 
-    if next + 1 < end && text_get [pattern, next] == 45 {
+    if next + 1 < finish && text_get (pattern, next) == 45 then
       let last = class_atom_value(pattern, next + 1);
 
-      if byte >= first && byte <= last {
+      if byte >= first && byte <= last then
         true
-      } else {
-        class_content_matches(pattern, class_atom_next(pattern, next + 1), end, byte)
-      }
-    } else if byte == first {
+      else
+        class_content_matches(pattern, class_atom_next(pattern, next + 1), finish, byte)
+      end;
+    else byte == first then
       true
-    } else {
-      class_content_matches(pattern, next, end, byte)
-    }
-  }
-};
+    else
+      class_content_matches(pattern, next, finish, byte)
+    end;
+  end;
+end;
 
-const class_matches = (pattern: Text, start: I32, byte: I32) => {
-  let end = class_end(pattern, start);
+const class_matches = (pattern: Text, start: I32, byte: I32) => do
+  let class_finish = class_end(pattern, start);
   let content_start = start + 1;
 
-  if content_start < end && text_get [pattern, content_start] == 94 {
-    if class_content_matches(pattern, content_start + 1, end, byte) { false } else { true }
-  } else {
-    class_content_matches(pattern, content_start, end, byte)
-  }
-};
+  if content_start < class_finish && text_get (pattern, content_start) == 94 then
+    if class_content_matches(pattern, content_start
+      + 1, class_finish, byte) then false else true end;
+  else
+    class_content_matches(pattern, content_start, class_finish, byte)
+  end;
+end;
 
-const regex_atom_end = (pattern: Text, start: I32) => {
-  let byte = text_get [pattern, start];
+const regex_atom_end = (pattern: Text, start: I32) => do
+  let byte = text_get (pattern, start);
 
-  if byte == 92 {
+  if byte == 92 then
     start + 2
-  } else if byte == 91 {
+  else byte == 91 then
     class_end(pattern, start) + 1
-  } else {
+  else
     start + 1
-  }
-};
+  end;
+end;
 
-const regex_atom_matches = (pattern: Text, start: I32, byte: I32) => {
-  let pattern_byte = text_get [pattern, start];
+const regex_atom_matches = (pattern: Text, start: I32, byte: I32) => do
+  let pattern_byte = text_get (pattern, start);
 
-  if pattern_byte == 46 {
+  if pattern_byte == 46 then
     true
-  } else if pattern_byte == 92 {
-    text_get [pattern, start + 1] == byte
-  } else if pattern_byte == 91 {
+  else pattern_byte == 92 then
+    text_get (pattern, start + 1) == byte
+  else pattern_byte == 91 then
     class_matches(pattern, start, byte)
-  } else {
+  else
     pattern_byte == byte
-  }
-};
+  end;
+end;
 
-let rec regex_match_here: [Text, I32, Text, I32] -> Bool = (
+let rec regex_match_here: (Text, I32, Text, I32) -> Bool = (
   pattern: Text,
   pattern_index: I32,
   input: Text,
   input_index: I32,
-) => {
-  if pattern_index >= text_length pattern {
+) => do
+  if pattern_index >= text_length pattern then
     true
-  } else if text_get [pattern, pattern_index] == 36 && pattern_index + 1 == text_length pattern {
+  else text_get (pattern, pattern_index) == 36 && pattern_index + 1 == text_length pattern then
     input_index == text_length input
-  } else if text_get [pattern, pattern_index] == 94 {
+  else text_get (pattern, pattern_index) == 94 then
     regex_match_here(pattern, pattern_index + 1, input, input_index)
-  } else {
+  else
     let atom_end = regex_atom_end(pattern, pattern_index);
-    let quantifier = if atom_end < text_length pattern { text_get [pattern, atom_end] } else { 0 };
-    let atom_matches = if input_index < text_length input { regex_atom_matches(
+    let quantifier = if atom_end < text_length pattern then text_get (pattern, atom_end) else 0 end;
+    let atom_matches = if input_index < text_length input then regex_atom_matches(
       pattern,
       pattern_index,
-      text_get [input, input_index],
-    ) } else { false };
+      text_get (input, input_index),
+    ) else false end;
 
-    if quantifier == 42 {
-      if regex_match_here(pattern, atom_end + 1, input, input_index) {
+    if quantifier == 42 then
+      if regex_match_here(pattern, atom_end + 1, input, input_index) then
         true
-      } else if atom_matches {
+      else atom_matches then
         regex_match_here(pattern, pattern_index, input, input_index + 1)
-      } else {
+      else
         false
-      }
-    } else if quantifier == 43 {
-      if atom_matches {
-        if regex_match_here(pattern, atom_end + 1, input, input_index + 1) {
+      end;
+    else quantifier == 43 then
+      if atom_matches then
+        if regex_match_here(pattern, atom_end + 1, input, input_index + 1) then
           true
-        } else {
+        else
           regex_match_here(pattern, pattern_index, input, input_index + 1)
-        }
-      } else {
+        end;
+      else
         false
-      }
-    } else if quantifier == 63 {
-      if regex_match_here(pattern, atom_end + 1, input, input_index) {
+      end;
+    else quantifier == 63 then
+      if regex_match_here(pattern, atom_end + 1, input, input_index) then
         true
-      } else if atom_matches {
+      else atom_matches then
         regex_match_here(pattern, atom_end + 1, input, input_index + 1)
-      } else {
+      else
         false
-      }
-    } else if atom_matches {
+      end;
+    else atom_matches then
       regex_match_here(pattern, atom_end, input, input_index + 1)
-    } else {
+    else
       false
-    }
-  }
-};
+    end;
+  end;
+end;
 
-let rec regex_branch_matches: [Text, Text, I32] -> Bool = (pattern: Text, input: Text, start: I32) => {
-    if regex_match_here(pattern, 0, input, start) {
+let rec regex_branch_matches: (Text, Text, I32) -> Bool =
+  (pattern: Text, input: Text, start: I32) => do
+    if regex_match_here(pattern, 0, input, start) then
       true
-    } else if text_length pattern > 0 && text_get [pattern, 0] == 94 {
+    else text_length pattern > 0 && text_get (pattern, 0) == 94 then
       false
-    } else if start < text_length input {
+    else start < text_length input then
       regex_branch_matches(pattern, input, start + 1)
-    } else {
+    else
       false
-    }
-  };
+    end;
+  end;
 
-let rec regex_alternatives_match: [Text, Text, I32, I32, Bool] -> Bool = (
+let rec regex_alternatives_match: (Text, Text, I32, I32, Bool) -> Bool = (
   pattern: Text,
   input: Text,
   start: I32,
   index: I32,
   in_class: Bool,
-) => {
-  if index >= text_length pattern {
-    regex_branch_matches(text_slice [pattern, start, text_length pattern], input, 0)
-  } else {
-    let byte = text_get [pattern, index];
+) => do
+  if index >= text_length pattern then
+    regex_branch_matches(text_slice (pattern, start, text_length pattern), input, 0)
+  else
+    let byte = text_get (pattern, index);
 
-    if byte == 92 {
+    if byte == 92 then
       regex_alternatives_match(pattern, input, start, index + 2, in_class)
-    } else if byte == 91 {
+    else byte == 91 then
       regex_alternatives_match(pattern, input, start, index + 1, true)
-    } else if byte == 93 {
+    else byte == 93 then
       regex_alternatives_match(pattern, input, start, index + 1, false)
-    } else if byte == 124 {
-      if in_class {
+    else byte == 124 then
+      if in_class then
         regex_alternatives_match(pattern, input, start, index + 1, true)
-      } else if regex_branch_matches(text_slice [pattern, start, index], input, 0) {
+      else regex_branch_matches(text_slice (pattern, start, index), input, 0) then
         true
-      } else {
+      else
         regex_alternatives_match(pattern, input, index + 1, index + 1, false)
-      }
-    } else {
+      end;
+    else
       regex_alternatives_match(pattern, input, start, index + 1, in_class)
-    }
-  }
-};
+    end;
+  end;
+end;
 
-let rec exact_alternatives_match: [HooksTexts, Text] -> Bool = (
+let rec exact_alternatives_match: (HooksTexts, Text) -> Bool = (
   alternatives: HooksTexts,
   input: Text,
-) => {
-  if let `Cons node = alternatives {
+) => do
+  if let #Cons node = alternatives then
     let [candidate, tail] = node;
 
-    if candidate == input { true } else { exact_alternatives_match(tail, input) }
-  } else {
+    if candidate == input then true else exact_alternatives_match(tail, input) end;
+  else
     false
-  }
-};
+  end;
+end;
 
-let hook_matcher_matches = (matcher: HooksMatcher, input: Text) => {
-  if let `MatchAll () = matcher {
+let hook_matcher_matches = (matcher: HooksMatcher, input: Text) => do
+  if let #MatchAll = matcher then
     true
-  } else if let `Exact alternatives = matcher {
+  else let #Exact alternatives = matcher then
     exact_alternatives_match(alternatives, input)
-  } else if let `Regex pattern = matcher {
+  else let #Regex pattern = matcher then
     regex_alternatives_match(pattern, input, 0, 0, false)
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-let rec hook_matcher_matches_inputs: [HooksMatcher, HooksTexts] -> Bool = (
+let rec hook_matcher_matches_inputs: (HooksMatcher, HooksTexts) -> Bool = (
   matcher: HooksMatcher,
   inputs: HooksTexts,
-) => {
-  if let `MatchAll () = matcher {
+) => do
+  if let #MatchAll = matcher then
     true
-  } else if let `Cons node = inputs {
+  else let #Cons node = inputs then
     let [input, tail] = node;
 
-    if hook_matcher_matches(matcher, input) {
+    if hook_matcher_matches(matcher, input) then
       true
-    } else {
+    else
       hook_matcher_matches_inputs(matcher, tail)
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const hook_events_equal = (left: HooksEvent, right: HooksEvent) => hook_event_label left == hook_event_label right;
+const hook_events_equal =
+  (left: HooksEvent, right: HooksEvent) => hook_event_label left == hook_event_label right;
 
-let rec select_hook_handlers_reversed: [
+let rec select_hook_handlers_reversed: (
   HooksConfiguredHandlers,
   HooksEvent,
   HooksTexts,
   HooksConfiguredHandlers,
-] -> HooksConfiguredHandlers = (
+) -> HooksConfiguredHandlers = (
   available: HooksConfiguredHandlers,
   event: HooksEvent,
   matcher_inputs: HooksTexts,
   reversed: HooksConfiguredHandlers,
-) => {
-  if let `Cons node = available {
+) => do
+  if let #Cons node = available then
     let [configured_handler, tail] = node;
     let [handler_event, matcher, _, _, _, _, _, _] = configured_handler;
     let selected = false;
 
-    if hook_events_equal(handler_event, event) {
-      if event_uses_matcher event {
+    if hook_events_equal(handler_event, event) then
+      if event_uses_matcher event then
         selected = hook_matcher_matches_inputs(matcher, matcher_inputs)
-      } else {
+      else
         selected = true
-      }
-    }
+      end;
+    end;
 
-    let next = if selected { handlers.prepend(configured_handler, reversed) } else { reversed };
+    let next = if selected then handlers.prepend(configured_handler, reversed) else reversed end;
     select_hook_handlers_reversed(tail, event, matcher_inputs, next)
-  } else {
+  else
     handlers.reverse reversed
-  }
-};
+  end;
+end;
 
 let select_hook_handlers = (
   available: HooksConfiguredHandlers,
   event: HooksEvent,
   matcher_inputs: HooksTexts,
-) => {
+) => do
   select_hook_handlers_reversed(available, event, matcher_inputs, handlers.empty())
-};
+end;
 
 return {
   .hook_event_label,

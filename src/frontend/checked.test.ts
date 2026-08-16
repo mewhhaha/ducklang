@@ -1,5 +1,12 @@
 import { assert_equals } from "../assert.ts";
-import { all, diagnostics_of, fail, ok, ok_unit } from "./checked.ts";
+import {
+  all,
+  checked_value,
+  diagnostics_of,
+  fail,
+  ok,
+  ok_unit,
+} from "./checked.ts";
 import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
 
 function diagnostic(code: "DUCK2301" | "DUCK2302"): SourceDiagnostic {
@@ -35,4 +42,9 @@ Deno.test("checked keeps every diagnostic from one failing check", () => {
     "DUCK2301",
     "DUCK2302",
   ]);
+});
+
+Deno.test("checked values are available only for successful verdicts", () => {
+  assert_equals(checked_value(ok(42)), 42);
+  assert_equals(checked_value(fail(diagnostic("DUCK2301"))), undefined);
 });

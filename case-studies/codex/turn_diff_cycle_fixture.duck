@@ -14,47 +14,54 @@ type FixtureDelta = TurnDiffDelta
 type FixtureDeltas = List FixtureDelta
 type FixtureDeltaNode = ListNode FixtureDelta
 
-const verify_turn_diff_cycle_fixture: () -> I32 = () => {
-  let none: FixtureTextOption = `None ();
+const verify_turn_diff_cycle_fixture: () -> I32 = () => do
+  let none: FixtureTextOption = #None;
   let deletion: FixtureDelete = [.content = "before\n"];
-  let deletion_file_mutation: FixtureFileMutation = `TurnDiffDelete deletion;
-  let deletion_mutation: FixtureMutation = [.path = "cycle.txt", .mutation = deletion_file_mutation];
+  let deletion_file_mutation: FixtureFileMutation = #TurnDiffDelete deletion;
+  let deletion_mutation: FixtureMutation =
+    [.path = "cycle.txt", .mutation = deletion_file_mutation];
 
   let addition: FixtureAdd = [.content = "after\n", .overwritten_content = none];
-  let addition_file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
-  let addition_mutation: FixtureMutation = [.path = "cycle.txt", .mutation = addition_file_mutation];
+  let addition_file_mutation: FixtureFileMutation = #TurnDiffAdd addition;
+  let addition_mutation: FixtureMutation =
+    [.path = "cycle.txt", .mutation = addition_file_mutation];
 
-  let deltas: FixtureDeltas = `Nil ();
+  let deltas: FixtureDeltas = #Nil;
   let addition_delta = turn_diff_fixture_exact_delta addition_mutation;
   let addition_node: FixtureDeltaNode = [addition_delta, deltas];
-  deltas = `Cons addition_node
+  deltas = #Cons addition_node
   let deletion_delta = turn_diff_fixture_exact_delta deletion_mutation;
   let deletion_node: FixtureDeltaNode = [deletion_delta, deltas];
-  deltas = `Cons deletion_node
+  deltas = #Cons deletion_node
 
   let state = empty_turn_diff();
-  loop {
-    if let `Cons node = deltas {
+  loop do
+    if let #Cons node = deltas then
       let [delta, tail] = node;
       state = track_turn_diff_delta(state, "", delta)
       deltas = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   let score = 0;
   let changes = turn_diff_net_changes state;
-  if let `Cons node = changes {
+  if let #Cons node = changes then
     let [change, tail] = node;
-    if let `TurnDiffUpdated updated = change {
-      if updated.path.path == "cycle.txt" && updated.old_content == "before\n" && updated.new_content == "after\n" {
-        if let `Nil () = tail { score = score + 1 }
-      }
-    }
-  }
-  if state.next_revision == 2 { score = score + 10 }
+    if let #TurnDiffUpdated updated = change then
+      if updated.path.path == "cycle.txt" && updated.old_content == "before\n"
+        && updated.new_content == "after\n" then
+          if let #Nil = tail then
+            score = score + 1
+          end;
+        end;
+    end;
+  end;
+  if state.next_revision == 2 then
+    score = score + 10
+  end;
   score
-};
+end;
 
 return { .verify_turn_diff_cycle_fixture };

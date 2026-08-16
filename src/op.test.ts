@@ -5,6 +5,7 @@ import {
   numeric_builtin_name,
   numeric_builtin_prim,
   Prim,
+  primitive_trap_conditions,
   specialize_prim_for_operands,
 } from "./op.ts";
 import { Callable, Format } from "./trait.ts";
@@ -71,6 +72,18 @@ Deno.test("Prim.type returns primitive function signatures", () => {
     args: [],
     result: "i32",
   });
+});
+
+Deno.test("primitive metadata declares integer division traps", () => {
+  assert_equals(
+    primitive_trap_conditions("i32.div_s"),
+    ["nonzero_divisor", "signed_division_overflow"],
+  );
+  assert_equals(
+    primitive_trap_conditions("i64.rem_u"),
+    ["nonzero_divisor"],
+  );
+  assert_equals(primitive_trap_conditions("f32.div"), []);
 });
 
 Deno.test("Prim specializes parse-time defaults from operand types", () => {

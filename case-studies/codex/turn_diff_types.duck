@@ -47,9 +47,9 @@ type TurnDiffUpdate = struct {
 }
 
 type TurnDiffFileMutation =
-  | `TurnDiffAdd TurnDiffAdd
-  | `TurnDiffDelete TurnDiffDelete
-  | `TurnDiffUpdate TurnDiffUpdate
+  | #TurnDiffAdd TurnDiffAdd
+  | #TurnDiffDelete TurnDiffDelete
+  | #TurnDiffUpdate TurnDiffUpdate
 
 type TurnDiffMutation = struct {
   .path = Text,
@@ -89,10 +89,10 @@ type TurnDiffMoved = struct {
 }
 
 type TurnDiffNetChange =
-  | `TurnDiffAdded TurnDiffAdded
-  | `TurnDiffDeleted TurnDiffDeleted
-  | `TurnDiffUpdated TurnDiffUpdated
-  | `TurnDiffMoved TurnDiffMoved
+  | #TurnDiffAdded TurnDiffAdded
+  | #TurnDiffDeleted TurnDiffDeleted
+  | #TurnDiffUpdated TurnDiffUpdated
+  | #TurnDiffMoved TurnDiffMoved
 
 type TurnDiffNetChanges = List TurnDiffNetChange
 

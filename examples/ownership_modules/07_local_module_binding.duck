@@ -1,6 +1,6 @@
-module adder = capabilities => {
+module adder = capabilities => do
   [.run = capabilities.base + capabilities.bonus]
-};
+end;
 
 const capabilities = [.base = 20, .bonus = 22];
 let application = adder capabilities;

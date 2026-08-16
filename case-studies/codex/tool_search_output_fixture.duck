@@ -18,66 +18,70 @@ type FixtureSpec = ToolSpec
 
 let create_spec: FixtureSpec = [
   ["mcp__calendar", "create_event"],
-  `FunctionSpec (),
+  #FunctionSpec,
   "Create events.",
   "{}",
-  `ToolOutputSchemaMissing (),
+  #ToolOutputSchemaMissing,
   false,
 ];
 let list_spec: FixtureSpec = [
   ["mcp__calendar", "list_events"],
-  `FunctionSpec (),
+  #FunctionSpec,
   "List events.",
   "{}",
-  `ToolOutputSchemaMissing (),
+  #ToolOutputSchemaMissing,
   false,
 ];
 let file_spec: FixtureSpec = [
   ["", "read_file"],
-  `FunctionSpec (),
+  #FunctionSpec,
   "Read files.",
   "{}",
-  `ToolOutputSchemaMissing (),
+  #ToolOutputSchemaMissing,
   false,
 ];
 
-let first_tools: FixtureFunctions = `Cons (
-  [deferred_function create_spec, `Nil ()] as FixtureFunctionNode
+let first_tools: FixtureFunctions = #Cons (
+  [deferred_function create_spec, #Nil] as FixtureFunctionNode
 );
-let second_tools: FixtureFunctions = `Cons (
-  [deferred_function list_spec, `Nil ()] as FixtureFunctionNode
+let second_tools: FixtureFunctions = #Cons (
+  [deferred_function list_spec, #Nil] as FixtureFunctionNode
 );
 let first_namespace: FixtureNamespace = ["mcp__calendar", "Calendar tools.", first_tools];
 let second_namespace: FixtureNamespace = ["mcp__calendar", "Calendar tools.", second_tools];
-let first_entry: FixtureEntry = ["create event", `Namespace first_namespace];
-let file_entry: FixtureEntry = ["read file", `Function (deferred_function file_spec)];
-let second_entry: FixtureEntry = ["list event", `Namespace second_namespace];
+let first_entry: FixtureEntry = ["create event", #Namespace first_namespace];
+let file_entry: FixtureEntry = ["read file", #Function (deferred_function file_spec)];
+let second_entry: FixtureEntry = ["list event", #Namespace second_namespace];
 
-let ranked: FixtureRankedEntries = `Nil ();
-ranked = `Cons ([[2, 1, second_entry], ranked] as FixtureRankedNode)
-ranked = `Cons ([[1, 2, file_entry], ranked] as FixtureRankedNode)
-ranked = `Cons ([[0, 3, first_entry], ranked] as FixtureRankedNode)
+let ranked: FixtureRankedEntries = #Nil;
+ranked = #Cons ([[2, 1, second_entry], ranked] as FixtureRankedNode)
+ranked = #Cons ([[1, 2, file_entry], ranked] as FixtureRankedNode)
+ranked = #Cons ([[0, 3, first_entry], ranked] as FixtureRankedNode)
 
 let score = 0;
 let coalesced: FixtureLoadables = coalesce_tool_search_results ranked;
-if let `Cons first_node = coalesced {
+if let #Cons first_node = coalesced then
   let [first, tail] = first_node;
-  if let `Namespace namespace = first {
+  if let #Namespace namespace = first then
     let [_, _, namespace_tools] = namespace;
-    if let `Cons first_tool_node = namespace_tools {
+    if let #Cons first_tool_node = namespace_tools then
       let [_, tool_tail] = first_tool_node;
-      if let `Cons second_tool_node = tool_tail {
+      if let #Cons second_tool_node = tool_tail then
         let [_, tool_rest] = second_tool_node;
-        if let `Nil () = tool_rest { score = score + 1 }
-      }
-    }
-  }
-  if let `Cons second_node = tail {
+        if let #Nil = tool_rest then
+          score = score + 1
+        end;
+      end;
+    end;
+  end;
+  if let #Cons second_node = tail then
     let [second, rest] = second_node;
-    if let `Function _ = second {
-      if let `Nil () = rest { score = score + 10 }
-    }
-  }
-}
+    if let #Function _ = second then
+      if let #Nil = rest then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

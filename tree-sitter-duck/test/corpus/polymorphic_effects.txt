@@ -1,15 +1,15 @@
 ==================
-Polymorphic do effect
+Polymorphic perform effect
 ==================
 
 effect Do monad {
   unwrap: forall value. (monad value) => value
 }
 
-let run = wrapped => {
-  value <- do wrapped
+let run = wrapped => do
+  value <- perform wrapped
   value
-};
+end;
 
 ---
 
@@ -46,9 +46,7 @@ let run = wrapped => {
         (block
           (effect_binding_statement
             (identifier)
-            (application_expression
-              (postfix_expression
-                (identifier))
+            (unary_expression
               (postfix_expression
                 (identifier))))
           (expression_statement

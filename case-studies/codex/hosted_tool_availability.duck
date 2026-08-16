@@ -4,23 +4,23 @@ const {} = import "./hosted_tool_types.duck" ();
 
 type HostedAvailabilityFacts = HostedToolAvailabilityFacts
 
-const hosted_web_search_available: HostedAvailabilityFacts -> Bool = facts => {
-  if facts.use_responses_lite {
+const hosted_web_search_available: HostedAvailabilityFacts -> Bool = facts => do
+  if facts.use_responses_lite then
     return false;
-  }
+  end;
 
   let standalone_enabled = facts.namespace_tools && facts.standalone_web_search;
-  if standalone_enabled && facts.has_web_run_executor {
+  if standalone_enabled && facts.has_web_run_executor then
     return false;
-  }
-  if !(facts.provider_web_search) {
+  end;
+  if !(facts.provider_web_search) then
     return false;
-  }
-  if let `Disabled () = facts.web_search_mode {
+  end;
+  if let #Disabled = facts.web_search_mode then
     return false;
-  }
+  end;
 
   true
-};
+end;
 
 return { .hosted_web_search_available };

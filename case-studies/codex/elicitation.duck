@@ -1,0 +1,30 @@
+module () where
+
+const { .panic } = import "duck:prelude/runtime" ();
+
+const empty_elicitation_state: () -> I64 = () => 0i64;
+
+const register_elicitation: I64 -> I64 = outstanding => do
+  if outstanding == 9223372036854775807i64 then
+    panic "outstanding elicitation count overflowed at i64::MAX"
+  end;
+
+  outstanding + 1i64
+end;
+
+const complete_elicitation: I64 -> I64 = outstanding => do
+  if outstanding <= 0i64 then
+    panic "elicitation registration count underflowed at 0"
+  end;
+
+  outstanding - 1i64
+end;
+
+const elicitation_is_paused: I64 -> Bool = outstanding => outstanding > 0i64;
+
+return {
+  .empty_elicitation_state,
+  .register_elicitation,
+  .complete_elicitation,
+  .elicitation_is_paused,
+};

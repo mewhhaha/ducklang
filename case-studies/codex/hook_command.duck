@@ -27,13 +27,13 @@ type HookCommandEvaluation = [
   HookTexts,
   HookTexts,
   HookUpdatedInput,
-  HookPermissionDecisionOption ]
+  HookPermissionDecisionOption]
 type HookCommandAggregate = [
   HookCommandAction,
   HookTexts,
   HookTexts,
   HookUpdatedInput,
-  HookPermissionDecisionOption ]
+  HookPermissionDecisionOption]
 
 type CommandEvent = HookEvent
 type CommandResult = HookCommandResult
@@ -55,9 +55,9 @@ type CommandUniversal = HookUniversalOutput
 const texts = comptime list Text;
 const entries = comptime list CommandOutputEntry;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
-const command_evaluation: [
+const command_evaluation: (
   CommandRunStatus,
   CommandOutputEntries,
   CommandAction,
@@ -65,7 +65,7 @@ const command_evaluation: [
   CommandTexts,
   CommandUpdatedInput,
   CommandPermissionDecisionOption,
-] -> CommandEvaluation = (
+) -> CommandEvaluation = (
   status,
   output_entries,
   action,
@@ -73,757 +73,757 @@ const command_evaluation: [
   feedback,
   updated_input,
   permission_decision,
-) => {
+) => do
   [status, output_entries, action, contexts, feedback, updated_input, permission_decision]
-};
+end;
 
-const continue_action = () => {
+const continue_action = () => do
   let kind: CommandActionKind = 0 :> CommandActionKind;
-  let action: CommandAction = [kind, `None ()];
+  let action: CommandAction = [kind, #None];
   action
-};
+end;
 
-const block_action = (reason: Text) => {
+const block_action = (reason: Text) => do
   let kind: CommandActionKind = 1 :> CommandActionKind;
-  let action: CommandAction = [kind, `Some reason];
+  let action: CommandAction = [kind, #Some reason];
   action
-};
+end;
 
-const stop_action = (reason: CommandTextOption) => {
+const stop_action = (reason: CommandTextOption) => do
   let kind: CommandActionKind = 2 :> CommandActionKind;
   let action: CommandAction = [kind, reason];
   action
-};
+end;
 
-const action_is_continue = (action: CommandAction) => {
+const action_is_continue = (action: CommandAction) => do
   let [kind, _] = action;
   kind :< I32 == 0
-};
+end;
 
-const action_is_block = (action: CommandAction) => {
+const action_is_block = (action: CommandAction) => do
   let [kind, _] = action;
   kind :< I32 == 1
-};
+end;
 
-const action_is_stop = (action: CommandAction) => {
+const action_is_stop = (action: CommandAction) => do
   let [kind, _] = action;
   kind :< I32 == 2
-};
+end;
 
 const completed_evaluation = () => command_evaluation(
-  `Completed (),
+  #Completed,
   entries.empty(),
   continue_action(),
   texts.empty(),
   texts.empty(),
-  `NoUpdatedInput (),
-  `None (),
+  #NoUpdatedInput,
+  #None,
 );
 
-const failed_evaluation = (message: Text) => {
-  let output_entries = entries.singleton([`Error (), message]);
+const failed_evaluation = (message: Text) => do
+  let output_entries = entries.singleton([#Error, message]);
   command_evaluation(
-    `Failed (),
+    #Failed,
     output_entries,
     continue_action(),
     texts.empty(),
     texts.empty(),
-    `NoUpdatedInput (),
-    `None (),
+    #NoUpdatedInput,
+    #None,
   )
-};
+end;
 
-const blocked_evaluation = (reason: Text) => {
-  let output_entries = entries.singleton([`Feedback (), reason]);
+const blocked_evaluation = (reason: Text) => do
+  let output_entries = entries.singleton([#Feedback, reason]);
   command_evaluation(
-    `Blocked (),
+    #Blocked,
     output_entries,
     block_action reason,
     texts.empty(),
     texts.singleton(reason),
-    `NoUpdatedInput (),
-    `None (),
+    #NoUpdatedInput,
+    #None,
   )
-};
+end;
 
-const append_entry = (values: CommandOutputEntries, kind: CommandOutputEntryKind, text: Text) => {
+const append_entry = (values: CommandOutputEntries, kind: CommandOutputEntryKind, text: Text) => do
   entries.append(values, entries.singleton([kind, text]))
-};
+end;
 
 const append_optional_entry = (
   values: CommandOutputEntries,
   kind: CommandOutputEntryKind,
   text: CommandTextOption,
-) => {
-  if let `Some value = text { append_entry(values, kind, value) } else { values }
-};
+) => do
+  if let #Some value = text then append_entry(values, kind, value) else values end;
+end;
 
-const optional_texts = (value: CommandTextOption) => {
-  if let `Some text = value { texts.singleton(text) } else { texts.empty() }
-};
+const optional_texts = (value: CommandTextOption) => do
+  if let #Some text = value then texts.singleton(text) else texts.empty() end;
+end;
 
-const universal_entries = (universal: CommandUniversal) => {
+const universal_entries = (universal: CommandUniversal) => do
   let [_, _, _, system_message] = universal;
-  append_optional_entry(entries.empty(), `Warning (), system_message)
-};
+  append_optional_entry(entries.empty(), #Warning, system_message)
+end;
 
-const looks_like_json = (text: Text) => {
+const looks_like_json = (text: Text) => do
   let trimmed = text_trim_ascii_whitespace text;
-  text_starts_with [trimmed, "{"] || text_starts_with [trimmed, "["]
-};
+  text_starts_with (trimmed, "{") || text_starts_with (trimmed, "[")
+end;
 
-const evaluate_pre_tool_stdout: Text -> CommandEvaluation = stdout => {
+const evaluate_pre_tool_stdout: Text -> CommandEvaluation = stdout => do
   let parsed = parse_pre_tool_output stdout;
 
-  if let `PreToolOk output = parsed {
+  if let #PreToolOk output = parsed then
     let [universal, block_reason, additional_context, updated_input, invalid] = output;
     let output_entries = universal_entries universal;
 
-    if let `Some message = invalid {
-      output_entries = append_entry(output_entries, `Error (), message)
+    if let #Some message = invalid then
+      output_entries = append_entry(output_entries, #Error, message)
       command_evaluation(
-        `Failed (),
+        #Failed,
         output_entries,
         continue_action(),
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else {
+    else
       let contexts = optional_texts additional_context;
-      output_entries = append_optional_entry(output_entries, `Context (), additional_context)
+      output_entries = append_optional_entry(output_entries, #Context, additional_context)
 
-      if let `Some reason = block_reason {
-        output_entries = append_entry(output_entries, `Feedback (), reason)
+      if let #Some reason = block_reason then
+        output_entries = append_entry(output_entries, #Feedback, reason)
         command_evaluation(
-          `Blocked (),
+          #Blocked,
           output_entries,
           block_action reason,
           contexts,
           texts.singleton(reason),
-          `NoUpdatedInput (),
-          `None (),
+          #NoUpdatedInput,
+          #None,
         )
-      } else {
+      else
         command_evaluation(
-          `Completed (),
+          #Completed,
           output_entries,
           continue_action(),
           contexts,
           texts.empty(),
           updated_input,
-          `None (),
+          #None,
         )
-      }
-    }
-  } else {
+      end;
+    end;
+  else
     failed_evaluation "hook returned invalid pre-tool-use JSON output"
-  }
-};
+  end;
+end;
 
-const evaluate_permission_stdout: Text -> CommandEvaluation = stdout => {
+const evaluate_permission_stdout: Text -> CommandEvaluation = stdout => do
   let parsed = parse_permission_output stdout;
 
-  if let `PermissionOk output = parsed {
+  if let #PermissionOk output = parsed then
     let [universal, decision, invalid] = output;
     let output_entries = universal_entries universal;
 
-    if let `Some message = invalid {
-      output_entries = append_entry(output_entries, `Error (), message)
+    if let #Some message = invalid then
+      output_entries = append_entry(output_entries, #Error, message)
       command_evaluation(
-        `Failed (),
+        #Failed,
         output_entries,
         continue_action(),
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if let `Some permission = decision {
-      if let `Deny reason = permission {
-        output_entries = append_entry(output_entries, `Feedback (), reason)
+    else let #Some permission = decision then
+      if let #Deny reason = permission then
+        output_entries = append_entry(output_entries, #Feedback, reason)
         command_evaluation(
-          `Blocked (),
+          #Blocked,
           output_entries,
           block_action reason,
           texts.empty(),
           texts.singleton(reason),
-          `NoUpdatedInput (),
-          `Some permission,
+          #NoUpdatedInput,
+          #Some permission,
         )
-      } else {
+      else
         command_evaluation(
-          `Completed (),
+          #Completed,
           output_entries,
           continue_action(),
           texts.empty(),
           texts.empty(),
-          `NoUpdatedInput (),
-          `Some permission,
+          #NoUpdatedInput,
+          #Some permission,
         )
-      }
-    } else {
+      end;
+    else
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else {
+    end;
+  else
     failed_evaluation "hook returned invalid permission-request JSON output"
-  }
-};
+  end;
+end;
 
-const evaluate_post_tool_stdout: Text -> CommandEvaluation = stdout => {
+const evaluate_post_tool_stdout: Text -> CommandEvaluation = stdout => do
   let parsed = parse_post_tool_output stdout;
 
-  if let `PostToolOk output = parsed {
+  if let #PostToolOk output = parsed then
     let [universal, should_block, reason, invalid_block, additional_context, invalid] = output;
     let [continue_processing, stop_reason, _, _] = universal;
     let output_entries = universal_entries universal;
     let contexts = texts.empty();
 
-    if let `None () = invalid {
-      if let `None () = invalid_block {
+    if let #None = invalid then
+      if let #None = invalid_block then
         contexts = optional_texts additional_context
-        output_entries = append_optional_entry(output_entries, `Context (), additional_context)
-      }
-    }
+        output_entries = append_optional_entry(output_entries, #Context, additional_context)
+      end;
+    end;
 
-    if !(continue_processing) {
-      let stop_text = if let `Some value = stop_reason { value } else {
-        "PostToolUse hook stopped execution" };
-      let model_feedback = if let `Some value = reason {
+    if !(continue_processing) then
+      let stop_text = if let #Some value = stop_reason then value else
+        "PostToolUse hook stopped execution" end;
+      let model_feedback = if let #Some value = reason then
         let trimmed = text_trim_ascii_whitespace value;
-        if trimmed == "" { stop_text } else { trimmed }
-      } else {
+        if trimmed == "" then stop_text else trimmed end;
+      else
         stop_text
-      };
-      output_entries = append_entry(output_entries, `Stop (), stop_text)
+      end;
+      output_entries = append_entry(output_entries, #Stop, stop_text)
       command_evaluation(
-        `Stopped (),
+        #Stopped,
         output_entries,
         stop_action stop_reason,
         contexts,
         texts.singleton(model_feedback),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if let `Some message = invalid {
-      output_entries = append_entry(output_entries, `Error (), message)
+    else let #Some message = invalid then
+      output_entries = append_entry(output_entries, #Error, message)
       command_evaluation(
-        `Failed (),
+        #Failed,
         output_entries,
         continue_action(),
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if let `Some message = invalid_block {
-      output_entries = append_entry(output_entries, `Error (), message)
+    else let #Some message = invalid_block then
+      output_entries = append_entry(output_entries, #Error, message)
       command_evaluation(
-        `Failed (),
+        #Failed,
         output_entries,
         continue_action(),
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if should_block {
-      if let `Some block_reason = reason {
-        output_entries = append_entry(output_entries, `Feedback (), block_reason)
+    else should_block then
+      if let #Some block_reason = reason then
+        output_entries = append_entry(output_entries, #Feedback, block_reason)
         command_evaluation(
-          `Blocked (),
+          #Blocked,
           output_entries,
           block_action block_reason,
           contexts,
           texts.singleton(block_reason),
-          `NoUpdatedInput (),
-          `None (),
+          #NoUpdatedInput,
+          #None,
         )
-      } else {
+      else
         failed_evaluation "PostToolUse hook returned decision:block without a non-empty reason"
-      }
-    } else {
+      end;
+    else
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else {
+    end;
+  else
     failed_evaluation "hook returned invalid post-tool-use JSON output"
-  }
-};
+  end;
+end;
 
-const evaluate_user_prompt_stdout: Text -> CommandEvaluation = stdout => {
+const evaluate_user_prompt_stdout: Text -> CommandEvaluation = stdout => do
   let parsed = parse_user_prompt_output stdout;
 
-  if let `UserPromptOk output = parsed {
+  if let #UserPromptOk output = parsed then
     let [universal, should_block, reason, invalid_block, additional_context] = output;
     let [continue_processing, stop_reason, _, _] = universal;
     let output_entries = universal_entries universal;
     let contexts = texts.empty();
 
-    if let `None () = invalid_block {
+    if let #None = invalid_block then
       contexts = optional_texts additional_context
-      output_entries = append_optional_entry(output_entries, `Context (), additional_context)
-    }
+      output_entries = append_optional_entry(output_entries, #Context, additional_context)
+    end;
 
-    if !(continue_processing) {
-      output_entries = append_optional_entry(output_entries, `Stop (), stop_reason)
+    if !(continue_processing) then
+      output_entries = append_optional_entry(output_entries, #Stop, stop_reason)
       command_evaluation(
-        `Stopped (),
+        #Stopped,
         output_entries,
         stop_action stop_reason,
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if let `Some message = invalid_block {
-      output_entries = append_entry(output_entries, `Error (), message)
+    else let #Some message = invalid_block then
+      output_entries = append_entry(output_entries, #Error, message)
       command_evaluation(
-        `Failed (),
+        #Failed,
         output_entries,
         continue_action(),
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if should_block {
-      if let `Some block_reason = reason {
-        output_entries = append_entry(output_entries, `Feedback (), block_reason)
+    else should_block then
+      if let #Some block_reason = reason then
+        output_entries = append_entry(output_entries, #Feedback, block_reason)
         command_evaluation(
-          `Blocked (),
+          #Blocked,
           output_entries,
-          stop_action(`Some block_reason),
+          stop_action(#Some block_reason),
           contexts,
           texts.empty(),
-          `NoUpdatedInput (),
-          `None (),
+          #NoUpdatedInput,
+          #None,
         )
-      } else {
+      else
         failed_evaluation "UserPromptSubmit hook returned decision:block without a non-empty reason"
-      }
-    } else {
+      end;
+    else
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else {
+    end;
+  else
     failed_evaluation "hook returned invalid user prompt submit JSON output"
-  }
-};
+  end;
+end;
 
-const evaluate_stop_stdout: [Text, Text] -> CommandEvaluation = (event_name, stdout) => {
+const evaluate_stop_stdout: (Text, Text) -> CommandEvaluation = (event_name, stdout) => do
   let parsed = parse_stop_output(event_name, stdout);
 
-  if let `StopOk output = parsed {
+  if let #StopOk output = parsed then
     let [universal, should_block, reason, invalid_block] = output;
     let [continue_processing, stop_reason, _, _] = universal;
     let output_entries = universal_entries universal;
 
-    if !(continue_processing) {
-      output_entries = append_optional_entry(output_entries, `Stop (), stop_reason)
+    if !(continue_processing) then
+      output_entries = append_optional_entry(output_entries, #Stop, stop_reason)
       command_evaluation(
-        `Stopped (),
+        #Stopped,
         output_entries,
         stop_action stop_reason,
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if let `Some message = invalid_block {
-      output_entries = append_entry(output_entries, `Error (), message)
+    else let #Some message = invalid_block then
+      output_entries = append_entry(output_entries, #Error, message)
       command_evaluation(
-        `Failed (),
+        #Failed,
         output_entries,
         continue_action(),
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else if should_block {
-      if let `Some block_reason = reason {
+    else should_block then
+      if let #Some block_reason = reason then
         let trimmed = text_trim_ascii_whitespace block_reason;
-        output_entries = append_entry(output_entries, `Feedback (), trimmed)
+        output_entries = append_entry(output_entries, #Feedback, trimmed)
         command_evaluation(
-          `Blocked (),
+          #Blocked,
           output_entries,
           block_action trimmed,
           texts.empty(),
           texts.singleton(trimmed),
-          `NoUpdatedInput (),
-          `None (),
+          #NoUpdatedInput,
+          #None,
         )
-      } else {
+      else
         failed_evaluation(
           append_text(event_name, " hook returned decision:block without a non-empty reason")
         )
-      }
-    } else {
+      end;
+    else
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else {
-    let label = if event_name == "Stop" { "stop" } else { "subagent stop" };
+    end;
+  else
+    let label = if event_name == "Stop" then "stop" else "subagent stop" end;
     failed_evaluation(
       append_text("hook returned invalid ", append_text(label, " hook JSON output"))
     )
-  }
-};
+  end;
+end;
 
-const evaluate_start_stdout: [Text, Bool, Text] -> CommandEvaluation = (
+const evaluate_start_stdout: (Text, Bool, Text) -> CommandEvaluation = (
   event_name,
   may_stop,
   stdout,
-) => {
+) => do
   let parsed = parse_context_output(event_name, stdout);
 
-  if let `ContextOk output = parsed {
+  if let #ContextOk output = parsed then
     let [universal, additional_context] = output;
     let [continue_processing, stop_reason, _, _] = universal;
     let output_entries = universal_entries universal;
     let contexts = optional_texts additional_context;
-    output_entries = append_optional_entry(output_entries, `Context (), additional_context)
+    output_entries = append_optional_entry(output_entries, #Context, additional_context)
 
-    if may_stop && !(continue_processing) {
-      output_entries = append_optional_entry(output_entries, `Stop (), stop_reason)
+    if may_stop && !(continue_processing) then
+      output_entries = append_optional_entry(output_entries, #Stop, stop_reason)
       command_evaluation(
-        `Stopped (),
+        #Stopped,
         output_entries,
         stop_action stop_reason,
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else {
+    else
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         contexts,
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else {
-    let label = if event_name == "SessionStart" { "session start" } else { "subagent start" };
+    end;
+  else
+    let label = if event_name == "SessionStart" then "session start" else "subagent start" end;
     failed_evaluation(append_text("hook returned invalid ", append_text(label, " JSON output")))
-  }
-};
+  end;
+end;
 
-const evaluate_stateless_stdout: [Text, Text] -> CommandEvaluation = (event_name, stdout) => {
+const evaluate_stateless_stdout: (Text, Text) -> CommandEvaluation = (event_name, stdout) => do
   let parsed = parse_stateless_output(event_name, stdout);
 
-  if let `StatelessOk universal = parsed {
+  if let #StatelessOk universal = parsed then
     let [continue_processing, stop_reason, _, _] = universal;
     let output_entries = universal_entries universal;
 
-    if continue_processing {
+    if continue_processing then
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    } else {
-      let stop_text = if let `Some value = stop_reason { value } else { append_text(
+    else
+      let stop_text = if let #Some value = stop_reason then value else append_text(
         event_name,
         " hook stopped execution",
-      ) };
-      output_entries = append_entry(output_entries, `Stop (), stop_text)
+      ) end;
+      output_entries = append_entry(output_entries, #Stop, stop_text)
       command_evaluation(
-        `Stopped (),
+        #Stopped,
         output_entries,
         stop_action stop_reason,
         texts.empty(),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else {
+    end;
+  else
     failed_evaluation(
       append_text("hook returned invalid ", append_text(event_name, " hook JSON output"))
     )
-  }
-};
+  end;
+end;
 
-const evaluate_successful_stdout = (event: CommandEvent, stdout: Text) => {
+const evaluate_successful_stdout = (event: CommandEvent, stdout: Text) => do
   let trimmed = text_trim_ascii_whitespace stdout;
 
-  if let `SessionEnd () = event {
+  if let #SessionEnd = event then
     completed_evaluation()
-  } else if trimmed == "" {
+  else trimmed == "" then
     completed_evaluation()
-  } else if let `PreToolUse () = event {
-    if looks_like_json trimmed { evaluate_pre_tool_stdout trimmed } else { completed_evaluation() }
-  } else if let `PermissionRequest () = event {
-    if looks_like_json trimmed { evaluate_permission_stdout trimmed } else { completed_evaluation()
-    }
-  } else if let `PostToolUse () = event {
-    if looks_like_json trimmed { evaluate_post_tool_stdout trimmed } else { completed_evaluation() }
-  } else if let `UserPromptSubmit () = event {
-    if looks_like_json trimmed {
+  else let #PreToolUse = event then
+    if looks_like_json trimmed then evaluate_pre_tool_stdout trimmed else completed_evaluation() end;
+  else let #PermissionRequest = event then
+    if looks_like_json trimmed then evaluate_permission_stdout trimmed else completed_evaluation()
+    end;
+  else let #PostToolUse = event then
+    if looks_like_json trimmed then evaluate_post_tool_stdout trimmed else completed_evaluation() end;
+  else let #UserPromptSubmit = event then
+    if looks_like_json trimmed then
       evaluate_user_prompt_stdout trimmed
-    } else {
-      let output_entries = entries.singleton([`Context (), trimmed]);
+    else
+      let output_entries = entries.singleton([#Context, trimmed]);
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         texts.singleton(trimmed),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else if let `Stop () = event {
+    end;
+  else let #Stop = event then
     evaluate_stop_stdout("Stop", trimmed)
-  } else if let `SubagentStop () = event {
+  else let #SubagentStop = event then
     evaluate_stop_stdout("SubagentStop", trimmed)
-  } else if let `SessionStart () = event {
-    if looks_like_json trimmed {
+  else let #SessionStart = event then
+    if looks_like_json trimmed then
       evaluate_start_stdout("SessionStart", true, trimmed)
-    } else {
-      let output_entries = entries.singleton([`Context (), trimmed]);
+    else
+      let output_entries = entries.singleton([#Context, trimmed]);
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         texts.singleton(trimmed),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else if let `SubagentStart () = event {
-    if looks_like_json trimmed {
+    end;
+  else let #SubagentStart = event then
+    if looks_like_json trimmed then
       evaluate_start_stdout("SubagentStart", false, trimmed)
-    } else {
-      let output_entries = entries.singleton([`Context (), trimmed]);
+    else
+      let output_entries = entries.singleton([#Context, trimmed]);
       command_evaluation(
-        `Completed (),
+        #Completed,
         output_entries,
         continue_action(),
         texts.singleton(trimmed),
         texts.empty(),
-        `NoUpdatedInput (),
-        `None (),
+        #NoUpdatedInput,
+        #None,
       )
-    }
-  } else if let `PreCompact () = event {
-    if looks_like_json trimmed { evaluate_stateless_stdout("PreCompact", trimmed) } else {
-      completed_evaluation() }
-  } else {
-    if looks_like_json trimmed { evaluate_stateless_stdout("PostCompact", trimmed) } else {
-      completed_evaluation() }
-  }
-};
+    end;
+  else let #PreCompact = event then
+    if looks_like_json trimmed then evaluate_stateless_stdout("PreCompact", trimmed) else
+      completed_evaluation() end;
+  else
+    if looks_like_json trimmed then evaluate_stateless_stdout("PostCompact", trimmed) else
+      completed_evaluation() end;
+  end;
+end;
 
-const exit_two_message = (event: CommandEvent) => {
-  if let `PreToolUse () = event {
+const exit_two_message = (event: CommandEvent) => do
+  if let #PreToolUse = event then
     "PreToolUse hook exited with code 2 but did not write a blocking reason to stderr"
-  } else if let `PermissionRequest () = event {
+  else let #PermissionRequest = event then
     "PermissionRequest hook exited with code 2 but did not write a denial reason to stderr"
-  } else if let `PostToolUse () = event {
+  else let #PostToolUse = event then
     "PostToolUse hook exited with code 2 but did not write feedback to stderr"
-  } else if let `UserPromptSubmit () = event {
+  else let #UserPromptSubmit = event then
     "UserPromptSubmit hook exited with code 2 but did not write a blocking reason to stderr"
-  } else if let `SubagentStop () = event {
+  else let #SubagentStop = event then
     "SubagentStop hook exited with code 2 but did not write a continuation prompt to stderr"
-  } else {
+  else
     "Stop hook exited with code 2 but did not write a continuation prompt to stderr"
-  }
-};
+  end;
+end;
 
-const exit_two_blocks = (event: CommandEvent) => {
-  if let `PreToolUse () = event {
+const exit_two_blocks = (event: CommandEvent) => do
+  if let #PreToolUse = event then
     true
-  } else if let `PermissionRequest () = event {
+  else let #PermissionRequest = event then
     true
-  } else if let `PostToolUse () = event {
+  else let #PostToolUse = event then
     true
-  } else if let `UserPromptSubmit () = event {
+  else let #UserPromptSubmit = event then
     true
-  } else if let `Stop () = event {
+  else let #Stop = event then
     true
-  } else if let `SubagentStop () = event {
+  else let #SubagentStop = event then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const evaluate_exit_two = (event: CommandEvent, stderr: Text) => {
+const evaluate_exit_two = (event: CommandEvent, stderr: Text) => do
   let reason = text_trim_ascii_whitespace stderr;
 
-  if reason == "" {
+  if reason == "" then
     failed_evaluation(exit_two_message event)
-  } else if let `PermissionRequest () = event {
-    let decision: CommandPermissionDecision = `Deny reason;
-    let output_entries = entries.singleton([`Feedback (), reason]);
+  else let #PermissionRequest = event then
+    let decision: CommandPermissionDecision = #Deny reason;
+    let output_entries = entries.singleton([#Feedback, reason]);
     command_evaluation(
-      `Blocked (),
+      #Blocked,
       output_entries,
       block_action reason,
       texts.empty(),
       texts.singleton(reason),
-      `NoUpdatedInput (),
-      `Some decision,
+      #NoUpdatedInput,
+      #Some decision,
     )
-  } else if let `UserPromptSubmit () = event {
-    let output_entries = entries.singleton([`Feedback (), reason]);
+  else let #UserPromptSubmit = event then
+    let output_entries = entries.singleton([#Feedback, reason]);
     command_evaluation(
-      `Blocked (),
+      #Blocked,
       output_entries,
-      stop_action(`Some reason),
+      stop_action(#Some reason),
       texts.empty(),
       texts.empty(),
-      `NoUpdatedInput (),
-      `None (),
+      #NoUpdatedInput,
+      #None,
     )
-  } else {
+  else
     blocked_evaluation reason
-  }
-};
+  end;
+end;
 
-const nonzero_message = (event: CommandEvent, code: I32, stderr: Text) => {
+const nonzero_message = (event: CommandEvent, code: I32, stderr: Text) => do
   let trimmed = text_trim_ascii_whitespace stderr;
 
-  if let `SessionEnd () = event {
-    if trimmed == "" { append_text("hook exited with code ", format_i32 code) } else { trimmed }
-  } else if let `PreCompact () = event {
-    if trimmed == "" { append_text("hook exited with code ", format_i32 code) } else { trimmed }
-  } else if let `PostCompact () = event {
-    if trimmed == "" { append_text("hook exited with code ", format_i32 code) } else { trimmed }
-  } else {
+  if let #SessionEnd = event then
+    if trimmed == "" then append_text("hook exited with code ", format_i32 code) else trimmed end;
+  else let #PreCompact = event then
+    if trimmed == "" then append_text("hook exited with code ", format_i32 code) else trimmed end;
+  else let #PostCompact = event then
+    if trimmed == "" then append_text("hook exited with code ", format_i32 code) else trimmed end;
+  else
     append_text("hook exited with code ", format_i32 code)
-  }
-};
+  end;
+end;
 
-const missing_exit_message = (event: CommandEvent) => {
-  if let `SessionEnd () = event {
+const missing_exit_message = (event: CommandEvent) => do
+  if let #SessionEnd = event then
     "hook process terminated without an exit code"
-  } else if let `PreCompact () = event {
+  else let #PreCompact = event then
     "hook process terminated without an exit code"
-  } else if let `PostCompact () = event {
+  else let #PostCompact = event then
     "hook process terminated without an exit code"
-  } else {
+  else
     "hook exited without a status code"
-  }
-};
+  end;
+end;
 
-const evaluate_hook_command = (event: CommandEvent, result: CommandResult) => {
+const evaluate_hook_command = (event: CommandEvent, result: CommandResult) => do
   let [error, exit_code, stdout, stderr] = result;
 
-  if let `Some message = error {
+  if let #Some message = error then
     failed_evaluation message
-  } else if let `Some code = exit_code {
-    if code == 0 {
+  else let #Some code = exit_code then
+    if code == 0 then
       evaluate_successful_stdout(event, stdout)
-    } else if code == 2 && exit_two_blocks event {
+    else code == 2 && exit_two_blocks event then
       evaluate_exit_two(event, stderr)
-    } else {
+    else
       failed_evaluation(nonzero_message(event, code, stderr))
-    }
-  } else {
+    end;
+  else
     failed_evaluation(missing_exit_message event)
-  }
-};
+  end;
+end;
 
-const empty_hook_command_aggregate = () => {
+const empty_hook_command_aggregate = () => do
   let aggregate: CommandAggregate = [
     continue_action(),
     texts.empty(),
     texts.empty(),
-    `NoUpdatedInput (),
-    `None (),
+    #NoUpdatedInput,
+    #None,
   ];
   aggregate
-};
+end;
 
-const aggregate_hook_command: [CommandAggregate, CommandEvaluation] -> CommandAggregate = (
+const aggregate_hook_command: (CommandAggregate, CommandEvaluation) -> CommandAggregate = (
   aggregate,
   evaluation,
-) => {
+) => do
   let [action, contexts, feedback, updated_input, permission_decision] = aggregate;
   let [_, _, next_action, next_contexts, next_feedback, next_updated_input, next_permission] =
     evaluation;
   contexts = texts.append(contexts, next_contexts)
   feedback = texts.append(feedback, next_feedback)
 
-  if let `UpdatedInput _ = next_updated_input {
+  if let #UpdatedInput _ = next_updated_input then
     updated_input = next_updated_input
-  }
+  end;
 
-  if let `Some decision = next_permission {
-    if let `Deny _ = decision {
-      permission_decision = `Some decision
-    } else if let `None () = permission_decision {
-      permission_decision = `Some decision
-    }
-  }
+  if let #Some decision = next_permission then
+    if let #Deny _ = decision then
+      permission_decision = #Some decision
+    else let #None = permission_decision then
+      permission_decision = #Some decision
+    end;
+  end;
 
   let [action_kind, action_reason] = action;
   let [next_action_kind, next_action_reason] = next_action;
   let action_tag = action_kind :< I32;
   let next_action_tag = next_action_kind :< I32;
 
-  if action_tag == 2 {
+  if action_tag == 2 then
     ()
-  } else if next_action_tag == 2 {
+  else next_action_tag == 2 then
     action = next_action
-  } else if next_action_tag == 1 {
-    if let `Some next_reason = next_action_reason {
-      if action_tag == 1 {
-        if let `Some current_reason = action_reason {
+  else next_action_tag == 1 then
+    if let #Some next_reason = next_action_reason then
+      if action_tag == 1 then
+        if let #Some current_reason = action_reason then
           action = block_action(append_text(current_reason, append_text("\n\n", next_reason)))
-        } else {
+        else
           action = next_action
-        }
-      } else {
+        end;
+      else
         action = next_action
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
   [action, contexts, feedback, updated_input, permission_decision]
-};
+end;
 
 return {
   .classify_hook_command,

@@ -11,28 +11,36 @@ type FixtureReadArgs = McpResourceReadArgs
 
 let score = 0;
 
-let list_args: FixtureListArgs = [.server = `None (), .cursor = `None ()];
-let list_operation: FixtureOperation = `ListResources list_args;
+let list_args: FixtureListArgs = [.server = #None, .cursor = #None];
+let list_operation: FixtureOperation = #ListResources list_args;
 let list_call: FixturePreparedCall = [.call_id = "call-list", .operation = list_operation];
 let list_result = run_list_mcp_resources(list_call, false, 1024);
-if let `Completed output = list_result {
-  if output == "{\"resources\":[{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"name\":\"alpha\"}]}" { score = score + 1 }
-}
+if let #Completed output = list_result then
+  if output
+    == "{\"resources\":[{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"name\":\"alpha\"}]}" then
+      score = score + 1
+    end;
+end;
 
 let readable_args: FixtureReadArgs = [.server = "docs", .uri = "skill://alpha"];
-let readable_operation: FixtureOperation = `ReadResource readable_args;
+let readable_operation: FixtureOperation = #ReadResource readable_args;
 let readable: FixturePreparedCall = [.call_id = "call-read", .operation = readable_operation];
 let readable_result = run_read_mcp_resource(readable, 1024);
-if let `Completed output = readable_result {
-  if output == "{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"contents\":[{\"text\":\"hello\"}]}" { score = score + 10 }
-}
+if let #Completed output = readable_result then
+  if output
+    == "{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"contents\":[{\"text\":\"hello\"}]}" then
+      score = score + 10
+    end;
+end;
 
 let missing_args: FixtureReadArgs = [.server = "docs", .uri = "skill://missing"];
-let missing_operation: FixtureOperation = `ReadResource missing_args;
+let missing_operation: FixtureOperation = #ReadResource missing_args;
 let missing: FixturePreparedCall = [.call_id = "call-missing", .operation = missing_operation];
 let missing_result = run_read_mcp_resource(missing, 1024);
-if let `Rejected message = missing_result {
-  if message == "resource not found: skill://missing" { score = score + 100 }
-}
+if let #Rejected message = missing_result then
+  if message == "resource not found: skill://missing" then
+    score = score + 100
+  end;
+end;
 
 return { .score = score };

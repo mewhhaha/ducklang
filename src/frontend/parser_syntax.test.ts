@@ -29,7 +29,7 @@ Deno.test("tolerant parser keeps later top-level statements after failures", () 
 
 Deno.test("tolerant parser recovers statements inside blocks", () => {
   const parsed = parse_source_with_diagnostics(
-    "let value = {\nlet = 1;\nlet kept = 2;\n};\nlet after = 3;\n",
+    "let value = do\nlet = 1;\nlet kept = 2;\nend;\nlet after = 3;\n",
   );
 
   assert_equals(parsed.diagnostics.length, 1);
@@ -87,7 +87,7 @@ Deno.test("scanner and parser diagnostics remain in source order", () => {
   assert_equals(parsed.source.statements.length, 1);
 });
 
-Deno.test("recovery makes progress past an unmatched closing brace", () => {
+Deno.test("recovery makes progress past an unmatched aggregate closer", () => {
   const parsed = parse_source_with_diagnostics("}\nlet valid = 1;\n");
 
   assert_equals(parsed.diagnostics.length, 1);
@@ -95,7 +95,9 @@ Deno.test("recovery makes progress past an unmatched closing brace", () => {
 });
 
 Deno.test("parser supplies spans for every reachable AST object", () => {
-  const parsed = parse_source_with_diagnostics("let value = if true { 1 };\n");
+  const parsed = parse_source_with_diagnostics(
+    "let value = if true then 1 end;\n",
+  );
   const seen = new WeakSet<object>();
 
   const visit = (value: object): void => {
@@ -158,7 +160,9 @@ Deno.test("strict and tolerant parsing share syntax and concrete source spans", 
 });
 
 Deno.test("synthetic conditional defaults retain derived spans", () => {
-  const parsed = parse_source_with_diagnostics("let value = if true { 1 };\n");
+  const parsed = parse_source_with_diagnostics(
+    "let value = if true then 1 end;\n",
+  );
   const statement = parsed.source.statements[0];
   if (statement === undefined || statement.tag !== "bind") {
     throw new Error("Missing conditional binding");
@@ -184,8 +188,8 @@ Deno.test("transparent parentheses preserve the inner expression span", () => {
 Deno.test("declaration members retain exact concrete spans", () => {
   const text = [
     "type Pair = struct {.left = Int, .right = Int}",
-    "type Maybe = | `Some Int | `None Unit",
-    "declare effect Io { write: (&Text, I32) => #Text }",
+    "type Maybe = | #Some Int | #None",
+    "declare effect Io { write: (&Text, I32) => freeze Text }",
     "",
   ].join("\n");
   const source = parse_source(text);
@@ -207,13 +211,13 @@ Deno.test("declaration members retain exact concrete spans", () => {
 
   assert_concrete_slice(text, pair.body.fields[0], ".left = Int");
   assert_concrete_slice(text, pair.body.fields[1], ".right = Int");
-  assert_concrete_slice(text, maybe.body.cases[0], "`Some Int");
-  assert_concrete_slice(text, maybe.body.cases[1], "`None Unit");
+  assert_concrete_slice(text, maybe.body.cases[0], "#Some Int");
+  assert_concrete_slice(text, maybe.body.cases[1], "#None");
   const operation = effect.operations[0];
   if (operation === undefined) throw new Error("Missing effect operation");
   assert_concrete_slice(text, operation.params[0], "&Text");
   assert_concrete_slice(text, operation.params[1], "I32");
-  assert_concrete_slice(text, operation.result, "#Text");
+  assert_concrete_slice(text, operation.result, "freeze Text");
 });
 
 Deno.test("source-written aggregate and handler children retain exact spans", () => {

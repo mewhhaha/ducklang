@@ -15,27 +15,31 @@ let prompt_input: FixtureArgs = args.prepend(
   args.prepend("--image", args.singleton("a.png,b.png")),
 );
 let prompt: FixtureResult = parse_debug_prompt_input prompt_input;
-if let `Ok command = prompt {
-  if let `DebugPromptInput options = command {
-    if let `Some text = options.prompt {
+if let #Ok command = prompt then
+  if let #DebugPromptInput options = command then
+    if let #Some text = options.prompt then
       let first = args.nth_or("", 0, options.images);
       let second = args.nth_or("", 1, options.images);
-      if text == "hello" && first == "a.png" && second == "b.png" { score = score + 1 }
-    }
-  }
-}
+      if text == "hello" && first == "a.png" && second == "b.png" then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 let trace_input: FixtureArgs = args.prepend(
   "bundle",
   args.prepend("--output", args.singleton("state.json")),
 );
 let trace: FixtureResult = parse_debug_trace_reduce trace_input;
-if let `Ok command = trace {
-  if let `DebugTraceReduce options = command {
-    if let `Some output = options.output {
-      if options.trace_bundle == "bundle" && output == "state.json" { score = score + 10 }
-    }
-  }
-}
+if let #Ok command = trace then
+  if let #DebugTraceReduce options = command then
+    if let #Some output = options.output then
+      if options.trace_bundle == "bundle" && output == "state.json" then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

@@ -15,48 +15,57 @@ let score = 0;
 
 let persistent: FixturePlanResult = plan_thread_delete(
   "root",
-  `LoadedThreadRoot (`PersistentThread ()),
+  #LoadedThreadRoot (#PersistentThread),
   subtree,
 );
-if let `Ok plan = persistent {
-  if let `Cons grandchild_node = plan.delete_order {
+if let #Ok plan = persistent then
+  if let #Cons grandchild_node = plan.delete_order then
     let [grandchild, after_grandchild] = grandchild_node;
-    if let `Cons child_node = after_grandchild {
+    if let #Cons child_node = after_grandchild then
       let [child, after_child] = child_node;
-      if let `Cons root_node = after_child {
+      if let #Cons root_node = after_child then
         let [root, done] = root_node;
-        if let `Nil () = done {
-          if grandchild == "grandchild" && child == "child" && root == "root" { score = score + 1 }
-        }
-      }
-    }
-  }
-}
+        if let #Nil = done then
+          if grandchild == "grandchild" && child == "child" && root == "root" then
+            score = score + 1 end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let ephemeral: FixturePlanResult = plan_thread_delete(
   "root",
-  `LoadedThreadRoot (`EphemeralThread ()),
+  #LoadedThreadRoot (#EphemeralThread),
   subtree,
 );
-if let `Err reason = ephemeral {
-  if reason == "thread is not persisted and cannot be deleted: root" { score = score + 10 }
-}
+if let #Err reason = ephemeral then
+  if reason == "thread is not persisted and cannot be deleted: root" then
+    score = score + 10 end;
+end;
 
 let root_only: FixtureSubtree = ["root", texts.empty()];
-let missing: FixturePlanResult = plan_thread_delete("root", `MissingThreadRoot (), root_only);
-if let `Err reason = missing {
-  if reason == "thread not found: root" { score = score + 100 }
-}
+let missing: FixturePlanResult = plan_thread_delete("root", #MissingThreadRoot, root_only);
+if let #Err reason = missing then
+  if reason == "thread not found: root" then
+    score = score + 100
+  end;
+end;
 
-let missing_parent: FixturePlanResult = plan_thread_delete("root", `MissingThreadRoot (), subtree);
-if let `Ok _ = missing_parent { score = score + 1000 }
+let missing_parent: FixturePlanResult = plan_thread_delete("root", #MissingThreadRoot, subtree);
+if let #Ok _ = missing_parent then
+  score = score + 1000
+end;
 
-let state_only: FixturePlanResult = plan_thread_delete("root", `StateOnlyThreadRoot (), root_only);
-if let `Ok _ = state_only { score = score + 10000 }
+let state_only: FixturePlanResult = plan_thread_delete("root", #StateOnlyThreadRoot, root_only);
+if let #Ok _ = state_only then
+  score = score + 10000
+end;
 
-let wrong_root: FixturePlanResult = plan_thread_delete("other", `StoredThreadRoot (), root_only);
-if let `Err reason = wrong_root {
-  if reason == "thread delete subtree does not begin with root: other" { score = score + 100000 }
-}
+let wrong_root: FixturePlanResult = plan_thread_delete("other", #StoredThreadRoot, root_only);
+if let #Err reason = wrong_root then
+  if reason == "thread delete subtree does not begin with root: other" then
+    score = score + 100000 end;
+end;
 
 return { .score = score };

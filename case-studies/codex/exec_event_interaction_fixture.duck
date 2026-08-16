@@ -8,27 +8,30 @@ type FixtureI32Option = ExecEventI32Option
 type FixtureInteractionPlan = ExecInteractionPlan
 
 let score = 0;
-let process_id: FixtureI32Option = `Some 1000;
+let process_id: FixtureI32Option = #Some 1000;
 let empty_poll: FixtureInteractionPlan = plan_terminal_interaction("call-1", 1000, process_id, "");
 
-if let `EmitInteraction event = empty_poll {
+if let #EmitInteraction event = empty_poll then
   let [call_id, interaction_process_id, stdin] = event;
-  if call_id == "call-1" && interaction_process_id == 1000 && stdin == "" { score = score + 1 }
-}
+  if call_id == "call-1" && interaction_process_id == 1000 && stdin == "" then
+    score = score + 1 end;
+end;
 
-if let `SuppressInteraction () = plan_terminal_interaction("call-1", 1000, `None (), "") {
+if let #SuppressInteraction = plan_terminal_interaction("call-1", 1000, #None, "") then
   score = score + 1
-}
+end;
 
 let sent_input: FixtureInteractionPlan = plan_terminal_interaction(
   "call-1",
   1000,
-  `None (),
+  #None,
   "yes\n",
 );
-if let `EmitInteraction event = sent_input {
+if let #EmitInteraction event = sent_input then
   let [_, interaction_process_id, stdin] = event;
-  if interaction_process_id == 1000 && stdin == "yes\n" { score = score + 1 }
-}
+  if interaction_process_id == 1000 && stdin == "yes\n" then
+    score = score + 1
+  end;
+end;
 
 return { .score = score };

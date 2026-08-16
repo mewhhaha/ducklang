@@ -15,10 +15,10 @@ type FixtureState = NetworkApprovalState
 type FixtureRequest = NetworkRequest
 type FixtureResult = NetworkPolicyResult
 
-let https: FixtureProtocol = `Https ();
+let https: FixtureProtocol = #Https;
 let state: FixtureState = empty_network_approval_state();
-let deferred: FixtureMode = `Deferred ();
-let no_outcome: FixtureOutcome = `NoOutcome ();
+let deferred: FixtureMode = #Deferred;
+let no_outcome: FixtureOutcome = #NoOutcome;
 let call: FixtureCall = [
   "registration-1",
   "local",
@@ -29,11 +29,11 @@ let call: FixtureCall = [
 ];
 state = register_network_call(state, call)
 
-let no_execution: FixtureTextOption = `None ();
-let local_environment: FixtureTextOption = `Some "local";
+let no_execution: FixtureTextOption = #None;
+let local_environment: FixtureTextOption = #Some "local";
 let request: FixtureRequest = ["example.com", https, 443, no_execution, local_environment];
-let policy: FixturePolicy = `OnRequest ();
-let profile: FixtureProfile = `Managed ();
+let policy: FixturePolicy = #OnRequest;
+let profile: FixtureProfile = #Managed;
 let planned: FixtureResult = plan_network_request(
   state,
   request,
@@ -45,13 +45,14 @@ let planned: FixtureResult = plan_network_request(
 let [_, decision] = planned;
 
 let score = 0;
-if let `Prompt prompt = decision {
+if let #Prompt prompt = decision then
   let [_, registration_option, target, reason, is_owner] = prompt;
-  if let `Some registration_id = registration_option {
-    if registration_id == "registration-1" && target == "https://example.com:443" && reason == "example.com is not in the allowed_domains" && is_owner {
-      score = score + 1
-    }
-  }
-}
+  if let #Some registration_id = registration_option then
+    if registration_id == "registration-1" && target == "https://example.com:443" && reason
+      == "example.com is not in the allowed_domains" && is_owner then
+        score = score + 1
+      end;
+  end;
+end;
 
 return { .score = score };

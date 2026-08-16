@@ -9,11 +9,11 @@ declare effect Input {
 declare Init { input: Input }
 
 flag <- Input.flag()
-let word = if flag {
+let word = if flag then
   "forty"
-} else {
+else
   "six"
-};
+end;
 
 let result: I32 = length word;
 return { .result = result };

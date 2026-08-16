@@ -81,7 +81,7 @@ function scope_return_stmts(statements: Stmt[]): Stmt[] {
     ) {
       if (expr_contains_return(stmt.expr.target)) {
         throw new Error(
-          "Effectful helper return inside a match target is not supported",
+          "Effectful helper return inside a case target is not supported",
         );
       }
 
@@ -95,7 +95,7 @@ function scope_return_stmts(statements: Stmt[]): Stmt[] {
               arm.guard !== undefined && expr_contains_return(arm.guard)
             ) {
               throw new Error(
-                "Effectful helper return inside a match guard is not supported",
+                "Effectful helper return inside a case guard is not supported",
               );
             }
 

@@ -3,16 +3,16 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type RequestPermissionsTextOption =
-  | `None Unit
-  | `Some Text
+  | #None
+  | #Some Text
 
 type RequestPermissionsBooleanOption =
-  | `None Unit
-  | `Some Bool
+  | #None
+  | #Some Bool
 
 type RequestPermissionAccess =
-  | `Read Unit
-  | `Write Unit
+  | #Read
+  | #Write
 
 type RequestPermissionPath = struct {
   .path = Text,
@@ -21,24 +21,24 @@ type RequestPermissionPath = struct {
 
 type RequestPermissionPathNode = [RequestPermissionPath, RequestPermissionPaths]
 type RequestPermissionPaths =
-  | `Nil Unit
-  | `Cons RequestPermissionPathNode
+  | #Nil
+  | #Cons RequestPermissionPathNode
 
 type RequestPermissionNetwork = struct {
   .enabled = RequestPermissionsBooleanOption,
 }
 
 type RequestPermissionNetworkField =
-  | `NetworkMissing Unit
-  | `NetworkPresent RequestPermissionNetwork
+  | #NetworkMissing
+  | #NetworkPresent RequestPermissionNetwork
 
 type RequestPermissionFileSystem = struct {
   .entries = RequestPermissionPaths,
 }
 
 type RequestPermissionFileSystemField =
-  | `FileSystemMissing Unit
-  | `FileSystemPresent RequestPermissionFileSystem
+  | #FileSystemMissing
+  | #FileSystemPresent RequestPermissionFileSystem
 
 type RequestPermissionProfile = struct {
   .network = RequestPermissionNetworkField,
@@ -52,8 +52,8 @@ type RequestPermissionsArgs = struct {
 }
 
 type RequestPermissionsNativeCwd =
-  | `Native Text
-  | `Foreign Text
+  | #Native Text
+  | #Foreign Text
 
 type RequestPermissionsEnvironment = struct {
   .environment_id = Text,
@@ -67,20 +67,20 @@ type RequestPermissionsEnvironmentNode = struct {
   .tail = RequestPermissionsEnvironments,
 }
 type RequestPermissionsEnvironments =
-  | `Nil Unit
-  | `Cons RequestPermissionsEnvironmentNode
+  | #Nil
+  | #Cons RequestPermissionsEnvironmentNode
 
 type RequestPermissionsEnvironmentSelection =
-  | `Selected RequestPermissionsEnvironment
-  | `SelectionFailed Text
+  | #Selected RequestPermissionsEnvironment
+  | #SelectionFailed Text
 
 type RequestPermissionsNormalization =
-  | `Normalized RequestPermissionsArgs
-  | `Invalid Text
+  | #Normalized RequestPermissionsArgs
+  | #Invalid Text
 
 type RequestPermissionsPayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type RequestPermissionsPreparedCall = struct {
   .environment = RequestPermissionsEnvironment,
@@ -88,20 +88,20 @@ type RequestPermissionsPreparedCall = struct {
 }
 
 type RequestPermissionsCallPlan =
-  | `Prompt RequestPermissionsPreparedCall
-  | `RejectRequest Text
+  | #Prompt RequestPermissionsPreparedCall
+  | #RejectRequest Text
 
 type RequestPermissionsParseResult =
-  | `Parsed RequestPermissionsArgs
-  | `ParseFailed Text
+  | #Parsed RequestPermissionsArgs
+  | #ParseFailed Text
 
 type RequestPermissionsEnvironmentParseResult =
-  | `ParsedEnvironmentId RequestPermissionsTextOption
-  | `EnvironmentParseFailed Text
+  | #ParsedEnvironmentId RequestPermissionsTextOption
+  | #EnvironmentParseFailed Text
 
 type PermissionGrantScope =
-  | `Turn Unit
-  | `Session Unit
+  | #Turn
+  | #Session
 
 type RequestPermissionsResponse = struct {
   .permissions = RequestPermissionProfile,
@@ -120,8 +120,8 @@ type RequestPermissionsHostRequest = struct {
 }
 
 type RequestPermissionsHostResponse =
-  | `Cancelled Unit
-  | `Answered RequestPermissionsResponse
+  | #Cancelled
+  | #Answered RequestPermissionsResponse
 
 type RequestPermissionsGrant = struct {
   .environment_id = Text,
@@ -130,9 +130,9 @@ type RequestPermissionsGrant = struct {
 }
 
 type RequestPermissionsGrantApplication =
-  | `NoGrant Unit
-  | `GrantForTurn RequestPermissionsGrant
-  | `GrantForSession RequestPermissionsGrant
+  | #NoGrant
+  | #GrantForTurn RequestPermissionsGrant
+  | #GrantForSession RequestPermissionsGrant
 
 type RequestPermissionsCompletion = struct {
   .output = Text,
@@ -140,7 +140,7 @@ type RequestPermissionsCompletion = struct {
 }
 
 type RequestPermissionsExecutionResult =
-  | `Completed RequestPermissionsCompletion
-  | `Rejected Text
+  | #Completed RequestPermissionsCompletion
+  | #Rejected Text
 
 return {};

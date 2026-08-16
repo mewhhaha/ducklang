@@ -16,64 +16,71 @@ type SyncValueJson = Json
 type SyncValueObject = JsonObject
 type SyncValueParseResult = TestSyncParseResult
 
-let sync_parse_failure: Text -> SyncValueParseResult = reason => `ParseFailed (
-  text_append ["failed to parse function arguments: ", reason]
+let sync_parse_failure: Text -> SyncValueParseResult = reason => #ParseFailed (
+  text_append ("failed to parse function arguments: ", reason)
 );
 
-let parse_sync_duration: [Text, SyncValueJson] -> SyncValueDurationParseResult = (
+let parse_sync_duration: (Text, SyncValueJson) -> SyncValueDurationParseResult = (
   field_name: Text,
   container: SyncValueJson,
-) => {
-  if let `Object object = container {
-    if json_object_key_count(field_name, object) > 1 {
-      `DurationParseFailed (text_append [field_name, " must appear at most once"])
-    } else {
+) => do
+  if let #Object object = container then
+    if json_object_key_count(field_name, object) > 1 then
+      #DurationParseFailed (text_append (field_name, " must appear at most once"))
+    else
       let lookup = json_object_get(field_name, object);
-      if let `Missing () = lookup {
-        `DurationParsed (`SyncDurationMissing ())
-      } else if let `Found value = lookup {
-        if let `Null () = value {
-          `DurationParsed (`SyncDurationMissing ())
-        } else if let `Number text = value {
+      if let #Missing = lookup then
+        #DurationParsed (#SyncDurationMissing)
+      else let #Found value = lookup then
+        if let #Null = value then
+          #DurationParsed (#SyncDurationMissing)
+        else let #Number text = value then
           let parsed = parse_u64_decimal_text text;
-          if let `Ok canonical = parsed { `DurationParsed (`SyncDurationPresent canonical)
-          } else if let `Err message = parsed { `DurationParseFailed (
-            text_append [field_name, text_append [" ", message]]
-          ) } else { `DurationParseFailed (text_append [field_name, " is invalid"]) }
-        } else {
-          `DurationParseFailed (text_append [field_name, " must be a U64 integer or null"])
-        }
-      } else {
-        `DurationParseFailed (text_append [field_name, " is invalid"])
-      }
-    }
-  } else {
-    `DurationParseFailed "duration container must be an object"
-  }
-};
+          if let #Ok canonical = parsed then #DurationParsed (#SyncDurationPresent canonical)
+          else let #Err message = parsed then #DurationParseFailed (
+            text_append (field_name, text_append (" ", message))
+          ) else #DurationParseFailed (text_append (field_name, " is invalid")) end;
+        else
+          #DurationParseFailed (text_append (field_name, " must be a U64 integer or null"))
+        end;
+      else
+        #DurationParseFailed (text_append (field_name, " is invalid"))
+      end;
+    end;
+  else
+    #DurationParseFailed "duration container must be an object"
+  end;
+end;
 
-let parse_sync_barrier: SyncValueJson -> SyncValueBarrierParseResult = (container: SyncValueJson) => {
-    if let `Object object = container {
-      if json_object_key_count("barrier", object) > 1 {
-        `BarrierParseFailed "barrier must appear at most once"
-      } else {
+let parse_sync_barrier: SyncValueJson -> SyncValueBarrierParseResult =
+  (container: SyncValueJson) => do
+    if let #Object object = container then
+      if json_object_key_count("barrier", object) > 1 then
+        #BarrierParseFailed "barrier must appear at most once"
+      else
         let lookup = json_object_get("barrier", object);
-        if let `Missing () = lookup {
-          `BarrierParsed (`SyncBarrierMissing ())
-        } else if let `Found value = lookup {
-          if let `Null () = value {
-            `BarrierParsed (`SyncBarrierMissing ())
-          } else if let `Object fields = value {
+        if let #Missing = lookup then
+          #BarrierParsed (#SyncBarrierMissing)
+        else let #Found value = lookup then
+          if let #Null = value then
+            #BarrierParsed (#SyncBarrierMissing)
+          else let #Object fields = value then
             if json_object_key_count("id", fields) != 1 || json_object_key_count(
               "participants",
               fields,
-            ) != 1 || json_object_key_count("timeout_ms", fields) > 1 {
-              `BarrierParseFailed "barrier requires exactly one id and participants and at most one timeout_ms"
-            } else {
+            ) != 1 || json_object_key_count("timeout_ms", fields) > 1 then
+              #BarrierParseFailed "barrier requires exactly one id and participants and at most one timeout_ms"
+            else
               let id = "";
               let failure = "";
               let id_lookup = json_object_get("id", fields);
-              if let `Found id_value = id_lookup { if let `String text = id_value { id = text } else { failure = "barrier.id must be a string" } }
+              if let #Found id_value = id_lookup then
+                if let #String text = id_value then
+                  id = text
+                else
+                  failure = "barrier.id must be a string"
+                end;
+              end;
               let participants: SyncValueDurationParseResult = parse_sync_duration(
                 "participants",
                 json_object fields,
@@ -82,45 +89,45 @@ let parse_sync_barrier: SyncValueJson -> SyncValueBarrierParseResult = (containe
                 "timeout_ms",
                 json_object fields,
               );
-              if failure != "" {
-                `BarrierParseFailed failure
-              } else if let `DurationParseFailed message = participants {
-                `BarrierParseFailed message
-              } else if let `DurationParseFailed message = timeout {
-                `BarrierParseFailed message
-              } else if let `DurationParsed participants_option = participants {
-                if let `SyncDurationPresent participant_count = participants_option {
-                  if let `DurationParsed timeout_option = timeout {
-                    let timeout_ms = if let `SyncDurationPresent configured = timeout_option {
-                      configured } else { "1000" };
+              if failure != "" then
+                #BarrierParseFailed failure
+              else let #DurationParseFailed message = participants then
+                #BarrierParseFailed message
+              else let #DurationParseFailed message = timeout then
+                #BarrierParseFailed message
+              else let #DurationParsed participants_option = participants then
+                if let #SyncDurationPresent participant_count = participants_option then
+                  if let #DurationParsed timeout_option = timeout then
+                    let timeout_ms = if let #SyncDurationPresent configured = timeout_option then
+                      configured else "1000" end;
                     let barrier: SyncValueBarrier = [
                       .id = id,
                       .participants = participant_count,
                       .timeout_ms = timeout_ms,
                     ];
-                    `BarrierParsed (`SyncBarrierPresent barrier);
-                  } else {
-                    `BarrierParseFailed "barrier timeout is invalid"
-                  }
-                } else {
-                  `BarrierParseFailed "barrier.participants is required"
-                }
-              } else {
-                `BarrierParseFailed "barrier participants are invalid"
-              }
-            }
-          } else {
-            `BarrierParseFailed "barrier must be an object or null"
-          }
-        } else {
-          `BarrierParseFailed "barrier is invalid"
-        }
-      }
-    } else { `BarrierParseFailed "barrier container must be an object" }
-  };
+                    #BarrierParsed (#SyncBarrierPresent barrier);
+                  else
+                    #BarrierParseFailed "barrier timeout is invalid"
+                  end;
+                else
+                  #BarrierParseFailed "barrier.participants is required"
+                end;
+              else
+                #BarrierParseFailed "barrier participants are invalid"
+              end;
+            end;
+          else
+            #BarrierParseFailed "barrier must be an object or null"
+          end;
+        else
+          #BarrierParseFailed "barrier is invalid"
+        end;
+      end;
+    else #BarrierParseFailed "barrier container must be an object" end;
+  end;
 
-let decode_test_sync_value: SyncValueJson -> SyncValueParseResult = value => {
-  if let `Object object = value {
+let decode_test_sync_value: SyncValueJson -> SyncValueParseResult = value => do
+  if let #Object object = value then
     let before: SyncValueDurationParseResult = parse_sync_duration(
       "sleep_before_ms",
       json_object object,
@@ -130,28 +137,28 @@ let decode_test_sync_value: SyncValueJson -> SyncValueParseResult = value => {
       json_object object,
     );
     let barrier: SyncValueBarrierParseResult = parse_sync_barrier(json_object object);
-    if let `DurationParseFailed message = before {
+    if let #DurationParseFailed message = before then
       sync_parse_failure message
-    } else if let `DurationParseFailed message = after {
+    else let #DurationParseFailed message = after then
       sync_parse_failure message
-    } else if let `BarrierParseFailed message = barrier {
+    else let #BarrierParseFailed message = barrier then
       sync_parse_failure message
-    } else if let `DurationParsed before_value = before {
-      if let `DurationParsed after_value = after {
-        if let `BarrierParsed barrier_value = barrier {
+    else let #DurationParsed before_value = before then
+      if let #DurationParsed after_value = after then
+        if let #BarrierParsed barrier_value = barrier then
           let args: SyncValueArgs = [
             .sleep_before_ms = before_value,
             .sleep_after_ms = after_value,
             .barrier = barrier_value,
           ];
-          `Parsed args;
-        } else { sync_parse_failure "barrier is invalid" }
-      } else { sync_parse_failure "sleep_after_ms is invalid" }
-    } else { sync_parse_failure "sleep_before_ms is invalid" }
-  } else {
+          #Parsed args;
+        else sync_parse_failure "barrier is invalid" end;
+      else sync_parse_failure "sleep_after_ms is invalid" end;
+    else sync_parse_failure "sleep_before_ms is invalid" end;
+  else
     sync_parse_failure "test_sync_tool arguments must be an object"
-  }
-};
+  end;
+end;
 
 return {
   .decode_test_sync_value,

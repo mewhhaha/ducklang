@@ -6,16 +6,16 @@ type SkillI32Option = Option I32
 type SkillTexts = List Text
 
 type SkillProduct =
-  | `Chatgpt Unit
-  | `Codex Unit
-  | `Atlas Unit
+  | #Chatgpt
+  | #Codex
+  | #Atlas
 type SkillProductOption = Option SkillProduct
 
 type SkillScope =
-  | `User Unit
-  | `Repo Unit
-  | `System Unit
-  | `Admin Unit
+  | #User
+  | #Repo
+  | #System
+  | #Admin
 
 type SkillPolicy = [SkillBoolOption, SkillTexts]
 type SkillInterface = [
@@ -24,14 +24,14 @@ type SkillInterface = [
   SkillTextOption,
   SkillTextOption,
   SkillTextOption,
-  SkillTextOption ]
+  SkillTextOption]
 type SkillToolDependency = [
   Text,
   Text,
   SkillTextOption,
   SkillTextOption,
   SkillTextOption,
-  SkillTextOption ]
+  SkillTextOption]
 type SkillToolDependencies = List SkillToolDependency
 
 type SkillMetadata = [
@@ -43,7 +43,7 @@ type SkillMetadata = [
   SkillPolicy,
   Text,
   SkillScope,
-  SkillTextOption ]
+  SkillTextOption]
 type SkillDocument = [SkillMetadata, Text]
 type SkillDocumentOption = Option SkillDocument
 type SkillDocumentParse = [SkillDocumentOption, SkillTextOption]
@@ -51,8 +51,8 @@ type SkillDocuments = List SkillDocument
 
 type SkillSnapshotFile = [Text, Text]
 type SkillSnapshotEntry =
-  | `File SkillSnapshotFile
-  | `Directory Text
+  | #File SkillSnapshotFile
+  | #Directory Text
 type SkillSnapshotEntries = List SkillSnapshotEntry
 type SkillRootSnapshot = [Text, SkillScope, SkillTextOption, SkillTextOption, SkillSnapshotEntries]
 type SkillRootSnapshots = List SkillRootSnapshot
@@ -69,8 +69,8 @@ type SkillSelection = [SkillDocuments, SkillErrors]
 
 type SkillRenderReport = [I32, I32, I32, I32, I32]
 type SkillMetadataBudget =
-  | `Characters I32
-  | `Tokens I32
+  | #Characters I32
+  | #Tokens I32
 type SkillRenderLine = [Text, Text, Text, SkillScope]
 type SkillRenderLines = List SkillRenderLine
 type SkillRenderAccum = [SkillTexts, I32, I32, I32, I32]

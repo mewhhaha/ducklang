@@ -7,69 +7,69 @@ type CollectedImageRequest = ImagePreparationPlan
 type CollectedImageRequests = List CollectedImageRequest
 type CollectedImageRequestNode = ListNode CollectedImageRequest
 
-const collect_image_requests_from_contents: [HistoryContents, CollectedImageRequests] ->
+const collect_image_requests_from_contents: (HistoryContents, CollectedImageRequests) ->
   CollectedImageRequests = (
     contents,
     reversed,
-  ) => {
+  ) => do
     let current = contents;
     let collected = reversed;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [content, tail] = node;
-        if let `InputImage image = content {
+        if let #InputImage image = content then
           let plan = plan_image_preparation image;
-          if plan.status_code == 1 {
+          if plan.status_code == 1 then
             let request_node: CollectedImageRequestNode = [plan, collected];
-            collected = `Cons request_node
-          }
-        }
+            collected = #Cons request_node
+          end;
+        end;
         current = tail
-      } else {
+      else
         break;
-      }
-    }
+      end;
+    end;
 
     collected
-  };
+  end;
 
-const collect_image_processing_requests: HistoryItems -> CollectedImageRequests = responses => {
+const collect_image_processing_requests: HistoryItems -> CollectedImageRequests = responses => do
   let current = responses;
-  let reversed: CollectedImageRequests = `Nil ();
+  let reversed: CollectedImageRequests = #Nil;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [response, tail] = node;
-      if let `Message message = response {
+      if let #Message message = response then
         let [_, _, contents] = message;
         reversed = collect_image_requests_from_contents(contents, reversed)
-      } else if let `FunctionOutput output = response {
+      else let #FunctionOutput output = response then
         let [_, _, contents] = output;
         reversed = collect_image_requests_from_contents(contents, reversed)
-      } else if let `CustomOutput output = response {
+      else let #CustomOutput output = response then
         let [_, _, contents] = output;
         reversed = collect_image_requests_from_contents(contents, reversed)
-      }
+      end;
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
-  let requests: CollectedImageRequests = `Nil ();
-  loop {
-    if let `Cons node = reversed {
+  let requests: CollectedImageRequests = #Nil;
+  loop do
+    if let #Cons node = reversed then
       let [request, tail] = node;
       let request_node: CollectedImageRequestNode = [request, requests];
-      requests = `Cons request_node
+      requests = #Cons request_node
       reversed = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   requests
-};
+end;
 
 return { .collect_image_processing_requests };

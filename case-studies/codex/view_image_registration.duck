@@ -12,65 +12,65 @@ type ImageToolOutputSchema = ToolOutputSchema
 
 const view_image_tool_name: () -> ImageToolName = () => ["", "view_image"];
 
-const view_image_tool_description: () -> Text = () => {
+const view_image_tool_description: () -> Text = () => do
   "View a local image file from the filesystem when visual inspection is needed. Use this for images already available on disk."
-};
+end;
 
-const view_image_tool_definitions: Bool -> ImageToolDefinitions = has_environment => {
-  if has_environment {
+const view_image_tool_definitions: Bool -> ImageToolDefinitions = has_environment => do
+  if has_environment then
     let definition: ImageToolDefinition = [
       view_image_tool_name(),
-      `Direct (),
-      `ViewImage (),
-      `FunctionPayload (),
+      #Direct,
+      #ViewImage,
+      #FunctionPayload,
       true,
       false,
     ];
-    `Cons ([definition, `Nil ()])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([definition, #Nil])
+  else
+    #Nil
+  end;
+end;
 
-const view_image_parameters: [Bool, Bool] -> Text = (
+const view_image_parameters: (Bool, Bool) -> Text = (
   include_environment_id: Bool,
   can_request_original_detail: Bool,
-) => {
-  if include_environment_id && can_request_original_detail {
+) => do
+  if include_environment_id && can_request_original_detail then
     "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-  } else if can_request_original_detail {
+  else can_request_original_detail then
     "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-  } else if include_environment_id {
+  else include_environment_id then
     "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-  } else {
+  else
     "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-  }
-};
+  end;
+end;
 
-const view_image_output_schema: () -> Text = () => {
+const view_image_output_schema: () -> Text = () => do
   "{\"type\":\"object\",\"properties\":{\"image_url\":{\"type\":\"string\",\"description\":\"Data URL for the loaded image.\"},\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail hint returned by view_image. Returns `high` for default resized behavior or `original` when original resolution is preserved.\"}},\"required\":[\"image_url\",\"detail\"],\"additionalProperties\":false}"
-};
+end;
 
-const view_image_tool_specs: [Bool, Bool, Bool] -> ImageToolSpecs = (
+const view_image_tool_specs: (Bool, Bool, Bool) -> ImageToolSpecs = (
   has_environment: Bool,
   include_environment_id: Bool,
   can_request_original_detail: Bool,
-) => {
-  if has_environment {
-    let output: ImageToolOutputSchema = `ToolOutputSchemaPresent (view_image_output_schema());
+) => do
+  if has_environment then
+    let output: ImageToolOutputSchema = #ToolOutputSchemaPresent (view_image_output_schema());
     let spec: ImageToolSpec = [
       view_image_tool_name(),
-      `FunctionSpec (),
+      #FunctionSpec,
       view_image_tool_description(),
       view_image_parameters(include_environment_id, can_request_original_detail),
       output,
       false,
     ];
-    `Cons ([spec, `Nil ()])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([spec, #Nil])
+  else
+    #Nil
+  end;
+end;
 
 return {
   .view_image_output_schema,

@@ -6,8 +6,8 @@ const {} = import "duck:prelude/abstractions" ();
 type ResponseRetryDurationOption = Option DurationMs
 
 type ResponseStreamRequest =
-  | `Sampling Unit
-  | `RemoteCompactionV2 Unit
+  | #Sampling
+  | #RemoteCompactionV2
 
 type ResponseStreamError = struct {
   .message = Text,
@@ -22,8 +22,8 @@ type ResponseRetryDirective = struct {
 }
 
 type ResponseRetryPlan =
-  | `Retry ResponseRetryDirective
-  | `Fallback Text
-  | `Fail Text
+  | #Retry ResponseRetryDirective
+  | #Fallback Text
+  | #Fail Text
 
 return {};

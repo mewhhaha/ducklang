@@ -9,31 +9,31 @@ type PlanPolicyPayload = UpdatePlanPayload
 type PlanPolicyPayloadPlan = UpdatePlanPayloadPlan
 type PlanPolicyArgs = UpdatePlanArgs
 
-let plan_update_plan_payload: [PlanPolicyPayload, PlanPolicyMode] -> PlanPolicyPayloadPlan = (
+let plan_update_plan_payload: (PlanPolicyPayload, PlanPolicyMode) -> PlanPolicyPayloadPlan = (
   payload: PlanPolicyPayload,
   mode: PlanPolicyMode,
-) => {
-  if let `Unsupported () = payload {
-    `RejectPayload "update_plan handler received unsupported payload"
-  } else if let `Plan () = mode {
-    `RejectPayload "update_plan is a TODO/checklist tool and is not allowed in Plan mode"
-  } else if let `Function arguments = payload {
-    `ParseArguments arguments
-  } else {
-    `RejectPayload "update_plan handler received unsupported payload"
-  }
-};
+) => do
+  if let #Unsupported = payload then
+    #RejectPayload "update_plan handler received unsupported payload"
+  else let #Plan = mode then
+    #RejectPayload "update_plan is a TODO/checklist tool and is not allowed in Plan mode"
+  else let #Function arguments = payload then
+    #ParseArguments arguments
+  else
+    #RejectPayload "update_plan handler received unsupported payload"
+  end;
+end;
 
-let plan_parsed_update_plan: PlanPolicyArgs -> PlanPolicyCallPlan = args => `Publish args;
+let plan_parsed_update_plan: PlanPolicyArgs -> PlanPolicyCallPlan = args => #Publish args;
 
-let update_plan_completion: () -> PlanPolicyCompletion = () => {
+let update_plan_completion: () -> PlanPolicyCompletion = () => do
   let completion: PlanPolicyCompletion = [
     .text = "Plan updated",
     .success = true,
     .code_mode = "{}",
   ];
   completion
-};
+end;
 
 return {
   .plan_parsed_update_plan,

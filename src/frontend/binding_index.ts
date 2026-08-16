@@ -13,12 +13,18 @@ import type {
 } from "./ast.ts";
 import { expect } from "../expect.ts";
 import { name_sites, type NameSite } from "./name_site.ts";
-import type { ParseSourceResult } from "./parser.ts";
-import { has_source_span, source_span, type SourceSpan } from "./syntax.ts";
+import {
+  has_concrete_source_span,
+  has_source_span,
+  source_span,
+  type SourceSpan,
+  type SourceSyntax,
+} from "./syntax.ts";
 import { source_type_display_name, type SourceFacts } from "./source_facts.ts";
 import { front_type_from_type_name } from "./types.ts";
 import { is_const_builtin_name } from "./constness.ts";
 import { editor_source_facts } from "./editor_source_facts.ts";
+import type { RepresentationType } from "./representation_type.ts";
 
 export type EntityId = string;
 export type ScopeId = string;
@@ -52,6 +58,8 @@ export type BindingEntity = {
   name: string;
   kind: BindingEntityKind;
   generation: number;
+  replaces: EntityId | undefined;
+  visible_from: number | undefined;
   linear: boolean;
   readonly: boolean;
   scope: ScopeId;
@@ -78,6 +86,7 @@ export type BindingOccurrence = {
 };
 export type EntityFacts = {
   type: FrontType | undefined;
+  representation: RepresentationType | undefined;
   nominal: EntityId | undefined;
   const_source: object | undefined;
   editor_type: string | undefined;
@@ -93,7 +102,19 @@ export type BindingIndex = {
   occurrence_at(offset: number): BindingOccurrence | undefined;
   visible_at(offset: number): BindingEntity[];
   member_lookup(owner: EntityId, name: string): BindingEntity | undefined;
+  occurrence_of(
+    owner: object,
+    slot: string,
+    index?: number,
+  ): BindingOccurrence | undefined;
+  representation_of(subject: object): RepresentationType | undefined;
   dump(): string;
+};
+
+type BindingIndexSource = {
+  source: Source;
+  syntax: SourceSyntax;
+  recovery_intervals: { skipped: SourceSpan }[];
 };
 
 type State = {
@@ -104,12 +125,15 @@ type State = {
   next_occurrence: number;
   generations: Map<string, number>;
   sites: Set<NameSite>;
+  occurrences_by_site: WeakMap<NameSite, OccurrenceId>;
 };
 
 export function build_binding_index(
-  parsed: ParseSourceResult,
+  parsed: BindingIndexSource,
   version = 0,
 ): BindingIndex {
+  const facts = editor_source_facts(parsed.source);
+  const occurrences_by_site = new WeakMap<NameSite, OccurrenceId>();
   const root: BindingScope = {
     id: "scope:0",
     parent: undefined,
@@ -135,6 +159,7 @@ export function build_binding_index(
       const names = new Set<string>();
       let innermost: ScopeId | undefined;
       let innermost_depth = -1;
+      let innermost_width = Number.POSITIVE_INFINITY;
       for (const candidate of this.scopes.values()) {
         if (candidate.start === undefined || candidate.end === undefined) {
           continue;
@@ -148,9 +173,14 @@ export function build_binding_index(
           depth += 1;
           parent = parent_scope.parent;
         }
-        if (depth > innermost_depth) {
+        const width = candidate.end - candidate.start;
+        if (
+          depth > innermost_depth ||
+          (depth === innermost_depth && width < innermost_width)
+        ) {
           innermost = candidate.id;
           innermost_depth = depth;
+          innermost_width = width;
         }
       }
       if (innermost === undefined) return visible;
@@ -164,13 +194,10 @@ export function build_binding_index(
         const current_generation = new Map<string, BindingEntity>();
 
         for (const entity of candidates) {
-          let definition: BindingOccurrence | undefined;
-
-          if (entity.definition !== undefined) {
-            definition = this.occurrences.get(entity.definition);
-          }
-
-          if (definition !== undefined && definition.span.start <= offset) {
+          if (
+            entity.visible_from !== undefined &&
+            entity.visible_from <= offset
+          ) {
             current_generation.set(entity.name, entity);
           }
         }
@@ -193,6 +220,20 @@ export function build_binding_index(
       if (member === undefined) return undefined;
       return this.entities.get(member);
     },
+    occurrence_of(owner, slot, occurrence_index = undefined) {
+      const site = name_sites(owner).find((candidate) =>
+        candidate.slot === slot && candidate.index === occurrence_index
+      );
+      if (site === undefined) return undefined;
+      const occurrence = occurrences_by_site.get(site);
+      if (occurrence === undefined) return undefined;
+      return this.occurrences.get(occurrence);
+    },
+    representation_of(subject) {
+      const type = facts.editor_type_of.get(subject);
+      if (type === undefined) return undefined;
+      return type.canonical_type();
+    },
     dump() {
       return [...this.occurrences.values()].map((occurrence) =>
         occurrence.name + " " + occurrence.role + " " +
@@ -202,12 +243,13 @@ export function build_binding_index(
   };
   const state: State = {
     index,
-    facts: editor_source_facts(parsed.source),
+    facts,
     next_entity: 0,
     next_scope: 1,
     next_occurrence: 0,
     generations: new Map(),
     sites: new Set(),
+    occurrences_by_site,
   };
   predeclare(parsed.source, root.id, state);
   visit_statements(parsed.source.statements, root.id, state);
@@ -419,6 +461,9 @@ function visit_statements(
         "definition",
         scope,
         state,
+        undefined,
+        "name",
+        source_span(statement).end,
       );
       continue;
     }
@@ -432,6 +477,9 @@ function visit_statements(
         "definition",
         scope,
         state,
+        undefined,
+        "name",
+        source_span(statement.value).end,
       );
       continue;
     }
@@ -442,6 +490,7 @@ function visit_statements(
       if (statement.kind === "const") kind = "const";
       if (statement.mutual !== undefined) {
         const members = [statement, ...statement.mutual];
+        const group_start = source_span(statement).start;
 
         for (const member of members) {
           define(
@@ -453,6 +502,9 @@ function visit_statements(
             "definition",
             scope,
             state,
+            undefined,
+            "name",
+            group_start,
           );
           if (member.pattern?.tag === "binding") {
             mark_name_slot_visited(member.pattern, "name", state);
@@ -502,7 +554,13 @@ function visit_statements(
         statement.pattern !== undefined &&
         statement.pattern.tag !== "binding" && !statement.is_recursive
       ) {
-        visit_pattern(statement.pattern, kind, scope, state);
+        visit_pattern(
+          statement.pattern,
+          kind,
+          scope,
+          state,
+          source_span(statement).end,
+        );
       } else if (!statement.is_recursive) {
         let kind: BindingEntityKind = "value";
         if (statement.kind === "const") kind = "const";
@@ -515,6 +573,9 @@ function visit_statements(
           "definition",
           scope,
           state,
+          undefined,
+          "name",
+          source_span(statement).end,
         );
 
         if (statement.pattern?.tag === "binding") {
@@ -536,6 +597,9 @@ function visit_statements(
           "definition",
           scope,
           state,
+          undefined,
+          "value_name",
+          source_span(statement).end,
         );
       }
       continue;
@@ -554,6 +618,9 @@ function visit_statements(
           "definition",
           scope,
           state,
+          undefined,
+          "name",
+          source_span(statement).end,
         );
       }
       continue;
@@ -569,6 +636,9 @@ function visit_statements(
         "definition",
         scope,
         state,
+        undefined,
+        "left",
+        source_span(statement).end,
       );
       define(
         statement,
@@ -579,11 +649,27 @@ function visit_statements(
         "definition",
         scope,
         state,
+        undefined,
+        "right",
+        source_span(statement).end,
       );
       continue;
     }
     if (statement.tag === "assign") {
       visit_expr(statement.value, scope, state);
+      const previous = lookup(scope, statement.name, state);
+      if (previous === undefined) {
+        reference(
+          statement,
+          "name",
+          undefined,
+          statement.name,
+          "reference",
+          scope,
+          state,
+        );
+        continue;
+      }
       define(
         statement,
         "name",
@@ -597,17 +683,35 @@ function visit_statements(
       continue;
     }
     if (statement.tag === "index_assign") {
-      reference(
+      const previous = lookup(scope, statement.name, state);
+      if (previous === undefined) {
+        reference(
+          statement,
+          "name",
+          undefined,
+          statement.name,
+          "reference",
+          scope,
+          state,
+        );
+        visit_expr(statement.index, scope, state);
+        visit_expr(statement.value, scope, state);
+        continue;
+      }
+      visit_expr(statement.index, scope, state);
+      visit_expr(statement.value, scope, state);
+      define(
         statement,
         "name",
         undefined,
         statement.name,
-        "reference",
+        "value",
+        "shadow",
         scope,
         state,
+        undefined,
+        "object",
       );
-      visit_expr(statement.index, scope, state);
-      visit_expr(statement.value, scope, state);
       continue;
     }
     if (statement.tag === "expr") {
@@ -631,6 +735,7 @@ function visit_statements(
       visit_expr(statement.target, scope, state);
       case_reference(statement, "case_name", statement.case_name, scope, state);
       const branch = child_scope(scope, state, statement);
+      const body_start = source_span(statement.target).end;
       if (statement.value_name !== undefined) {
         define(
           statement,
@@ -641,6 +746,9 @@ function visit_statements(
           "definition",
           branch,
           state,
+          undefined,
+          "value_name",
+          body_start,
         );
       }
       visit_statements(statement.body, branch, state);
@@ -651,6 +759,13 @@ function visit_statements(
       visit_expr(statement.end, scope, state);
       visit_expr(statement.step, scope, state);
       const body = child_scope(scope, state, statement);
+      let body_start = Math.max(
+        source_span(statement.start).end,
+        source_span(statement.end).end,
+      );
+      if (has_concrete_source_span(statement.step)) {
+        body_start = Math.max(body_start, source_span(statement.step).end);
+      }
       define(
         statement,
         "index",
@@ -660,6 +775,9 @@ function visit_statements(
         "definition",
         body,
         state,
+        undefined,
+        "index",
+        body_start,
       );
       visit_statements(statement.body, body, state);
       continue;
@@ -667,6 +785,7 @@ function visit_statements(
     if (statement.tag === "for_collection") {
       visit_expr(statement.collection, scope, state);
       const body = child_scope(scope, state, statement);
+      const body_start = source_span(statement.collection).end;
       if (statement.index !== undefined) {
         define(
           statement,
@@ -677,6 +796,9 @@ function visit_statements(
           "definition",
           body,
           state,
+          undefined,
+          "index",
+          body_start,
         );
       }
       define(
@@ -688,6 +810,9 @@ function visit_statements(
         "definition",
         body,
         state,
+        undefined,
+        "item",
+        body_start,
       );
       visit_statements(statement.body, body, state);
       continue;
@@ -908,6 +1033,7 @@ function visit_expr(expr: FrontExpr, scope: ScopeId, state: State): void {
     visit_expr(expr.target, scope, state);
     case_reference(expr, "case_name", expr.case_name, scope, state);
     const branch = child_scope(scope, state, expr.then_branch);
+    const body_start = source_span(expr.target).end;
     if (expr.value_name !== undefined) {
       define(
         expr,
@@ -918,6 +1044,9 @@ function visit_expr(expr: FrontExpr, scope: ScopeId, state: State): void {
         "definition",
         branch,
         state,
+        undefined,
+        "value_name",
+        body_start,
       );
     }
     visit_expr(expr.then_branch, branch, state);
@@ -971,6 +1100,9 @@ function visit_expr(expr: FrontExpr, scope: ScopeId, state: State): void {
         "definition",
         handler_scope,
         state,
+        undefined,
+        "name",
+        source_span(entry.value).end,
       );
     }
     for (const clause of expr.clauses) {
@@ -1112,6 +1244,7 @@ function visit_pattern(
   default_kind: "value" | "const",
   scope: ScopeId,
   state: State,
+  visible_from_override: number | undefined = undefined,
 ): void {
   if (pattern.tag === "binding") {
     let kind = default_kind;
@@ -1129,6 +1262,9 @@ function visit_pattern(
       "definition",
       scope,
       state,
+      undefined,
+      "name",
+      visible_from_override,
     );
     visit_name_slot(pattern, "annotation", scope, state);
     visit_type(pattern.type_annotation, scope, state);
@@ -1158,6 +1294,9 @@ function visit_pattern(
       "definition",
       scope,
       state,
+      undefined,
+      "name",
+      visible_from_override,
     );
     return;
   }
@@ -1165,7 +1304,7 @@ function visit_pattern(
   if (pattern.tag === "or") {
     const first = pattern.alternatives[0];
     expect(first, "Alternation pattern requires an alternative");
-    visit_pattern(first, default_kind, scope, state);
+    visit_pattern(first, default_kind, scope, state, visible_from_override);
 
     for (const alternative of pattern.alternatives.slice(1)) {
       visit_pattern_value_references(alternative, scope, state);
@@ -1177,39 +1316,75 @@ function visit_pattern(
     case_reference(pattern, "name", pattern.name, scope, state);
 
     if (pattern.value !== undefined) {
-      visit_pattern(pattern.value, default_kind, scope, state);
+      visit_pattern(
+        pattern.value,
+        default_kind,
+        scope,
+        state,
+        visible_from_override,
+      );
     }
     return;
   }
 
   if (pattern.tag === "product") {
     for (const entry of pattern.entries) {
-      visit_pattern(entry.pattern, default_kind, scope, state);
+      visit_pattern(
+        entry.pattern,
+        default_kind,
+        scope,
+        state,
+        visible_from_override,
+      );
     }
 
     if (pattern.rest !== undefined) {
-      visit_pattern(pattern.rest, default_kind, scope, state);
+      visit_pattern(
+        pattern.rest,
+        default_kind,
+        scope,
+        state,
+        visible_from_override,
+      );
     }
     return;
   }
 
   if (pattern.tag === "record") {
     for (const field of pattern.fields) {
-      visit_pattern(field.pattern, default_kind, scope, state);
+      visit_pattern(
+        field.pattern,
+        default_kind,
+        scope,
+        state,
+        visible_from_override,
+      );
     }
 
     if (pattern.rest !== undefined) {
-      visit_pattern(pattern.rest, default_kind, scope, state);
+      visit_pattern(
+        pattern.rest,
+        default_kind,
+        scope,
+        state,
+        visible_from_override,
+      );
     }
     return;
   }
 
   for (const item of pattern.items) {
-    visit_pattern(item, default_kind, scope, state);
+    visit_pattern(item, default_kind, scope, state, visible_from_override);
   }
 
   if (pattern.rest !== undefined) {
-    visit_pattern(pattern.rest, default_kind, scope, state);
+    visit_pattern(
+      pattern.rest,
+      default_kind,
+      scope,
+      state,
+      visible_from_override,
+    );
   }
 }
 
@@ -1431,6 +1606,8 @@ function define(
   scope: ScopeId,
   state: State,
   parent: EntityId | undefined = undefined,
+  definition_slot = slot,
+  visible_from_override: number | undefined = undefined,
 ): EntityId {
   let key = scope + ":" + name;
 
@@ -1447,6 +1624,10 @@ function define(
 
   state.generations.set(key, generation + 1);
   const id = "entity:" + state.next_entity++;
+  let replaces: EntityId | undefined;
+  if (role === "shadow" && parent === undefined) {
+    replaces = lookup(scope, name, state);
+  }
   let linear = false;
   let readonly = kind === "const";
   const owner_record = owner as Record<string, unknown>;
@@ -1470,30 +1651,46 @@ function define(
     scope,
     state,
   );
+  let visible_from: number | undefined;
+  if (occurrence !== undefined) {
+    const definition = state.index.occurrences.get(occurrence);
+    expect(definition, "Missing binding definition occurrence: " + occurrence);
+    visible_from = definition.span.start;
+  }
+  if (role === "shadow" && has_source_span(owner)) {
+    visible_from = source_span(owner).end;
+  }
+  if (visible_from_override !== undefined) {
+    visible_from = visible_from_override;
+  }
   state.index.entities.set(id, {
     id,
     name,
     kind,
     generation,
+    replaces,
+    visible_from,
     linear,
     readonly,
     scope,
     owner: parent,
     definition: occurrence,
     definition_subject: owner,
-    definition_slot: slot,
+    definition_slot,
   });
   let type: FrontType | undefined;
+  let representation: RepresentationType | undefined;
   let nominal: EntityId | undefined;
   let const_source: object | undefined;
   let editor_type: string | undefined;
   const definition_types = state.facts.definition_type_of.get(owner);
 
   if (definition_types !== undefined) {
-    const definition_type = definition_types.get(slot);
+    const definition_type = definition_types.get(definition_slot);
 
     if (definition_type !== undefined) {
       editor_type = source_type_display_name(definition_type);
+      representation = definition_type.canonical_type();
     }
   }
 
@@ -1506,6 +1703,9 @@ function define(
     if (editor_type === undefined && value_editor_type !== undefined) {
       editor_type = source_type_display_name(value_editor_type);
     }
+    if (representation === undefined && value_editor_type !== undefined) {
+      representation = value_editor_type.canonical_type();
+    }
     const nominal_name = state.facts.nominal_of.get(owner.value);
     if (nominal_name !== undefined) {
       nominal = lookup(scope, nominal_name, state);
@@ -1516,7 +1716,13 @@ function define(
   ) {
     type = front_type_from_type_name(owner.annotation);
   }
-  state.index.facts.set(id, { type, nominal, const_source, editor_type });
+  state.index.facts.set(id, {
+    type,
+    representation,
+    nominal,
+    const_source,
+    editor_type,
+  });
   if (parent === undefined) {
     const binding_scope = state.index.scopes.get(scope);
     expect(binding_scope, "Missing binding index scope: " + scope);
@@ -1838,6 +2044,7 @@ function occurrence_for(
     unresolved: unresolved_reason,
     scope,
   });
+  state.occurrences_by_site.set(site, id);
   record_scope_span(scope, site.span, state);
   if (
     entity !== undefined &&

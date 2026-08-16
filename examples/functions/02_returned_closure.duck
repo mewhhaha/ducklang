@@ -1,6 +1,6 @@
-let make_adder = amount => {
+let make_adder = amount => do
   value => value + amount
-};
+end;
 
 let add_two = make_adder 2;
 add_two 40

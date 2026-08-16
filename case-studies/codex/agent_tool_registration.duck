@@ -5,111 +5,111 @@ const {} = import "./tool_types.duck" ();
 
 type AgentRegistrationDefinitionNode = [ToolDefinition, AgentRegistrationDefinitions]
 type AgentRegistrationDefinitions =
-  | `Nil Unit
-  | `Cons AgentRegistrationDefinitionNode
+  | #Nil
+  | #Cons AgentRegistrationDefinitionNode
 type AgentRegistrationSpecNode = [ToolSpec, AgentRegistrationSpecs]
 type AgentRegistrationSpecs =
-  | `Nil Unit
-  | `Cons AgentRegistrationSpecNode
+  | #Nil
+  | #Cons AgentRegistrationSpecNode
 
-const collaboration_tool_name: [AgentToolRegistrationConfig, Text] -> ToolName = (
+const collaboration_tool_name: (AgentToolRegistrationConfig, Text) -> ToolName = (
   config,
   local_name,
-) => {
+) => do
   [config.namespace, local_name]
-};
+end;
 
-const collaboration_tool_exposure: AgentToolRegistrationConfig -> ToolExposure = config => {
-  if config.direct_model_only { `DirectModelOnly () } else { `Direct () }
-};
+const collaboration_tool_exposure: AgentToolRegistrationConfig -> ToolExposure = config => do
+  if config.direct_model_only then #DirectModelOnly else #Direct end;
+end;
 
-const collaboration_tool_definition: [AgentToolRegistrationConfig, Text, ToolHandler, Bool] ->
+const collaboration_tool_definition: (AgentToolRegistrationConfig, Text, ToolHandler, Bool) ->
   ToolDefinition = (
     config,
     local_name,
     tool_handler,
     parallel,
-  ) => {
+  ) => do
     [
       collaboration_tool_name(config, local_name),
       collaboration_tool_exposure config,
       tool_handler,
-      `FunctionPayload (),
+      #FunctionPayload,
       parallel,
       false,
     ]
-  };
+  end;
 
-const collaboration_tools_enabled: AgentToolRegistrationConfig -> Bool = config => {
+const collaboration_tools_enabled: AgentToolRegistrationConfig -> Bool = config => do
   config.enabled && config.v2_enabled
-};
+end;
 
 const collaboration_tool_definitions: AgentToolRegistrationConfig -> AgentRegistrationDefinitions =
-  config => {
-    if !(collaboration_tools_enabled config) {
-      return `Nil ();
-    }
+  config => do
+    if !(collaboration_tools_enabled config) then
+      return #Nil;
+    end;
 
-    let spawn = collaboration_tool_definition(config, "spawn_agent", `SpawnAgent (), false);
-    let send = collaboration_tool_definition(config, "send_message", `SendAgentMessage (), true);
+    let spawn = collaboration_tool_definition(config, "spawn_agent", #SpawnAgent, false);
+    let send = collaboration_tool_definition(config, "send_message", #SendAgentMessage, true);
     let followup = collaboration_tool_definition(
       config,
       "followup_task",
-      `FollowupAgentTask (),
+      #FollowupAgentTask,
       true,
     );
-    let wait = collaboration_tool_definition(config, "wait_agent", `WaitAgent (), false);
+    let wait = collaboration_tool_definition(config, "wait_agent", #WaitAgent, false);
     let interrupt = collaboration_tool_definition(
       config,
       "interrupt_agent",
-      `InterruptAgent (),
+      #InterruptAgent,
       true,
     );
-    let list = collaboration_tool_definition(config, "list_agents", `ListAgents (), true);
-    `Cons [
+    let list = collaboration_tool_definition(config, "list_agents", #ListAgents, true);
+    #Cons [
       spawn,
-      `Cons [send, `Cons [followup, `Cons [wait, `Cons [interrupt, `Cons [list, `Nil ()]]]]],
+      #Cons [send, #Cons [followup, #Cons [wait, #Cons [interrupt, #Cons [list, #Nil]]]]],
     ]
-  };
+  end;
 
-const collaboration_tool_spec: [AgentToolRegistrationConfig, Text, Text, Text, ToolOutputSchema] ->
+const collaboration_tool_spec: (AgentToolRegistrationConfig, Text, Text, Text, ToolOutputSchema) ->
   ToolSpec = (
     config,
     local_name,
     description,
     parameters,
     output_schema,
-  ) => {
+  ) => do
     [
       collaboration_tool_name(config, local_name),
-      `FunctionSpec (),
+      #FunctionSpec,
       description,
       parameters,
       output_schema,
       false,
     ]
-  };
+  end;
 
-const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistrationSpecs = config => {
-  if !(collaboration_tools_enabled config) {
-    return `Nil ();
-  }
+const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistrationSpecs = config => do
+  if !(collaboration_tools_enabled config) then
+    return #Nil;
+  end;
 
   let spawn_description =
     "Spawns an agent to work on the specified task. The spawned agent inherits the parent model and reasoning effort unless an explicit override is requested. Only call this tool for a concrete, bounded subtask that can run independently alongside useful local work.";
   let spawn_parameters =
     "{\"type\":\"object\",\"properties\":{\"fork_turns\":{\"type\":\"string\",\"description\":\"Optional number of turns to fork. Defaults to `all`. Use `none`, `all`, or a positive integer string such as `3`.\"},\"message\":{\"type\":\"string\",\"description\":\"Initial plain-text task for the new agent.\"},\"model\":{\"type\":\"string\",\"description\":\"Model override for the new agent. Omit unless an explicit override is needed.\"},\"reasoning_effort\":{\"type\":\"string\",\"description\":\"Reasoning effort override for the new agent. Omit to inherit the parent effort.\"},\"task_name\":{\"type\":\"string\",\"description\":\"Task name for the new agent. Use lowercase letters, digits, and underscores.\"}},\"required\":[\"task_name\",\"message\"],\"additionalProperties\":false}";
-  let spawn_output = if config.hide_spawn_metadata {
+  let spawn_output = if config.hide_spawn_metadata then
     "{\"type\":\"object\",\"properties\":{\"task_name\":{\"type\":\"string\",\"description\":\"Canonical task name for the spawned agent.\"}},\"required\":[\"task_name\"],\"additionalProperties\":false}"
-  } else {
+  else
     "{\"type\":\"object\",\"properties\":{\"task_name\":{\"type\":\"string\",\"description\":\"Canonical task name for the spawned agent.\"},\"nickname\":{\"type\":[\"string\",\"null\"],\"description\":\"User-facing nickname for the spawned agent when available.\"}},\"required\":[\"task_name\",\"nickname\"],\"additionalProperties\":false}"
-  };
+  end;
   let spawn = collaboration_tool_spec(
     config,
     "spawn_agent",
     spawn_description,
     spawn_parameters,
-    `ToolOutputSchemaPresent spawn_output,
+    #ToolOutputSchemaPresent spawn_output,
   );
 
   let send_description =
@@ -121,7 +121,7 @@ const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistration
     "send_message",
     send_description,
     message_parameters,
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
   );
 
   let followup_description =
@@ -133,7 +133,7 @@ const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistration
     "followup_task",
     followup_description,
     followup_parameters,
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
   );
 
   let wait_description =
@@ -147,7 +147,7 @@ const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistration
     "wait_agent",
     wait_description,
     wait_parameters,
-    `ToolOutputSchemaPresent wait_output,
+    #ToolOutputSchemaPresent wait_output,
   );
 
   let interrupt_description =
@@ -161,7 +161,7 @@ const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistration
     "interrupt_agent",
     interrupt_description,
     target_parameters,
-    `ToolOutputSchemaPresent previous_status_output,
+    #ToolOutputSchemaPresent previous_status_output,
   );
 
   let list_description =
@@ -175,14 +175,14 @@ const collaboration_tool_specs: AgentToolRegistrationConfig -> AgentRegistration
     "list_agents",
     list_description,
     list_parameters,
-    `ToolOutputSchemaPresent list_output,
+    #ToolOutputSchemaPresent list_output,
   );
 
-  `Cons [
+  #Cons [
     spawn,
-    `Cons [send, `Cons [followup, `Cons [wait, `Cons [interrupt, `Cons [list, `Nil ()]]]]],
+    #Cons [send, #Cons [followup, #Cons [wait, #Cons [interrupt, #Cons [list, #Nil]]]]],
   ]
-};
+end;
 
 return {
   .collaboration_tool_definitions,

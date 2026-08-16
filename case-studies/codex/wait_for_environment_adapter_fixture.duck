@@ -9,17 +9,19 @@ type FixtureEnvironmentNode = WaitForEnvironmentNode
 type FixtureEnvironments = WaitForEnvironments
 type FixtureHostResponse = WaitForEnvironmentHostResponse
 
-let environments: FixtureEnvironments = `Cons (
-  [[.environment_id = "gpu", .status = `Starting ()] as FixtureEnvironment, `Nil ()] as FixtureEnvironmentNode
+let environments: FixtureEnvironments = #Cons (
+  [[.environment_id = "gpu", .status = #Starting] as FixtureEnvironment, #Nil] as FixtureEnvironmentNode
 );
 let score = 0;
 
-if let `Wait environment_id = plan_wait_for_environment(environments, "gpu") {
+if let #Wait environment_id = plan_wait_for_environment(environments, "gpu") then
   response <- WaitForEnvironmentHost.wait(&environment_id)
   let typed_response: FixtureHostResponse = response;
-  if let `Completed output = finish_wait_for_environment(environment_id, typed_response) {
-    if output == "{\"environment_id\":\"gpu\",\"status\":\"ready\"}" { score = 1 }
-  }
-}
+  if let #Completed output = finish_wait_for_environment(environment_id, typed_response) then
+    if output == "{\"environment_id\":\"gpu\",\"status\":\"ready\"}" then
+      score = 1
+    end;
+  end;
+end;
 
 return { .score = score };

@@ -2,8 +2,29 @@
 Else-if chains
 ==================
 
-if true { 1 } else if (let 'x' = letter) { 2 } else { 3 }
-if let `Some value = option { 1 } else if let `None () = option { 2 } else { 3 }
+if true then
+  1
+else let 'x' = letter then
+  2
+else
+  3
+end;
+
+if let #Some value = option then
+  1
+else let #None = option then
+  2
+else
+  3
+end;
+
+if ready then
+  work value
+else other value then
+  next value
+else
+  fallback value
+end;
 
 ---
 
@@ -11,20 +32,22 @@ if let `Some value = option { 1 } else if let `None () = option { 2 } else { 3 }
   (expression_statement
     (if_expression
       condition: (condition_expression
-        (boolean))
-      consequence: (block
+        (condition_postfix_expression
+          (boolean)))
+      consequence: (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      alternative: (if_expression
+      (else_if_clause
         pattern: (character)
-        value: (condition_expression
+        value: (postfix_expression
           (identifier))
-        consequence: (block
+        consequence: (conditional_branch
           (expression_statement
             (postfix_expression
-              (number))))
-        alternative: (block
+              (number)))))
+      (else_clause
+        alternative: (conditional_branch
           (expression_statement
             (postfix_expression
               (number)))))))
@@ -34,22 +57,56 @@ if let `Some value = option { 1 } else if let `None () = option { 2 } else { 3 }
         case: (constructor_identifier)
         value: (identifier))
       value: (condition_expression
-        (identifier))
-      consequence: (block
+        (condition_postfix_expression
+          (identifier)))
+      consequence: (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      alternative: (if_expression
+      (else_if_clause
         pattern: (union_pattern
-          case: (constructor_identifier)
-          value: (unit_pattern))
-        value: (condition_expression
+          case: (constructor_identifier))
+        value: (postfix_expression
           (identifier))
-        consequence: (block
+        consequence: (conditional_branch
           (expression_statement
             (postfix_expression
-              (number))))
-        alternative: (block
+              (number)))))
+      (else_clause
+        alternative: (conditional_branch
           (expression_statement
             (postfix_expression
-              (number))))))))
+              (number)))))))
+  (expression_statement
+    (if_expression
+      condition: (condition_expression
+        (condition_postfix_expression
+          (identifier)))
+      consequence: (conditional_branch
+        (expression_statement
+          (application_expression
+            function: (postfix_expression
+              (identifier))
+            argument: (postfix_expression
+              (identifier)))))
+      (else_if_clause
+        condition: (application_expression
+          function: (postfix_expression
+            (identifier))
+          argument: (postfix_expression
+            (identifier)))
+        consequence: (conditional_branch
+          (expression_statement
+            (application_expression
+              function: (postfix_expression
+                (identifier))
+              argument: (postfix_expression
+                (identifier))))))
+      (else_clause
+        alternative: (conditional_branch
+          (expression_statement
+            (application_expression
+              function: (postfix_expression
+                (identifier))
+              argument: (postfix_expression
+                (identifier)))))))))

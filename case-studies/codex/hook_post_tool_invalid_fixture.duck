@@ -10,15 +10,15 @@ let parsed: FixturePostToolParse =
   parse_post_tool_output "{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"updatedMCPToolOutput\":{\"content\":\"replacement\"}}}";
 let score = 0;
 
-if let `PostToolOk output = parsed {
+if let #PostToolOk output = parsed then
   let [_, should_block, _, _, _, invalid] = output;
-  if should_block {
+  if should_block then
     ()
-  } else if let `Some message = invalid {
-    if message == "PostToolUse hook returned unsupported updatedMCPToolOutput" {
+  else let #Some message = invalid then
+    if message == "PostToolUse hook returned unsupported updatedMCPToolOutput" then
       score = 1
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

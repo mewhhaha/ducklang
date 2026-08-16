@@ -11,7 +11,7 @@ type FixtureQuestion = RequestUserInputQuestion
 type FixtureQuestionNode = RequestUserInputQuestionNode
 type FixtureQuestions = RequestUserInputQuestions
 
-let root_only_questions: FixtureQuestions = `Cons (
+let root_only_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -19,20 +19,20 @@ let root_only_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = false,
-      .options = `Present (
-        `Cons (
-          [[.label = "Continue", .description = "Proceed."] as FixtureOption, `Nil ()] as FixtureOptionNode
+      .options = #Present (
+        #Cons (
+          [[.label = "Continue", .description = "Proceed."] as FixtureOption, #Nil] as FixtureOptionNode
         )
       ),
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
 let root_only_args: FixtureArgs = [
   .questions = root_only_questions,
-  .auto_resolution = `NoAutoResolution (),
+  .auto_resolution = #NoAutoResolution,
 ];
-let unavailable_questions: FixtureQuestions = `Cons (
+let unavailable_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -40,20 +40,20 @@ let unavailable_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = false,
-      .options = `Present (
-        `Cons (
-          [[.label = "Continue", .description = "Proceed."] as FixtureOption, `Nil ()] as FixtureOptionNode
+      .options = #Present (
+        #Cons (
+          [[.label = "Continue", .description = "Proceed."] as FixtureOption, #Nil] as FixtureOptionNode
         )
       ),
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
 let unavailable_args: FixtureArgs = [
   .questions = unavailable_questions,
-  .auto_resolution = `NoAutoResolution (),
+  .auto_resolution = #NoAutoResolution,
 ];
-let prompt_questions: FixtureQuestions = `Cons (
+let prompt_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -61,33 +61,37 @@ let prompt_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = false,
-      .options = `Present (
-        `Cons (
-          [[.label = "Continue", .description = "Proceed."] as FixtureOption, `Nil ()] as FixtureOptionNode
+      .options = #Present (
+        #Cons (
+          [[.label = "Continue", .description = "Proceed."] as FixtureOption, #Nil] as FixtureOptionNode
         )
       ),
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
 let prompt_args: FixtureArgs = [
   .questions = prompt_questions,
-  .auto_resolution = `NoAutoResolution (),
+  .auto_resolution = #NoAutoResolution,
 ];
 let score = 0;
 
-if let `RejectRequest message = plan_request_user_input(false, `Plan (), true, root_only_args) {
-  if message == "request_user_input can only be used by the root thread" { score = score + 1 }
-}
-if let `RejectRequest message = plan_request_user_input(true, `Default (), false,
-  unavailable_args) {
-    if message == "request_user_input is unavailable in Default mode" { score = score + 10 }
-  }
-if let `PromptUser normalized = plan_request_user_input(true, `Default (), true, prompt_args) {
-  if let `Cons node = normalized.questions {
+if let #RejectRequest message = plan_request_user_input(false, #Plan, true, root_only_args) then
+  if message == "request_user_input can only be used by the root thread" then
+    score = score + 1 end;
+end;
+if let #RejectRequest message = plan_request_user_input(true, #Default, false,
+  unavailable_args) then
+    if message == "request_user_input is unavailable in Default mode" then
+      score = score + 10 end;
+  end;
+if let #PromptUser normalized = plan_request_user_input(true, #Default, true, prompt_args) then
+  if let #Cons node = normalized.questions then
     let [normalized_question, _] = node;
-    if normalized_question.is_other { score = score + 100 }
-  }
-}
+    if normalized_question.is_other then
+      score = score + 100
+    end;
+  end;
+end;
 
 return { .score = score };

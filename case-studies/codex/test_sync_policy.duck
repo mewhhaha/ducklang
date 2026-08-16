@@ -8,40 +8,40 @@ type SyncPolicyBarrierResult = TestSyncBarrierHostResult
 type SyncPolicyExecutionResult = TestSyncExecutionResult
 type SyncPolicyPlan = TestSyncPlan
 
-const plan_test_sync: SyncPolicyArgs -> SyncPolicyPlan = args => {
-  if let `SyncBarrierPresent barrier = args.barrier {
-    if barrier.participants == "0" {
-      `RejectRequest "barrier participants must be greater than zero"
-    } else if barrier.timeout_ms == "0" {
-      `RejectRequest "barrier timeout must be greater than zero"
-    } else {
-      `RunSync args
-    }
-  } else {
-    `RunSync args
-  }
-};
+const plan_test_sync: SyncPolicyArgs -> SyncPolicyPlan = args => do
+  if let #SyncBarrierPresent barrier = args.barrier then
+    if barrier.participants == "0" then
+      #RejectRequest "barrier participants must be greater than zero"
+    else barrier.timeout_ms == "0" then
+      #RejectRequest "barrier timeout must be greater than zero"
+    else
+      #RunSync args
+    end;
+  else
+    #RunSync args
+  end;
+end;
 
-const finish_test_sync_barrier: [Text, SyncPolicyBarrierResult] -> SyncPolicyExecutionResult = (
+const finish_test_sync_barrier: (Text, SyncPolicyBarrierResult) -> SyncPolicyExecutionResult = (
   barrier_id: Text,
   result: SyncPolicyBarrierResult,
-) => {
-  if let `Released () = result {
-    `Completed "ok"
-  } else if let `ParticipantsMismatch existing = result {
-    `Rejected (
-      text_append [
+) => do
+  if let #Released = result then
+    #Completed "ok"
+  else let #ParticipantsMismatch existing = result then
+    #Rejected (
+      text_append (
         "barrier ",
-        text_append [
+        text_append (
           barrier_id,
-          text_append [" already registered with ", text_append [existing, " participants"]],
-        ],
-      ]
+          text_append (" already registered with ", text_append (existing, " participants")),
+        ),
+      )
     )
-  } else {
-    `Rejected "test_sync_tool barrier wait timed out"
-  }
-};
+  else
+    #Rejected "test_sync_tool barrier wait timed out"
+  end;
+end;
 
 return {
   .finish_test_sync_barrier,

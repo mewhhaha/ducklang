@@ -8,33 +8,33 @@ type FixtureLimit = CodeModeWaitU64Option
 
 let score = 0;
 
-let default_limit: FixtureLimit = `WaitLimitMissing ();
-if resolve_code_mode_output_token_limit default_limit == 10000i64 {
+let default_limit: FixtureLimit = #WaitLimitMissing;
+if resolve_code_mode_output_token_limit default_limit == 10000i64 then
   score = score + 1
-}
+end;
 
-let five: FixtureU64 = `U64Decimal "5";
-let five_limit: FixtureLimit = `WaitLimitPresent five;
-if resolve_code_mode_output_token_limit five_limit == 5i64 {
+let five: FixtureU64 = #U64Decimal "5";
+let five_limit: FixtureLimit = #WaitLimitPresent five;
+if resolve_code_mode_output_token_limit five_limit == 5i64 then
   score = score + 10
-}
+end;
 
-let bounded_maximum: FixtureU64 = `U64Decimal "9223372036854775807";
-let bounded_limit: FixtureLimit = `WaitLimitPresent bounded_maximum;
-if resolve_code_mode_output_token_limit bounded_limit == 9223372036854775807i64 {
+let bounded_maximum: FixtureU64 = #U64Decimal "9223372036854775807";
+let bounded_limit: FixtureLimit = #WaitLimitPresent bounded_maximum;
+if resolve_code_mode_output_token_limit bounded_limit == 9223372036854775807i64 then
   score = score + 100
-}
+end;
 
-let saturated_minimum: FixtureU64 = `U64Decimal "9223372036854775808";
-let saturated_limit: FixtureLimit = `WaitLimitPresent saturated_minimum;
-if resolve_code_mode_output_token_limit saturated_limit == 9223372036854775807i64 {
+let saturated_minimum: FixtureU64 = #U64Decimal "9223372036854775808";
+let saturated_limit: FixtureLimit = #WaitLimitPresent saturated_minimum;
+if resolve_code_mode_output_token_limit saturated_limit == 9223372036854775807i64 then
   score = score + 1000
-}
+end;
 
-let u64_maximum: FixtureU64 = `U64Decimal "18446744073709551615";
-let maximum_limit: FixtureLimit = `WaitLimitPresent u64_maximum;
-if resolve_code_mode_output_token_limit maximum_limit == 9223372036854775807i64 {
+let u64_maximum: FixtureU64 = #U64Decimal "18446744073709551615";
+let maximum_limit: FixtureLimit = #WaitLimitPresent u64_maximum;
+if resolve_code_mode_output_token_limit maximum_limit == 9223372036854775807i64 then
   score = score + 10000
-}
+end;
 
 return { .score = score };

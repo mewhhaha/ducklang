@@ -13,18 +13,18 @@ duck Length Self {
 
 duck Index Self {
   type Item
-  .get = [&Self, I32] -> Item
+  .get = (&Self, I32) -> Item
 }
 
 duck IndexSet Self {
   type Item
-  .set = [Self, I32, Item] -> Self
+  .set = (Self, I32, Item) -> Self
 }
 
 duck Iterable Self {
   type Item
   .length = &Self -> I32
-  .get = [&Self, I32] -> Item
+  .get = (&Self, I32) -> Item
 }
 
 duck Iterator Self {
@@ -37,10 +37,10 @@ extend Bytes {
   type Item = I32,
   .length = (value: &Bytes) => @len value,
   .get = (value: &Bytes, index: I32) => @get(value, index),
-  .set = (value: Bytes, index: I32, item: I32) => {
+  .set = (value: Bytes, index: I32, item: I32) => do
     value[index] = item
     value
-  },
+  end,
 }
 
 extend Text {
@@ -51,16 +51,16 @@ extend Text {
 
 extend List Element {
   type Item = Element,
-  .has_next = (values: List Element) => if let `Cons _ = values {
+  .has_next = (values: List Element) => if let #Cons _ = values then
     true
-  } else {
+  else
     false
-  },
-  .next = (values: List Element) => if let `Cons node = values {
+  end,
+  .next = (values: List Element) => if let #Cons node = values then
     node
-  } else {
+  else
     @panic "Cannot advance an exhausted List iterator"
-  },
+  end,
 }
 
 const types_module = import "duck:prelude/types" ();
@@ -76,8 +76,10 @@ const {
   .type_intersection,
   .type_union,
 } = types_module;
-const not: Bool -> Bool = value => if value { false } else { true };
-const slice = [value, start, end] => @slice(value, start, end);
+const not: Bool -> Bool = value => if value then false else true end;
+const slice = (value, start, finish) => @slice(value, start, finish);
+const append_bytes: (Bytes, Bytes) -> Bytes =
+  (left: Bytes, right: Bytes) => @append(left, right);
 
 return {
   .struct,
@@ -92,4 +94,5 @@ return {
   .type_difference,
   .not,
   .slice,
+  .append_bytes,
 };

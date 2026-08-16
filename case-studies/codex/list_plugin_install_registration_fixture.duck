@@ -10,42 +10,47 @@ let score = 0;
 let disabled: FixtureDefinitions = list_available_plugins_to_install_definitions(
   false,
   true,
-  `ListTool (),
+  #ListTool,
 );
 let empty: FixtureDefinitions = list_available_plugins_to_install_definitions(
   true,
   false,
-  `ListTool (),
+  #ListTool,
 );
 let recommended: FixtureDefinitions = list_available_plugins_to_install_definitions(
   true,
   true,
-  `RecommendationContext (),
+  #RecommendationContext,
 );
-if let `Nil () = disabled {
-  if let `Nil () = empty {
-    if let `Nil () = recommended { score = score + 1 }
-  }
-}
+if let #Nil = disabled then
+  if let #Nil = empty then
+    if let #Nil = recommended then
+      score = score + 1
+    end;
+  end;
+end;
 
 let definitions: FixtureDefinitions = list_available_plugins_to_install_definitions(
   true,
   true,
-  `ListTool (),
+  #ListTool,
 );
-if let `Cons node = definitions {
+if let #Cons node = definitions then
   let [definition, tail] = node;
   let [name, exposure, tool_handler, payload, parallel, waits] = definition;
   let [namespace, local_name] = name;
-  if namespace == "" && local_name == "list_available_plugins_to_install" && !(parallel) && !(waits) {
-    if let `Direct () = exposure {
-      if let `ListAvailablePluginsToInstall () = tool_handler {
-        if let `FunctionPayload () = payload {
-          if let `Nil () = tail { score = score + 10 }
-        }
-      }
-    }
-  }
-}
+  if namespace == "" && local_name == "list_available_plugins_to_install" && !(parallel)
+    && !(waits) then
+      if let #Direct = exposure then
+        if let #ListAvailablePluginsToInstall = tool_handler then
+          if let #FunctionPayload = payload then
+            if let #Nil = tail then
+              score = score + 10
+            end;
+          end;
+        end;
+      end;
+    end;
+end;
 
 return { .score = score };

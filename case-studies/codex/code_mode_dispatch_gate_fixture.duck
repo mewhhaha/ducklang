@@ -12,65 +12,75 @@ let invocation: FixtureInvocation = [
   .cell_id = "cell-tool",
   .runtime_tool_call_id = "runtime-tool",
   .tool_name = ["", "lookup"],
-  .tool_kind = `NestedFunction (),
-  .input = `None ()];
-let nested_request: FixtureRequest = `DispatchNestedInvocation invocation;
+  .tool_kind = #NestedFunction,
+  .input = #None];
+let nested_request: FixtureRequest = #DispatchNestedInvocation invocation;
 let notification: FixtureNotification = [
   .call_id = "call-notify",
   .cell_id = "cell-notify",
   .text = "working"];
-let notification_request: FixtureRequest = `DispatchNotification notification;
+let notification_request: FixtureRequest = #DispatchNotification notification;
 
 let score = 0;
 
 let nested_waiting: FixtureFacts = [
   .request = nested_request,
-  .cancellation = `DispatchActive (),
-  .gate = `DispatchGateWaiting ()];
-if let `WaitForCodeModeDispatchGate cell_id = plan_code_mode_dispatch_gate nested_waiting {
-  if cell_id == "cell-tool" { score = score + 1 }
-}
+  .cancellation = #DispatchActive,
+  .gate = #DispatchGateWaiting];
+if let #WaitForCodeModeDispatchGate cell_id = plan_code_mode_dispatch_gate nested_waiting then
+  if cell_id == "cell-tool" then
+    score = score + 1
+  end;
+end;
 
 let notification_waiting: FixtureFacts = [
   .request = notification_request,
-  .cancellation = `DispatchActive (),
-  .gate = `DispatchGateWaiting ()];
-if let `WaitForCodeModeDispatchGate cell_id = plan_code_mode_dispatch_gate notification_waiting {
-  if cell_id == "cell-notify" { score = score + 10 }
-}
+  .cancellation = #DispatchActive,
+  .gate = #DispatchGateWaiting];
+if let #WaitForCodeModeDispatchGate cell_id = plan_code_mode_dispatch_gate notification_waiting then
+  if cell_id == "cell-notify" then
+    score = score + 10
+  end;
+end;
 
 let nested_ready: FixtureFacts = [
   .request = nested_request,
-  .cancellation = `DispatchActive (),
-  .gate = `DispatchGateReady ()];
-if let `SpawnNestedToolDispatch ready_invocation = plan_code_mode_dispatch_gate nested_ready {
-  if ready_invocation.runtime_tool_call_id == "runtime-tool" { score = score + 100 }
-}
+  .cancellation = #DispatchActive,
+  .gate = #DispatchGateReady];
+if let #SpawnNestedToolDispatch ready_invocation = plan_code_mode_dispatch_gate nested_ready then
+  if ready_invocation.runtime_tool_call_id == "runtime-tool" then
+    score = score + 100
+  end;
+end;
 
 let notification_ready: FixtureFacts = [
   .request = notification_request,
-  .cancellation = `DispatchActive (),
-  .gate = `DispatchGateReady ()];
-if let `RunCodeModeNotification ready_notification = plan_code_mode_dispatch_gate notification_ready {
-    if ready_notification.call_id == "call-notify" { score = score + 1000 }
-  }
+  .cancellation = #DispatchActive,
+  .gate = #DispatchGateReady];
+if let #RunCodeModeNotification ready_notification = plan_code_mode_dispatch_gate notification_ready then
+  if ready_notification.call_id == "call-notify" then
+    score = score + 1000
+  end;
+end;
 
 let nested_cancelled: FixtureFacts = [
   .request = nested_request,
-  .cancellation = `DispatchCancelled (),
-  .gate = `DispatchGateReady ()];
-if let `CloseNestedToolDispatchGate cell_id = plan_code_mode_dispatch_gate nested_cancelled {
-  if cell_id == "cell-tool" { score = score + 10000 }
-}
+  .cancellation = #DispatchCancelled,
+  .gate = #DispatchGateReady];
+if let #CloseNestedToolDispatchGate cell_id = plan_code_mode_dispatch_gate nested_cancelled then
+  if cell_id == "cell-tool" then
+    score = score + 10000
+  end;
+end;
 
 let notification_closed: FixtureFacts = [
   .request = notification_request,
-  .cancellation = `DispatchActive (),
-  .gate = `DispatchGateClosed ()];
-if let `CloseNotificationDispatchGate closed = plan_code_mode_dispatch_gate notification_closed {
-  if closed.cell_id == "cell-notify" && closed.error == "code mode notification cancelled" {
+  .cancellation = #DispatchActive,
+  .gate = #DispatchGateClosed];
+if let #CloseNotificationDispatchGate closed = plan_code_mode_dispatch_gate notification_closed then
+  if closed.cell_id == "cell-notify" && closed.error == "code mode notification cancelled" then
     score = score + 100000
-  }
-}
+  end;
+end;
 
 return { .score = score };

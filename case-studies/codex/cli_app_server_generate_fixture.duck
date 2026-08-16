@@ -18,35 +18,43 @@ let ts_args: FixtureArgs = args.prepend(
   ),
 );
 let ts: FixtureResult = parse_app_server_tools("generate-ts", ts_args);
-if let `Ok command = ts {
-  if let `GenerateAppServerTs options = command {
-    if let `Some prettier = options.prettier {
-      if options.out_dir == "generated" && prettier == "prettier" && options.experimental { score = score + 1 }
-    }
-  }
-}
+if let #Ok command = ts then
+  if let #GenerateAppServerTs options = command then
+    if let #Some prettier = options.prettier then
+      if options.out_dir == "generated" && prettier == "prettier" && options.experimental then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 let json: FixtureResult = parse_app_server_tools(
   "generate-json-schema",
   args.prepend("-o", args.prepend("schema", args.singleton("--experimental"))),
 );
-if let `Ok command = json {
-  if let `GenerateAppServerJsonSchema options = command {
-    if options.out_dir == "schema" && options.experimental { score = score + 10 }
-  }
-}
+if let #Ok command = json then
+  if let #GenerateAppServerJsonSchema options = command then
+    if options.out_dir == "schema" && options.experimental then
+      score = score + 10
+    end;
+  end;
+end;
 
 let internal: FixtureResult = parse_app_server_tools(
   "generate-internal-json-schema",
   args.prepend("--out", args.singleton("internal")),
 );
-if let `Ok command = internal {
-  if let `GenerateAppServerInternalJsonSchema out_dir = command {
-    if out_dir == "internal" { score = score + 100 }
-  }
-}
+if let #Ok command = internal then
+  if let #GenerateAppServerInternalJsonSchema out_dir = command then
+    if out_dir == "internal" then
+      score = score + 100
+    end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_app_server_tools("generate-ts", args.empty());
-if let `Err _ = invalid { score = score + 1000 }
+if let #Err _ = invalid then
+  score = score + 1000
+end;
 
 return { .score = score };

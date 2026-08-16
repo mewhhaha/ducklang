@@ -17,14 +17,14 @@ type CodeModeExecuteToolDefinition = struct {
 
 type CodeModeExecuteToolDefinitionNode = [
   CodeModeExecuteToolDefinition,
-  CodeModeExecuteToolDefinitions ]
+  CodeModeExecuteToolDefinitions]
 type CodeModeExecuteToolDefinitions =
-  | `ExecuteToolsNil Unit
-  | `ExecuteToolsCons CodeModeExecuteToolDefinitionNode
+  | #ExecuteToolsNil
+  | #ExecuteToolsCons CodeModeExecuteToolDefinitionNode
 
 type CodeModeExecutePayload =
-  | `ExecuteCustomPayload Text
-  | `ExecuteUnsupportedPayload Unit
+  | #ExecuteCustomPayload Text
+  | #ExecuteUnsupportedPayload
 
 type CodeModeExecuteInvocation = struct {
   .call_id = Text,
@@ -42,8 +42,8 @@ type CodeModeExecuteRequest = struct {
 }
 
 type CodeModeExecuteCallPlan =
-  | `StartCodeModeExecute CodeModeExecuteRequest
-  | `RejectCodeModeExecute Text
+  | #StartCodeModeExecute CodeModeExecuteRequest
+  | #RejectCodeModeExecute Text
 
 type CodeModeStartedCell = struct {
   .cell_id = Text,
@@ -63,11 +63,11 @@ type CodeModeExecuteStartedPlan = struct {
 }
 
 type CodeModeExecuteInitialLifecycle =
-  | `ExecuteInitialCellYielded Text
-  | `ExecuteInitialCellEnded Text
+  | #ExecuteInitialCellYielded Text
+  | #ExecuteInitialCellEnded Text
 
 type CodeModeExecuteElicitationBarrier =
-  `WaitUntilCodeModeElicitationsClear Unit
+  #WaitUntilCodeModeElicitationsClear
 
 type CodeModeExecuteInitialPlan = struct {
   .lifecycle = CodeModeExecuteInitialLifecycle,
@@ -75,8 +75,8 @@ type CodeModeExecuteInitialPlan = struct {
 }
 
 type CodeModeExecuteStartResult =
-  | `CodeModeExecuteStarted CodeModeStartedCell
-  | `CodeModeExecuteStartFailed Text
+  | #CodeModeExecuteStarted CodeModeStartedCell
+  | #CodeModeExecuteStartFailed Text
 
 type CodeModeExecuteTimer = struct {
   .token = Text,
@@ -87,8 +87,8 @@ type CodeModeExecuteTrace = struct {
 }
 
 type CodeModeExecuteInitialResponseResult =
-  | `CodeModeInitialResponse CodeModeRuntimeResponse
-  | `CodeModeInitialResponseFailed Text
+  | #CodeModeInitialResponse CodeModeRuntimeResponse
+  | #CodeModeInitialResponseFailed Text
 
 type CodeModeExecuteExecution = struct {
   .invocation = CodeModeExecuteInvocation,
@@ -104,7 +104,7 @@ type CodeModeExecuteCompletion = struct {
 }
 
 type CodeModeExecuteResult =
-  | `CodeModeExecuteCompleted CodeModeExecuteCompletion
-  | `CodeModeExecuteRejected Text
+  | #CodeModeExecuteCompleted CodeModeExecuteCompletion
+  | #CodeModeExecuteRejected Text
 
 return {};

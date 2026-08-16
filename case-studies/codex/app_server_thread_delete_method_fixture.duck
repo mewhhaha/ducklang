@@ -12,15 +12,19 @@ fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let decoded: FixtureMethodResult = decode_thread_delete(json_object fields);
 let score = 0;
 
-if let `MethodOk method = decoded {
-  if let `ThreadDelete thread_id = method {
-    if thread_id == "thread-1" { score = score + 1 }
-  }
-}
+if let #MethodOk method = decoded then
+  if let #ThreadDelete thread_id = method then
+    if thread_id == "thread-1" then
+      score = score + 1
+    end;
+  end;
+end;
 
 let invalid: FixtureMethodResult = decode_thread_delete(json_string "thread-1");
-if let `MethodError reason = invalid {
-  if reason == "thread/delete.params must be an object" { score = score + 10 }
-}
+if let #MethodError reason = invalid then
+  if reason == "thread/delete.params must be an object" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

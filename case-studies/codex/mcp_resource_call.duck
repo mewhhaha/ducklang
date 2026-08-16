@@ -11,68 +11,68 @@ type ResourceCallPayload = McpResourcePayload
 type ResourceCallPlan = McpResourceCallPlan
 type ResourceCallPrepared = McpResourcePreparedCall
 
-const plan_list_mcp_resource_call: [Text, ResourceCallPayload, Bool, Bool] -> ResourceCallPlan = (
+const plan_list_mcp_resource_call: (Text, ResourceCallPayload, Bool, Bool) -> ResourceCallPlan = (
   call_id: Text,
   payload: ResourceCallPayload,
   templates: Bool,
   orchestrator_mcp_enabled: Bool,
-) => {
-  if let `Unsupported () = payload {
-    let tool_name = if templates { "list_mcp_resource_templates" } else { "list_mcp_resources" };
-    `RejectRequest (text_append(tool_name, " handler received unsupported payload"))
-  } else if let `Function arguments = payload {
+) => do
+  if let #Unsupported = payload then
+    let tool_name = if templates then "list_mcp_resource_templates" else "list_mcp_resources" end;
+    #RejectRequest (text_append(tool_name, " handler received unsupported payload"))
+  else let #Function arguments = payload then
     let parsed = parse_resource_json(arguments, false);
-    if let `ParseFailed reason = parsed {
-      `RejectRequest reason
-    } else if let `ListParsed args = parsed {
+    if let #ParseFailed reason = parsed then
+      #RejectRequest reason
+    else let #ListParsed args = parsed then
       let validated = validate_list_mcp_resource_args(args, orchestrator_mcp_enabled);
-      if let `ListValidationFailed reason = validated {
-        `RejectRequest reason
-      } else if let `ListValid valid_args = validated {
-        let operation: ResourceCallOperation = if templates { `ListResourceTemplates valid_args
-        } else { `ListResources valid_args };
+      if let #ListValidationFailed reason = validated then
+        #RejectRequest reason
+      else let #ListValid valid_args = validated then
+        let operation: ResourceCallOperation = if templates then #ListResourceTemplates valid_args
+        else #ListResources valid_args end;
         let prepared: ResourceCallPrepared = [.call_id = call_id, .operation = operation];
-        `RunMcpResource prepared
-      } else {
-        `RejectRequest "MCP resource list validation produced no result"
-      }
-    } else {
-      `RejectRequest "failed to parse function arguments: expected list arguments"
-    }
-  } else {
-    `RejectRequest "MCP resource list handler received unsupported payload"
-  }
-};
+        #RunMcpResource prepared
+      else
+        #RejectRequest "MCP resource list validation produced no result"
+      end;
+    else
+      #RejectRequest "failed to parse function arguments: expected list arguments"
+    end;
+  else
+    #RejectRequest "MCP resource list handler received unsupported payload"
+  end;
+end;
 
-const plan_read_mcp_resource_call: [Text, ResourceCallPayload, Bool] -> ResourceCallPlan = (
+const plan_read_mcp_resource_call: (Text, ResourceCallPayload, Bool) -> ResourceCallPlan = (
   call_id: Text,
   payload: ResourceCallPayload,
   orchestrator_mcp_enabled: Bool,
-) => {
-  if let `Unsupported () = payload {
-    `RejectRequest "read_mcp_resource handler received unsupported payload"
-  } else if let `Function arguments = payload {
+) => do
+  if let #Unsupported = payload then
+    #RejectRequest "read_mcp_resource handler received unsupported payload"
+  else let #Function arguments = payload then
     let parsed = parse_resource_json(arguments, true);
-    if let `ParseFailed reason = parsed {
-      `RejectRequest reason
-    } else if let `ReadParsed args = parsed {
+    if let #ParseFailed reason = parsed then
+      #RejectRequest reason
+    else let #ReadParsed args = parsed then
       let validated = validate_read_mcp_resource_args(args, orchestrator_mcp_enabled);
-      if let `ReadValidationFailed reason = validated {
-        `RejectRequest reason
-      } else if let `ReadValid valid_args = validated {
-        let operation: ResourceCallOperation = `ReadResource valid_args;
+      if let #ReadValidationFailed reason = validated then
+        #RejectRequest reason
+      else let #ReadValid valid_args = validated then
+        let operation: ResourceCallOperation = #ReadResource valid_args;
         let prepared: ResourceCallPrepared = [.call_id = call_id, .operation = operation];
-        `RunMcpResource prepared
-      } else {
-        `RejectRequest "MCP resource read validation produced no result"
-      }
-    } else {
-      `RejectRequest "failed to parse function arguments: expected read arguments"
-    }
-  } else {
-    `RejectRequest "read_mcp_resource handler received unsupported payload"
-  }
-};
+        #RunMcpResource prepared
+      else
+        #RejectRequest "MCP resource read validation produced no result"
+      end;
+    else
+      #RejectRequest "failed to parse function arguments: expected read arguments"
+    end;
+  else
+    #RejectRequest "read_mcp_resource handler received unsupported payload"
+  end;
+end;
 
 return {
   .plan_list_mcp_resource_call,

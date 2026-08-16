@@ -1,10 +1,23 @@
-import { assert_equals } from "../../src/assert.ts";
+import { assert_equals, assert_throws } from "../../src/assert.ts";
 import { beginWasmArena, StorageClass, type WasmHostValue } from "gpufuck";
 import { success_examples } from "../../examples/manifest.ts";
+import { parse_duck_source } from "../../src/frontend/baba_parser.ts";
+import { checked_value } from "../../src/frontend/checked.ts";
 import { parse_source } from "../../src/frontend/parser.ts";
+import {
+  analyze_duck_source,
+  lower_duck_source,
+} from "../../src/semantic_program.ts";
 import { compiler_compatibility_cases } from "./benchmark_cases.ts";
-import { DuckCompiler, encode_duck_module } from "./compiler.ts";
-import { lower_duck_source_to_gpufuck } from "./core_lowering.ts";
+import {
+  DuckCompiler,
+  encode_duck_file,
+  encode_duck_module,
+} from "./compiler.ts";
+import {
+  lower_duck_semantic_program_to_gpufuck,
+  lower_duck_source_to_gpufuck,
+} from "./core_lowering.ts";
 
 Deno.test("Duck compiler lowers the supported scalar source shape", () => {
   const module = encode_duck_module("let value = 40;\nvalue + 2");
@@ -13,6 +26,1353 @@ Deno.test("Duck compiler lowers the supported scalar source shape", () => {
   assert_equals(module.entrySymbol, 0);
   assert_equals(module.evaluationProfile, "strict-eager-v1");
   assert_equals(module.nodeCount, 5);
+});
+
+Deno.test(
+  "Duck compiler preserves one-field named structs in exact-arity calls",
+  async () => {
+    const source = 'const { .struct } = import "duck:prelude/types" ();\n' +
+      "type Options = struct { .enabled = Bool, }\n" +
+      "let select = (label: Text, value: I32, options: Options) => " +
+      "if options.enabled then value else 0 end;\n" +
+      'select("answer", 42, [.enabled = false])\n';
+    const compiler = await DuckCompiler.create();
+
+    try {
+      const execution = await compiler.run(source);
+      assert_equals(execution.value, { kind: "integer", value: 0 });
+    } finally {
+      compiler.destroy();
+    }
+  },
+);
+
+Deno.test("Duck compiler checks and erases contracts before gpufuck", async () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\nidentity 42\n";
+  const contracted_module = encode_duck_module(contracted_source);
+  const plain_module = encode_duck_module(plain_source);
+
+  assert_equals(contracted_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    contracted_module.definitionWords,
+    plain_module.definitionWords,
+  );
+  assert_equals(contracted_module.nodeCount, plain_module.nodeCount);
+  assert_equals(
+    contracted_module.definitionCount,
+    plain_module.definitionCount,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const contracted = await compiler.run(contracted_source);
+    const plain = await compiler.run(plain_source);
+    assert_equals(contracted.value, { kind: "integer", value: 42 });
+    assert_equals(contracted.value, plain.value);
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases identity-summary call proofs", async () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+    "let consume = (left, right, evidence) => left;\n" +
+    "let value = 42i32;\n" +
+    "consume(identity value, value)\n";
+  const plain_source = "let identity = value => value;\n" +
+    "let consume = (left, right) => left;\n" +
+    "let value = 42i32;\n" +
+    "consume(identity value, value)\n";
+  const contracted_module = encode_duck_module(contracted_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(contracted_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    contracted_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const contracted = await compiler.run(contracted_source);
+    assert_equals(contracted.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler retains computational witnesses after proof erasure", async () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "read(make(21i32))\n";
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(source);
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases checked refinement signatures", async () => {
+  const refined_source = "type identity = " +
+    "(value: {refined: I32 | refined = refined}) -> " +
+    "(result: {answer: I32 | answer = value})\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\nidentity 42\n";
+  const refined_module = encode_duck_module(refined_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(refined_module.nodeWords, plain_module.nodeWords);
+  assert_equals(refined_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const refined = await compiler.run(refined_source);
+    assert_equals(refined.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases runtime proof parameters", async () => {
+  const proved_source = "type identity = " +
+    "(value: I32, evidence: Proof value = value) -> I32\n" +
+    "let identity = (actual, evidence) => actual;\n" +
+    "identity 42\n";
+  const plain_source = "type identity = (value: I32) -> I32\n" +
+    "let identity = actual => actual;\n" +
+    "identity 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-runtime-proof-",
+  });
+  const path = directory + "/identity.duck";
+  Deno.writeTextFileSync(path, proved_source);
+  try {
+    assert_equals(encode_duck_file(path).nodeWords, plain_module.nodeWords);
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases reflected machine proofs", async () => {
+  const proved_source = "type nonzero = " +
+    "(value: I32, evidence: Proof value != 0) -> I32\n" +
+    "let nonzero = (actual, evidence) => actual;\n" +
+    "nonzero 42\n";
+  const plain_source = "let nonzero = actual => actual;\n" +
+    "nonzero 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases branch-established proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value != 0) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual != 0 then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const plain_source = "let consume = actual => actual;\n" +
+    "let guarded = actual => " +
+    "if actual != 0 then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases guarded index bounds certificates", async () => {
+  const source = "let read = (values: [I32, I32, I32], index: I32) => " +
+    "if index >= 0 && index < 3 then values[index] else 0 end;\n" +
+    "read ([20, 21, 22], 2)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded index source to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("index_bounds"),
+    false,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 22 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler executes guarded unsigned indexes", async () => {
+  const source = "let read = (values: [I32, I32], index: U32) => " +
+    "if index < 2u32 then values[index] else 0 end;\n" +
+    "read ([20, 22], 1u32)\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 22 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases checked slice bounds certificates", async () => {
+  const source = '@slice("aéz", 1, 3)\n';
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "slice_bounds"
+    ),
+    true,
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded slice source to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("slice_bounds"),
+    false,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "text", value: "é" });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects unchecked indexes before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let read = (values: [I32, I32], index: I32) => values[index];\n" +
+          "0\n",
+      ),
+    "unknown: cannot prove index bounds 0 <= index < 2.",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let read = (value: Text, index: I32) => @get(value, index);\n" +
+          "0\n",
+      ),
+    "this value has no compile-time length measure",
+  );
+});
+
+Deno.test("Duck compiler rejects unchecked slices before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let take = (value: Bytes, start: I32, finish: I32) => " +
+          "@slice(value, start, finish);\n0\n",
+      ),
+    "unknown: cannot prove slice bounds",
+  );
+  assert_throws(
+    () => encode_duck_module('@slice("hello", 1, 6)\n'),
+    "disproved: cannot prove slice bounds",
+  );
+  assert_throws(
+    () => encode_duck_module('@slice("é", 0, 1)\n'),
+    "disproved: cannot prove Text slice endpoints are UTF-8 boundaries",
+  );
+});
+
+Deno.test("Duck compiler erases integer narrowing proofs", async () => {
+  const signed_source = "let narrow = (value: I64) => " +
+    "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+    "@integer.narrow(value, I32) else 0 end;\n" +
+    "narrow(-42i64)\n";
+  const analysis = analyze_duck_source(parse_duck_source(signed_source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded integer narrowing to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core, (_key, value) => {
+      if (typeof value === "bigint") return value.toString();
+      return value;
+    }).includes("integer_narrowing"),
+    false,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const signed = await compiler.run(signed_source);
+    assert_equals(signed.value, { kind: "integer", value: -42 });
+    const unsigned = await compiler.run(
+      "let narrow = (value: I32) => " +
+        "if value >= 0 && value <= 255 then " +
+        "@integer.narrow(value, U8) else 0u8 end;\n" +
+        "narrow(200)\n",
+    );
+    assert_equals(unsigned.value, { kind: "integer", value: 200 });
+    const aliased = await compiler.run(
+      "type Small = I8\n@integer.narrow(42i64, Small)\n",
+    );
+    assert_equals(aliased.value, { kind: "integer", value: 42 });
+    const wide_signed = await compiler.run(
+      "type Medium = I40\n@integer.narrow(-42i64, Medium)\n",
+    );
+    assert_equals(wide_signed.value, {
+      kind: "signed-integer-64",
+      value: -42n,
+    });
+    const cross_carrier = await compiler.run(
+      "@integer.narrow(42, U64)\n",
+    );
+    assert_equals(cross_carrier.value, {
+      kind: "signed-integer-64",
+      value: 42n,
+    });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects unchecked integer narrowing", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let narrow = (value: I64) => @integer.narrow(value, I32);\n0\n",
+      ),
+    "unknown: cannot prove integer narrowing requirement",
+  );
+  assert_throws(
+    () => encode_duck_module("@integer.narrow(2147483648i64, I32)\n"),
+    "disproved: cannot prove integer narrowing requirement",
+  );
+  assert_throws(
+    () => encode_duck_module("let operation = @integer.narrow;\n0\n"),
+    "partial intrinsic @integer.narrow cannot escape",
+  );
+});
+
+Deno.test("Duck compiler rejects first-class get before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let invoke: ((([I32, I32], I32) -> I32), [I32, I32], I32) -> I32 = " +
+          "(getter, values, index) => getter(values, index);\n" +
+          "invoke (@get, [20, 22], 2)\n",
+      ),
+    "partial intrinsic @get cannot escape a directly checked call",
+  );
+});
+
+Deno.test("Duck compiler rejects first-class slice before encoding", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let invoke: ((Text, I32, I32) -> Text, Text, I32, I32) -> Text = " +
+          "(operation, value, start, finish) => " +
+          "operation(value, start, finish);\n" +
+          'invoke(@slice, "hello", 1, 4)\n',
+      ),
+    "partial intrinsic @slice cannot escape",
+  );
+});
+
+Deno.test("Duck compiler rejects non-I32 index operands before encoding", () => {
+  for (
+    const source of [
+      "let read = (values: [I32, I32], index: I64) => values[index];\n0\n",
+      "let read = (values: [I32, I32], index: F32) => values[index];\n0\n",
+      "let write = (values: [I32, I32], index: I64) => do\n" +
+      "values[index] = 1;\n0\nend;\n0\n",
+    ]
+  ) {
+    assert_throws(
+      () => encode_duck_module(source),
+      "Index expects an integer no wider than 32 bits",
+    );
+  }
+});
+
+Deno.test("Duck file compilation rejects unchecked indexes", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-index-proof-",
+  });
+  const path = directory + "/unchecked.duck";
+  Deno.writeTextFileSync(
+    path,
+    "let read = (values: [I32, I32], index: I32) => values[index];\n" +
+      "0\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(path),
+      "unknown: cannot prove index bounds 0 <= index < 2.",
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation rejects non-I32 index operands", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-index-type-",
+  });
+  const path = directory + "/invalid.duck";
+  Deno.writeTextFileSync(
+    path,
+    "let read = (values: [I32, I32], index: F32) => values[index];\n0\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(path),
+      "Index expects an integer no wider than 32 bits",
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation checks indexes inside const callables", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-const-index-proof-",
+  });
+  const path = directory + "/unchecked.duck";
+  Deno.writeTextFileSync(
+    path,
+    "const read: ([I32, I32], I32) -> I32 = " +
+      "(values, index) => values[index];\n" +
+      "read ([20, 22], 2)\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(path),
+      "unknown: cannot prove index bounds 0 <= index < 2.",
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck gpufuck lowering retains traps for proved index updates", () => {
+  const source = "let update = (values: [I32; 2], index: I32) => do\n" +
+    "if index >= 0 && index < 2 then values[index] = 42; end;\n" +
+    "values\n" +
+    "end;\n" +
+    "0\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded fixed-array update to lower.");
+  }
+  const lowered = lower_duck_semantic_program_to_gpufuck(
+    analysis.source,
+    program,
+    new TextEncoder().encode(source).byteLength,
+  );
+  const artifact = JSON.stringify(lowered.artifact);
+  assert_equals(artifact.includes('"alternate"'), true);
+  assert_equals(artifact.includes("$DuckRuntime:trap"), true);
+  assert_equals(lowered.encoded.nodeCount > 0, true);
+});
+
+Deno.test("Duck compiler lowers unreachable empty-array indexes", () => {
+  const module = encode_duck_module(
+    "let read = (values: [I32; 0], index: I32) => " +
+      "if false then values[index] else 0 end;\n" +
+      "0\n",
+  );
+  assert_equals(module.nodeCount > 0, true);
+});
+
+Deno.test("Duck compiler lowers unreachable out-of-range indexes", () => {
+  for (
+    const source of [
+      "let read = (values: [I32, I32]) => " +
+      "if false then values[2] else 0 end;\n0\n",
+      "let read = (values: [I32; 2]) => " +
+      "if false then values[2] else 0 end;\n0\n",
+    ]
+  ) {
+    const module = encode_duck_module(source);
+    assert_equals(module.nodeCount > 0, true);
+  }
+});
+
+Deno.test("Duck compiler updates statically selected heterogeneous fields", async () => {
+  const source = 'let pair: [I32, Text] = [20, "a"];\n' +
+    'pair[1] = "b";\n' +
+    'if pair[1] == "b" then 42 else 0 end\n';
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+    const unsigned_quotient = await compiler.run(
+      "(0u64 - 1u64) / 2u64\n",
+    );
+    assert_equals(unsigned_quotient.value, {
+      kind: "signed-integer-64",
+      value: 9223372036854775807n,
+    });
+    const unsigned_remainder = await compiler.run(
+      "(0u64 - 1u64) % 2u64\n",
+    );
+    assert_equals(unsigned_remainder.value, {
+      kind: "signed-integer-64",
+      value: 1n,
+    });
+    const unsigned_32_quotient = await compiler.run(
+      "(0u32 - 1u32) / 2u32\n",
+    );
+    assert_equals(unsigned_32_quotient.value, {
+      kind: "integer",
+      value: 2147483647,
+    });
+    const unsigned_32_remainder = await compiler.run(
+      "(0u32 - 1u32) % 2u32\n",
+    );
+    assert_equals(unsigned_32_remainder.value, {
+      kind: "integer",
+      value: 1,
+    });
+    const unsigned_32_large_divisor = await compiler.run(
+      "let divisor = 0u32 - 1u32; " +
+        "if divisor != 0u32 then 84u32 / divisor else 0u32 end\n",
+    );
+    assert_equals(unsigned_32_large_divisor.value, {
+      kind: "integer",
+      value: 0,
+    });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler updates statically selected named fields", async () => {
+  const source = 'const { .struct } = import "duck:prelude" ();\n' +
+    "type Pair = struct { .first = Int, .second = Text }\n" +
+    'let pair: Pair = [20, "a"];\n' +
+    'pair[1] = "b";\n' +
+    'if pair.second == "b" then 42 else 0 end\n';
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases type-membership branch proofs", async () => {
+  const proved_source = "type Alias = I32\n" +
+    "type consume = " +
+    "(value: I32, evidence: Proof value is Alias) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual is Alias then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const plain_source = "type Alias = I32\n" +
+    "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual is Alias then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    proved_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases constructor-membership proofs", async () => {
+  const proved_source = "type Maybe = | #None | #Some I32\n" +
+    "type consume = " +
+    "(value: Maybe, evidence: Proof value is #Some) -> I32\n" +
+    "let consume = (actual, evidence) => 42;\n" +
+    "type guarded = (value: Maybe) -> I32\n" +
+    "let guarded = actual => " +
+    "if let #Some payload = actual then consume actual else 0 end;\n" +
+    "guarded (#Some 42)\n";
+  const plain_source = "type Maybe = | #None | #Some I32\n" +
+    "type consume = (value: Maybe) -> I32\n" +
+    "let consume = actual => 42;\n" +
+    "type guarded = (value: Maybe) -> I32\n" +
+    "let guarded = actual => " +
+    "if let #Some payload = actual then consume actual else 0 end;\n" +
+    "guarded (#Some 42)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    proved_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases remainder branch proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+    "guarded 8\n";
+  const plain_source = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+    "guarded 8\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 8 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases combined remainder congruence proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value % 6i32 = 0i32) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual % 2i32 == 0i32 then " +
+    "if actual % 3i32 == 0i32 then consume actual else 0 end " +
+    "else 0 end;\n" +
+    "guarded (-12i32)\n";
+  const plain_source = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual % 2i32 == 0i32 then " +
+    "if actual % 3i32 == 0i32 then consume actual else 0 end " +
+    "else 0 end;\n" +
+    "guarded (-12i32)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: -12 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases bitwise branch proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if @bit_and(actual, 1i32) == 1i32 " +
+    "then consume actual else 0 end;\n" +
+    "guarded 3i32\n";
+  const plain_source = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if @bit_and(actual, 1i32) == 1i32 " +
+    "then consume actual else 0 end;\n" +
+    "guarded 3i32\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 3 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases bounded offset proofs", async () => {
+  const signed_proved = "type consume = " +
+    "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => if actual < 10i32 then do\n" +
+    "  let next = actual + 1i32;\n" +
+    "  consume next\n" +
+    "end else 0 end;\n" +
+    "guarded 9i32\n";
+  const signed_plain = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => if actual < 10i32 then do\n" +
+    "  let next = actual + 1i32;\n" +
+    "  consume next\n" +
+    "end else 0 end;\n" +
+    "guarded 9i32\n";
+  const unsigned_proved = "type consume = " +
+    "(value: U32, evidence: Proof value <= 10u32) -> U32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: U32) -> U32\n" +
+    "let guarded = actual => if actual >= 10u32 then 0u32 else do\n" +
+    "  let next = actual + 1u32;\n" +
+    "  consume next\n" +
+    "end end;\n" +
+    "guarded 9u32\n";
+  const unsigned_plain = "type consume = (value: U32) -> U32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: U32) -> U32\n" +
+    "let guarded = actual => if actual >= 10u32 then 0u32 else do\n" +
+    "  let next = actual + 1u32;\n" +
+    "  consume next\n" +
+    "end end;\n" +
+    "guarded 9u32\n";
+  const signed_proved_module = encode_duck_module(signed_proved);
+  const signed_plain_module = encode_duck_module(signed_plain);
+  assert_equals(
+    signed_proved_module.nodeWords,
+    signed_plain_module.nodeWords,
+  );
+  assert_equals(
+    signed_proved_module.definitionWords,
+    signed_plain_module.definitionWords,
+  );
+  const unsigned_proved_module = encode_duck_module(unsigned_proved);
+  const unsigned_plain_module = encode_duck_module(unsigned_plain);
+  assert_equals(
+    unsigned_proved_module.nodeWords,
+    unsigned_plain_module.nodeWords,
+  );
+  assert_equals(
+    unsigned_proved_module.definitionWords,
+    unsigned_plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const signed = await compiler.run(signed_proved);
+    assert_equals(signed.value, { kind: "integer", value: 10 });
+    const unsigned = await compiler.run(unsigned_proved);
+    assert_equals(unsigned.value, { kind: "integer", value: 10 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases transparent fact proofs", async () => {
+  const proved_source = "type nonzero = (value: I32) -> Prop\n" +
+    "fact nonzero = candidate => candidate != 0;\n" +
+    "type consume = " +
+    "(value: I32, evidence: Proof nonzero(value)) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual != 0 then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const plain_source = "let consume = actual => actual;\n" +
+    "let guarded = actual => " +
+    "if actual != 0 then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases polymorphic transparent fact proofs", async () => {
+  const proved_source =
+    "type reflexive = forall (a: Type). (value: a) -> Prop\n" +
+    "fact reflexive = value => value = value;\n" +
+    "type consume = " +
+    "(value: I32, evidence: Proof reflexive(value)) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual == actual then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const plain_source = "let consume = actual => actual;\n" +
+    "let guarded = actual => " +
+    "if actual == actual then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases aliased opaque predicate evidence", async () => {
+  const proved_source = "type p = (value: I32) -> Prop\n" +
+    "opaque fact p = value => True;\n" +
+    "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+    "let forward = (actual, evidence) => do\n" +
+    "  let alias = actual;\n" +
+    "  consume alias\n" +
+    "end;\n" +
+    "42\n";
+  const plain_source = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type forward = (value: I32) -> I32\n" +
+    "let forward = actual => do\n" +
+    "  let alias = actual;\n" +
+    "  consume alias\n" +
+    "end;\n" +
+    "42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test(
+  "Duck compiler erases ordered branch proofs across argument packs",
+  async () => {
+    const proved_source = "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+      "let consume = (left, right, evidence) => right;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left < right then consume (left, right) else left end;\n" +
+      "guarded (10, 42)\n";
+    const plain_source = "let consume = (left, right) => right;\n" +
+      "let guarded = (left, right) => " +
+      "if left < right then consume (left, right) else left end;\n" +
+      "guarded (10, 42)\n";
+    const proved_module = encode_duck_module(proved_source);
+    const plain_module = encode_duck_module(plain_source);
+    assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+    assert_equals(
+      proved_module.definitionWords,
+      plain_module.definitionWords,
+    );
+
+    const compiler = await DuckCompiler.create();
+    try {
+      const proved = await compiler.run(proved_source);
+      assert_equals(proved.value, { kind: "integer", value: 42 });
+    } finally {
+      compiler.destroy();
+    }
+  },
+);
+
+Deno.test("Duck compiler erases transitive affine proofs", async () => {
+  const proved_source = "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+    "let consume = (left, right, evidence) => right;\n" +
+    "type guarded = (left: I32, middle: I32, right: I32) -> I32\n" +
+    "let guarded = (left, middle, right) => " +
+    "if left < middle then " +
+    "if middle <= right then consume (left, right) else left end " +
+    "else left end;\n" +
+    "guarded (10, 20, 42)\n";
+  const plain_source = "let consume = (left, right) => right;\n" +
+    "let guarded = (left, middle, right) => " +
+    "if left < middle then " +
+    "if middle <= right then consume (left, right) else left end " +
+    "else left end;\n" +
+    "guarded (10, 20, 42)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    proved_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases equality-substituted disequality proofs", async () => {
+  const proved_source = "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left != right) -> I32\n" +
+    "let consume = (left, right, evidence) => right;\n" +
+    "type guarded = (left: I32, middle: I32, right: I32) -> I32\n" +
+    "let guarded = (left, middle, right) => " +
+    "if left == middle then " +
+    "if middle != right then consume (left, right) else left end " +
+    "else left end;\n" +
+    "guarded (10, 10, 42)\n";
+  const plain_source = "let consume = (left, right) => right;\n" +
+    "let guarded = (left, middle, right) => " +
+    "if left == middle then " +
+    "if middle != right then consume (left, right) else left end " +
+    "else left end;\n" +
+    "guarded (10, 10, 42)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    proved_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases short-circuit FactGraph proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value < 20) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32, ready: I32) -> I32\n" +
+    "let guarded = (actual, ready) => " +
+    "if actual < 10 && ready != 0 then consume actual else 0 end;\n" +
+    "guarded (5, 1)\n";
+  const plain_source = "let consume = actual => actual;\n" +
+    "let guarded = (actual, ready) => " +
+    "if actual < 10 && ready != 0 then consume actual else 0 end;\n" +
+    "guarded (5, 1)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 5 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler preserves unsigned comparison semantics for proved branches", async () => {
+  const source = "type consume = " +
+    "(value: U32, evidence: Proof 10u32 <= value) -> I32\n" +
+    "let consume = (actual, evidence) => 7;\n" +
+    "type guarded = (value: U32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual < 10u32 then 1 else consume actual end;\n" +
+    "guarded 4294967295u32\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 7 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases facts retained across live branch joins", async () => {
+  const source = "type consume = " +
+    "(value: I32, evidence: Proof value < 20) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type joined = (value: I32, ready: I32) -> I32\n" +
+    "let joined = (actual, ready) => do\n" +
+    "if ready != 0 then\n" +
+    "if actual >= 20 then return 0; end;\n" +
+    "else\n" +
+    "if actual >= 10 then return 0; end;\n" +
+    "end;\n" +
+    "consume actual\n" +
+    "end;\n" +
+    "joined (15, 1) + joined (15, 0)\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 15 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases bounds proved on every range-loop visit", async () => {
+  const source = "type consume = " +
+    "(value: I32, evidence: Proof 0 <= value) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type run = () -> I32\n" +
+    "let run = () => do\n" +
+    "for index in 3..=0 by -1 do consume index; end;\n" +
+    "7\n" +
+    "end;\n" +
+    "run ()\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 7 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler erases checked proof declarations", async () => {
+  const proof_source =
+    "type merge = (choice: Proof True or True) -> Proof True\n" +
+    "let merge = choice => " +
+    "by or_cases(choice, left => left, right => right);\n" +
+    "type universal = () -> " +
+    "Proof forall (value: I32). value = value\n" +
+    "let universal = () => by value => refl;\n" +
+    "type witness = (value: I32) -> " +
+    "Proof exists (found: I32). found = value\n" +
+    "let witness = actual => by exists_intro(actual, refl);\n" +
+    "type predicate = (value: I32) -> Prop\n" +
+    "opaque fact predicate = value => True;\n" +
+    "type predicate_identity = () -> " +
+    "Proof forall (value: I32). predicate(value) implies predicate(value)\n" +
+    "let predicate_identity = () => by value => evidence => evidence;\n" +
+    "type mapped = " +
+    "(left: I32, right: I32, equality: Proof left = right) -> " +
+    "Proof left = right\n" +
+    "let mapped = (left, right, equality) => " +
+    "by congr(value => value, equality);\n" +
+    "type substitute = " +
+    "(left: I32, right: I32, equality: Proof left = right, " +
+    "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+    "let substitute = (left, right, equality, evidence) => " +
+    "by transport(equality, value => predicate(value), evidence);\n" +
+    "type admitted = () -> Proof False\n" +
+    "unsafe let admitted = () => by unsafe { assume False };\n" +
+    "42\n";
+  const plain_source = "42\n";
+  const proof_module = encode_duck_module(proof_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proof_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proof_module.definitionWords, plain_module.definitionWords);
+  assert_equals(proof_module.definitionCount, plain_module.definitionCount);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(proof_source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects unsafe runtime declarations", () => {
+  assert_throws(
+    () => encode_duck_module("unsafe let runtime = () => 42;\nruntime()\n"),
+    "require a matching prefix signature with a Proof result",
+  );
+});
+
+Deno.test("Duck compiler rejects proof bodies without signatures", () => {
+  assert_throws(
+    () => encode_duck_module("let orphan = () => by true_intro;\n42\n"),
+    "requires a matching prefix signature with a Proof result",
+  );
+});
+
+Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type identity = (value: I32) -> (result: I32)\n" +
+          "ensures result = value\n" +
+          "let identity = value => 0;\n" +
+          "identity 42\n",
+      ),
+    "does not establish ensures result = value",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type identity = (value: Bogus) -> (result: Bogus)\n" +
+          "ensures result = value\n" +
+          "let identity = value => value;\n" +
+          "identity 42\n",
+      ),
+    "cannot certify ensures result = value",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type identity = (value: I32) -> (result: I32)\n" +
+          "ensures result = value\n" +
+          "let identity = value => value;\n" +
+          'identity "wrong"\n',
+      ),
+    "cannot unify I32 with Text",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type f = (result: I32) -> {answer: I32 | answer = result}\n" +
+          "let f = ignored => 0;\n" +
+          "f 42\n",
+      ),
+    "cannot use reserved result as a parameter binder",
+  );
+});
+
+Deno.test("Duck file compilation checks prefix contracts", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-contract-check-",
+  });
+  const invalid_path = directory + "/invalid.duck";
+  Deno.writeTextFileSync(
+    invalid_path,
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => 0;\n" +
+      "identity 42\n",
+  );
+  const valid_path = directory + "/valid.duck";
+  Deno.writeTextFileSync(
+    valid_path,
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "identity 42\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(invalid_path),
+      "does not establish ensures result = value",
+    );
+    assert_equals(
+      encode_duck_file(valid_path).nodeWords,
+      encode_duck_module(Deno.readTextFileSync(valid_path)).nodeWords,
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation rejects orphan unsafe proofs", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-unsafe-proof-check-",
+  });
+  const orphan_source =
+    "unsafe let orphan = () => by unsafe { assume False };\n";
+  const direct_path = directory + "/direct.duck";
+  Deno.writeTextFileSync(direct_path, orphan_source + "42\n");
+  const dependency_path = directory + "/dependency.duck";
+  Deno.writeTextFileSync(
+    dependency_path,
+    "module () where\n" +
+      orphan_source +
+      "let answer = 42;\n" +
+      "return { .answer };\n",
+  );
+  const entry_path = directory + "/entry.duck";
+  Deno.writeTextFileSync(
+    entry_path,
+    'const { .answer } = import "./dependency.duck" ();\nanswer\n',
+  );
+  try {
+    for (const path of [direct_path, entry_path]) {
+      assert_throws(
+        () => encode_duck_file(path),
+        "requires a matching prefix signature with a Proof result",
+      );
+    }
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck file compilation rejects orphan proofs in host interfaces", async () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-host-proof-check-",
+  });
+  const root_path = directory + "/root.duck";
+  Deno.writeTextFileSync(root_path, "42\n");
+  const host_path = directory + "/host.duck";
+  Deno.writeTextFileSync(
+    host_path,
+    "unsafe let orphan = () => by unsafe { assume False };\n",
+  );
+  const compiler = await DuckCompiler.create();
+  let failure_message = "";
+  try {
+    await compiler.compile_file(root_path, { host_interface: host_path });
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw new Error("Host proof validation threw a non-Error value");
+    }
+    failure_message = error.message;
+  } finally {
+    compiler.destroy();
+    Deno.removeSync(directory, { recursive: true });
+  }
+  assert_equals(
+    failure_message.includes(
+      "requires a matching prefix signature with a Proof result",
+    ),
+    true,
+  );
+});
+
+Deno.test("gpufuck lowering rejects a semantic program from another source", () => {
+  const first = analyze_duck_source(parse_duck_source("40 + 2"));
+  const second = analyze_duck_source(parse_duck_source("20 + 22"));
+  const program = checked_value(lower_duck_source(first));
+  if (program === undefined) {
+    throw new Error("Expected a checked semantic program.");
+  }
+
+  assert_throws(
+    () =>
+      lower_duck_semantic_program_to_gpufuck(
+        second.source,
+        program,
+        7,
+      ),
+    "requires a checked semantic program for its source",
+  );
+});
+
+Deno.test("Duck compiler preserves top-level return forms through Baba", () => {
+  const unit = encode_duck_module("return;\n");
+  const scalar = encode_duck_module("return 1;\n");
+  const shape = encode_duck_module("return { .value = 1 };\n");
+
+  assert_equals(unit.definitionCount, 1);
+  assert_equals(unit.entrySymbol, 0);
+  assert_equals(unit.nodeCount, 1);
+  assert_equals(scalar.definitionCount, 1);
+  assert_equals(scalar.entrySymbol, 0);
+  assert_equals(scalar.nodeCount, 1);
+  assert_equals(shape.definitionCount, 1);
+  assert_equals(shape.entrySymbol, 0);
+  assert_equals(shape.nodeCount, 3);
+});
+
+Deno.test("Duck compiler rejects return values after a line break", () => {
+  assert_throws(
+    () => encode_duck_module("return\n1;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return // stop here\n1;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return 1\n;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return 1 // stop here\n;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return 1\n"),
+    "Baba parser rejected MISSING",
+  );
 });
 
 Deno.test("Duck compiler lowers Duck numeric types", () => {
@@ -25,16 +1385,125 @@ Deno.test("Duck compiler lowers Duck numeric types", () => {
   assert_equals(f64_module.nodeCount, 3);
 });
 
+Deno.test("Duck compiler composes union cases inside product patterns", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+type MaybeI32 = | #Empty | #Value I32
+
+let combine: (MaybeI32, MaybeI32) -> I32 =
+  (left, right) => case (left, right) of
+    (#Empty, #Value value) => value,
+    (#Value value, #Empty) => value,
+    (#Value left_value, #Value right_value) if left_value < right_value => left_value + right_value,
+    _ => 0;
+
+let empty: MaybeI32 = #Empty;
+combine(empty, #Value 1) + combine(#Value 2, empty)
+  + combine(#Value 20, #Value 22)
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 45 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler keeps stored products distinct from argument packs", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+let sum_product: [I32, I32] -> I32 = [left, right] => left + right;
+let sum_arguments: (I32, I32) -> I32 = (left, right) => left + right;
+sum_product [20, 1] + sum_arguments(20, 1)
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler executes target-directed From conversions", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+const { .struct } = import "duck:prelude/types" ();
+const { .from } = import "duck:prelude/functional" ();
+
+type Box = struct { .value = I32 }
+
+extend Box {
+  .from = box => box.value,
+}
+
+let exact: [1, 2] = from (1, 2);
+let array: [I32; 2] = from (1, 2);
+let byte: U8 = from 1;
+let box: Box = [.value = 42];
+let custom: I32 = from box;
+let via_into: I32 = Into.into box;
+const convert = from;
+let via_alias: I32 = convert box;
+let accept_byte: U8 -> U8 = value => value;
+let contextual = accept_byte(from 1);
+let from = value => value + 1;
+let shadowed = from 1;
+
+exact[0] + exact[1] + array[0] + array[1] + byte + custom + via_into
+  + via_alias + contextual + shadowed
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 136 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects ambiguous and narrowing From conversions", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(`
+const { .from } = import "duck:prelude/functional" ();
+let converted = from 1;
+converted
+`),
+    "`from` requires a result type from an annotation or call context",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(`
+const { .from } = import "duck:prelude/functional" ();
+let converted: U8 = from 256;
+converted
+`),
+    "Integer literal 256 is out of range for U8",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(`
+const { .from } = import "duck:prelude/functional" ();
+let value: I32 = 1;
+let converted: U8 = from value;
+converted
+`),
+    "Missing duck satisfaction for From.from at I32",
+  );
+});
+
 Deno.test("Duck compiler executes float arithmetic after integer conversion", async () => {
   const compiler = await DuckCompiler.create();
 
   try {
     const execution = await compiler.run(`
 const { .f32_from_i32, .i32_from_f32 } = import "duck:prelude/runtime" ();
-let halve: I32 -> F32 = (value: I32) => {
+let halve: I32 -> F32 = (value: I32) => do
   let converted: F32 = f32_from_i32 value;
   converted / 2.0f32
-};
+end;
 i32_from_f32(halve(42))
 `);
 
@@ -46,8 +1515,8 @@ i32_from_f32(halve(42))
 
 Deno.test("Duck gpufuck lowering represents Char payloads as integers", () => {
   const source_text = `
-type Key = | \`Character Char | \`Escape Unit
-let key: Key = \`Character 'q';
+type Key = | #Character Char | #Escape
+let key: Key = #Character 'q';
 key
 `;
   const lowered = lower_duck_source_to_gpufuck(
@@ -88,9 +1557,9 @@ third(39)
 
 Deno.test("Duck gpufuck lowering types an if from either branch", () => {
   const source_text = `
-let f = rec (n: I32, total: I32) => {
-  if n > 0 { rec(n - 1, total + n) } else { total }
-};
+let f = rec (n: I32, total: I32) => do
+  if n > 0 then rec(n - 1, total + n)  else  total end;
+end;
 f(3, 0)
 `;
   const lowered = lower_duck_source_to_gpufuck(
@@ -104,17 +1573,40 @@ f(3, 0)
   assert_equals(entry?.type, { kind: "integer" });
 });
 
+Deno.test("Duck gpufuck lowering types an if-let from its non-trapping branch", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+type Value = | #Missing | #Present I32
+
+let require_value = (value: Value) => do
+  let #Present present = value else do
+    return @panic "Expected a present value";
+  end;
+  present
+end;
+
+require_value(#Present 42)
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck gpufuck lowering resolves a union case from the declared parameter", () => {
   const source_text = `
-type Keys = | \`Empty Unit | \`Key I32
-type Commands = | \`Empty Unit | \`Command I32
+type Keys = | #Empty | #Key I32
+type Commands = | #Empty | #Command I32
 
-let known: Keys = \`Key 3;
-let pick = rec (values: Commands, fallback: I32) => {
-  if let \`Command value = values { value } else { fallback }
-};
-let out: I32 = pick(\`Empty (), 7);
-if let \`Key value = known { out + value } else { out }
+let known: Keys = #Key 3;
+let pick = rec (values: Commands, fallback: I32) => do
+  if let #Command value = values then value  else  fallback end;
+end;
+let out: I32 = pick(#Empty, 7);
+if let #Key value = known then out + value  else  out end;
 `;
   const lowered = lower_duck_source_to_gpufuck(
     parse_source(source_text),
@@ -131,10 +1623,10 @@ Deno.test("Duck compiler lowers empty generic union cases", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-type Option value = | \`None Unit | \`Some value
+type Option value = | #None | #Some value
 type IntOption = Option I32
-let value: IntOption = \`None ();
-if let \`None () = value { 42 } else { 0 }
+let value: IntOption = #None;
+if let #None = value then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -146,9 +1638,9 @@ Deno.test("Duck compiler preserves direct generic union identity", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-type Option value = | \`None Unit | \`Some value
-let value: Option I32 = \`Some 42;
-if let \`Some item = value { item } else { 0 }
+type Option value = | #None | #Some value
+let value: Option I32 = #Some 42;
+if let #Some item = value then item  else  0 end;
 `);
 
     assert_equals(execution.value, { kind: "integer", value: 42 });
@@ -205,10 +1697,10 @@ Deno.test("Duck compiler runs common prelude comparisons", async () => {
   try {
     const execution = await compiler.run(`
 const { .max_i32, .min_i32, .text_equal_ascii_case_insensitive } = import "duck:prelude/functional" ();
-let equal_score = if text_equal_ascii_case_insensitive(["PowerShell.EXE", "powershell.exe"]) { 1 } else { 0 };
-let unequal_score = if text_equal_ascii_case_insensitive(["bash", "zsh"]) { 0 } else { 10 };
-let concat_score = if "a" <> "b" <> "c" <> "d" == "abcd" { 10000 } else { 0 };
-equal_score + unequal_score + min_i32([7, 3]) * 100 + max_i32([7, 3]) * 1000 + concat_score
+let equal_score = if text_equal_ascii_case_insensitive("PowerShell.EXE", "powershell.exe") then 1  else  0 end;
+let unequal_score = if text_equal_ascii_case_insensitive("bash", "zsh") then 0  else  10 end;
+let concat_score = if "a" <> "b" <> "c" <> "d" == "abcd" then 10000  else  0 end;
+equal_score + unequal_score + min_i32(7, 3) * 100 + max_i32(7, 3) * 1000 + concat_score
 `);
     assert_equals(execution.value, { kind: "integer", value: 17_311 });
   } finally {
@@ -221,7 +1713,7 @@ Deno.test("Duck compiler formats signed I32 values in source", async () => {
   try {
     const execution = await compiler.run(`
 const { .format_i32 } = import "duck:prelude/numeric" ();
-if format_i32(-2147483648) == "-2147483648" && format_i32(443) == "443" { 42 } else { 0 }
+if format_i32(-2147483648) == "-2147483648" && format_i32(443) == "443" then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -234,7 +1726,7 @@ Deno.test("Duck compiler formats signed I64 values in source", async () => {
   try {
     const execution = await compiler.run(`
 const { .format_i64 } = import "duck:prelude/numeric" ();
-if format_i64(-9223372036854775808i64) == "-9223372036854775808" && format_i64(1735894800i64) == "1735894800" { 42 } else { 0 }
+if format_i64(-9223372036854775808i64) == "-9223372036854775808" && format_i64(1735894800i64) == "1735894800" then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -246,15 +1738,15 @@ Deno.test("Duck compiler parses signed I64 values in source", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { .parse_i64_decimal } = import "duck:prelude/numeric" ();
+const { .parse_i64_decimal } = import "duck:prelude/numeric/parse" ();
 let minimum = parse_i64_decimal("-9223372036854775808");
 let maximum = parse_i64_decimal("9223372036854775807");
 let overflow = parse_i64_decimal("9223372036854775808");
 let malformed = parse_i64_decimal("--1");
-let score = if let \`Ok value = minimum { if value == -9223372036854775808i64 { 1 } else { 0 } } else { 0 };
-if let \`Ok value = maximum { if value == 9223372036854775807i64 { score = score + 10 } }
-if let \`Err reason = overflow { if reason == "number exceeds I64" { score = score + 100 } }
-if let \`Err reason = malformed { if reason == "must be an integer" { score = score + 1000 } }
+let score = if let #Ok value = minimum then if value == -9223372036854775808i64 then 1  else  0 end;  else  0 end;
+if let #Ok value = maximum then if value == 9223372036854775807i64 then score = score + 10 end; end;
+if let #Err reason = overflow then if reason == "number exceeds I64" then score = score + 100 end; end;
+if let #Err reason = malformed then if reason == "must be an integer" then score = score + 1000 end; end;
 score
 `);
     assert_equals(execution.value, { kind: "integer", value: 1_111 });
@@ -267,13 +1759,13 @@ Deno.test("Duck compiler validates full-range U64 decimal text in source", async
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { .parse_u64_decimal_text } = import "duck:prelude/numeric" ();
+const { .parse_u64_decimal_text } = import "duck:prelude/numeric/parse" ();
 let maximum = parse_u64_decimal_text("18446744073709551615");
 let leading_zero = parse_u64_decimal_text("00042");
 let overflow = parse_u64_decimal_text("18446744073709551616");
-let score = if let \`Ok value = maximum { if value == "18446744073709551615" { 1 } else { 0 } } else { 0 };
-if let \`Ok value = leading_zero { if value == "42" { score = score + 10 } }
-if let \`Err message = overflow { if message == "number exceeds U64" { score = score + 100 } }
+let score = if let #Ok value = maximum then if value == "18446744073709551615" then 1  else  0 end;  else  0 end;
+if let #Ok value = leading_zero then if value == "42" then score = score + 10 end; end;
+if let #Err message = overflow then if message == "number exceeds U64" then score = score + 100 end; end;
 score
 `);
     assert_equals(execution.value, { kind: "integer", value: 111 });
@@ -288,21 +1780,126 @@ Deno.test("Duck compiler lowers Duck remainder primitives", () => {
   assert_equals(remainder_module.nodeCount, 3);
 });
 
+Deno.test("Duck compiler rejects unproved integer traps", () => {
+  for (
+    const [source, message] of [
+      [
+        "let divide = (left: I32, right: I32) => left / right;\n0\n",
+        "unknown: cannot prove divisor != 0",
+      ],
+      ["84 / 0\n", "disproved: cannot prove divisor != 0"],
+      ["84 % 0\n", "disproved: cannot prove divisor != 0"],
+    ] as const
+  ) {
+    assert_throws(() => encode_duck_module(source), message);
+  }
+});
+
+Deno.test("Duck compiler rejects first-class partial Wasm intrinsics", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "let invoke: (((I32, I32) -> I32), I32, I32) -> I32 = " +
+          "(operation, left, right) => operation(left, right);\n" +
+          "invoke (@wasm.div_i32, 84, 0)\n",
+      ),
+    "partial intrinsic @wasm.div_i32 cannot escape",
+  );
+});
+
+Deno.test("Duck compiler executes guarded integer division", async () => {
+  encode_duck_module("84u64 / 2u64\n");
+  encode_duck_module(
+    "let divide = (left: U64, right: U64) => " +
+      "if right != 0u64 then left / right else 0u64 end;\n0\n",
+  );
+  encode_duck_module(
+    "let divide = (left: I32, right: I32) => " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "left / right else 0 end;\n" +
+      "divide (84, 2)\n",
+  );
+  encode_duck_module(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && right != -1 then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  );
+  encode_duck_module(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  );
+  const source = "let divide = (left: I32, right: I32) => " +
+    "if right != 0 && right != -1 then left / right else 0 end;\n" +
+    "divide (84, 2)\n";
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+    const high_divisor_quotient = await compiler.run(
+      "84u64 / 18446744073709551615u64\n",
+    );
+    assert_equals(high_divisor_quotient.value, {
+      kind: "signed-integer-64",
+      value: 0n,
+    });
+    const high_divisor_remainder = await compiler.run(
+      "84u64 % 18446744073709551615u64\n",
+    );
+    assert_equals(high_divisor_remainder.value, {
+      kind: "signed-integer-64",
+      value: 84n,
+    });
+    const guarded_high_divisor = await compiler.run(
+      "let divide = (left: U64, right: U64) => " +
+        "if right != 0u64 then left / right else 0u64 end;\n" +
+        "divide (84u64, 18446744073709551615u64)\n",
+    );
+    assert_equals(guarded_high_divisor.value, {
+      kind: "signed-integer-64",
+      value: 0n,
+    });
+    const guarded_high_remainder = await compiler.run(
+      "let remainder = (left: U64, right: U64) => " +
+        "if right != 0u64 then left % right else 0u64 end;\n" +
+        "remainder (84u64, 18446744073709551615u64)\n",
+    );
+    assert_equals(guarded_high_remainder.value, {
+      kind: "signed-integer-64",
+      value: 84n,
+    });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler preserves annotated function result types", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-type Decision = | \`Accepted Text | \`Rejected Text
-let decide: Bool -> Decision = accepted => {
-  if accepted { \`Accepted "yes" } else { \`Rejected "no" }
-};
+type Decision = | #Accepted Text | #Rejected Text
+let decide: Bool -> Decision = accepted => do
+  if accepted then #Accepted "yes"  else  #Rejected "no" end;
+end;
 let decision = decide(true);
-if let \`Accepted message = decision { if message == "yes" { 42 } else { 0 } } else { 0 }
+if let #Accepted message = decision then if message == "yes" then 42  else  0 end;  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
     compiler.destroy();
   }
+});
+
+Deno.test("Duck compiler applies binding signatures to argument-pack parameters", () => {
+  const module = encode_duck_module(`
+let add: (I32, I32) -> I32 = (left, right) => left + right;
+add(19, 23)
+`);
+  assert_equals(module.definitionCount, 1);
 });
 
 Deno.test("Duck compiler lowers F32x4 through portable aggregate lanes", () => {
@@ -436,12 +2033,12 @@ Deno.test("gpufuck JSON parser rejects truncated literals", async () => {
     const execution = await compiler.run(`
 const { .parse_json } = import "duck:prelude/json" ();
 let parsed = parse_json("t", 0);
-if let \`Err error = parsed {
+if let #Err error = parsed then
   let [position, _] = error;
   position + 42
-} else {
+ else
   0
-}
+end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -473,7 +2070,7 @@ Deno.test("gpufuck source JSON encoder emits ASCII-only strings", async () => {
   try {
     const execution = await compiler.run(`
 const { .encode_json_string_ascii } = import "duck:prelude/json/encode" ();
-if encode_json_string_ascii("東京😀") == "\\"\\\\u6771\\\\u4eac\\\\ud83d\\\\ude00\\"" { 42 } else { 0 }
+if encode_json_string_ascii("東京😀") == "\\"\\\\u6771\\\\u4eac\\\\ud83d\\\\ude00\\"" then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
     assert_equals(execution.stats.thunkEvaluations, 1);
@@ -3049,16 +4646,36 @@ Deno.test("Duck compiler executes Text append and indexing", async () => {
   }
 });
 
+Deno.test("Duck compiler passes template holes with their source types", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+let extract: (["answer: ", "!"], [I32]) -> I32 =
+  (strings, values) => @len(strings[0]) + @len(strings[1]) + values[0];
+extract \`answer: {42}!\`
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 51 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler executes Bytes conversion and slicing", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-scratch {
+scratch do
+  let final_byte = (joined: Bytes) => do
+    let joined_length = @len joined;
+    if 2 < joined_length then joined_length * 100 + @get(joined, 2) else 0 end
+  end;
   let bytes: Bytes = @Utf8.encode("AB");
   let part: Bytes = @slice(bytes, 0, 2);
   let joined: Bytes = @append(part, @Utf8.encode("C"));
-  @len(joined) * 100 + @get(joined, 2)
-}
+  final_byte joined
+end
 `);
     assert_equals(execution.value, { kind: "integer", value: 367 });
   } finally {
@@ -3071,12 +4688,12 @@ Deno.test("Duck compiler preserves assignments from iterator loops", async () =>
   try {
     const execution = await compiler.run(`
 const { .struct } = import "duck:prelude" ();
-let values: List I32 = \`Cons [42, \`Nil ()];
+let values: List I32 = #Cons [42, #Nil];
 let result = 0;
 
-for value in values {
+for value in values do
   result = value
-}
+end
 
 result
 `);
@@ -3093,15 +4710,15 @@ Deno.test("Duck compiler preserves conditional assignments from loops", async ()
 let index = 0;
 let result = 0;
 
-loop {
-  if index >= 2 { break; }
+loop do
+  if index >= 2 then break; end;
 
-  if index == 1 {
+  if index == 1 then
     result = 42
-  }
+  end;
 
   index = index + 1
-}
+end;
 
 result
 `);
@@ -3300,22 +4917,62 @@ Deno.test("Duck compiler executes aggregate effect capabilities", async () => {
   }
 });
 
+Deno.test(
+  "Duck compiler constructs nullary state for effectful uncarried loops",
+  async () => {
+    const source = `
+module (!init: Init) where
+
+declare effect Tick {
+  tick: () => Unit
+}
+declare Init { tick: Tick }
+
+for index in 0..1 do
+  _ <- Tick.tick()
+end;
+loop do
+  _ <- Tick.tick()
+  break;
+end;
+return { .result = 7 };
+`;
+    const compiler = await DuckCompiler.create();
+
+    try {
+      const execution = await compiler.run(source, {
+        init: {
+          Tick: {
+            $resource: { kind: "resource", id: 1 },
+            tick: () => ({ kind: "unit" }),
+          },
+        },
+      });
+      assert_equals(execution.value, {
+        kind: "constructor",
+        name: "duck::$DuckStruct:duck_entry_result_type",
+        fields: [{ kind: "integer", value: 7 }],
+      });
+    } finally {
+      compiler.destroy();
+    }
+  },
+);
+
 Deno.test("Duck compiler emits host callables as persistent exports", async () => {
   const compiler = await DuckCompiler.create();
   const storage_source = `
 let add: (I32, I32) -> I32 = (left, right) => left + right;
-let sum_to: I32 -> I32 = rec (value: I32) => {
-  if value == 0 { 0 } else { value + rec(value - 1) }
-};
+let sum_to: I32 -> I32 = rec (value: I32) =>
+  if value == 0 then 0 else value + rec(value - 1) end;
 add(sum_to(6), 21)
 `;
   const callable_source = `
 module () where
 
 let add: (I32, I32) -> I32 = (left, right) => left + right;
-let sum_to: I32 -> I32 = rec (value: I32) => {
-  if value == 0 { 0 } else { value + rec(value - 1) }
-};
+let sum_to: I32 -> I32 = rec (value: I32) =>
+  if value == 0 then 0 else value + rec(value - 1) end;
 return { .add = add, .sum_to = sum_to, .answer = 42 };
 `;
   try {
@@ -3425,10 +5082,10 @@ let uppercase = IntoIterator.iterator(@Utf8.encode("WX"));
 let pairs = iterator_zip(lowercase, uppercase);
 let difference = 0;
 
-for pair in pairs {
+for pair in pairs do
   let [left, right] = pair;
   difference = difference + left - right
-}
+end
 
 let number_bytes = IntoIterator.iterator(@Utf8.encode("ABC"));
 let numbers = iterator_map(number_bytes, decode);
@@ -3451,8 +5108,8 @@ let matching_count = iterator_count(
   IntoIterator.iterator(@Utf8.encode("ABCD")),
   byte => byte >= @cast('B', I32),
 );
-let found_value = if let \`Some value = matching_value { value } else { 0 };
-let found_index = if let \`Some index = matching_index { index } else { 0 };
+let found_value = if let #Some value = matching_value then value  else  0 end;
+let found_index = if let #Some index = matching_index then index  else  0 end;
 let search_score = found_value + found_index * 1000 + matching_count * 10000;
 
 difference * 100 + mapped_sum * 10 + scanned_sum + windowed_length + search_score
@@ -3477,17 +5134,17 @@ extend Numbers {
   .iterator = numbers => numbers.values,
 }
 
-let tail: List I32 = \`Nil ();
+let tail: List I32 = #Nil;
 let second: ListNode I32 = [22, tail];
-tail = \`Cons second
+tail = #Cons second
 let first: ListNode I32 = [20, tail];
-let values: List I32 = \`Cons first;
+let values: List I32 = #Cons first;
 let numbers: Numbers = [.values = values];
 let total = 0;
 
-for value in numbers {
+for value in numbers do
   total = total + value
-}
+end
 
 total
 `);

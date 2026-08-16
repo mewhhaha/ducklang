@@ -6,16 +6,16 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-const empty_args = () => {
-  let values: FixtureArgs = `Nil ();
+const empty_args = () => do
+  let values: FixtureArgs = #Nil;
   values
-};
+end;
 
-const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => {
+const prepend_arg: (Text, FixtureArgs) -> FixtureArgs = (value: Text, tail: FixtureArgs) => do
   let node: ListNode Text = [value, tail];
-  let values: FixtureArgs = `Cons node;
+  let values: FixtureArgs = #Cons node;
   values
-};
+end;
 
 let input: FixtureArgs = prepend_arg("summarize", empty_args());
 input = prepend_arg("/tmp/extra", input)
@@ -27,20 +27,24 @@ input = prepend_arg("--image", input)
 input = prepend_arg("gpt-test", input)
 input = prepend_arg("--model", input)
 let parsed: FixtureResult = parse_exec_options input;
-let score = if let `Ok options = parsed {
-  if let `Some model = options.shared.model {
-    if let `Cons first_image_node = options.shared.images {
+let score = if let #Ok options = parsed then
+  if let #Some model = options.shared.model then
+    if let #Cons first_image_node = options.shared.images then
       let [first_image, remaining_images] = first_image_node;
-      if let `Cons second_image_node = remaining_images {
+      if let #Cons second_image_node = remaining_images then
         let [second_image, _] = second_image_node;
-        if let `Cons writable_node = options.shared.additional_writable_roots {
+        if let #Cons writable_node = options.shared.additional_writable_roots then
           let [writable, _] = writable_node;
-          let sandbox_ok = if let `Some mode = options.shared.sandbox { if let `SandboxWorkspaceWrite () = mode { true } else { false } } else { false };
-          if model == "gpt-test" && first_image == "a.png" && second_image == "b.png" && writable == "/tmp/extra" && sandbox_ok { 1 } else { 0 }
-        } else { 0 }
-      } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+          let sandbox_ok =
+            if let #Some mode = options.shared.sandbox then
+              if let #SandboxWorkspaceWrite = mode then true else false end;
+            else false end;
+          if model == "gpt-test" && first_image == "a.png" && second_image == "b.png" && writable
+            == "/tmp/extra" && sandbox_ok then 1 else 0 end;
+        else 0 end;
+      else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

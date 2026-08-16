@@ -2,9 +2,9 @@
 Let-else binding
 ==================
 
-let `Some value = result else {
+let #Some value = result else do
   return 0;
-};
+end;
 value
 
 ---
@@ -25,12 +25,12 @@ value
       (identifier))))
 
 ==================
-Return without a value
+Return of unit
 ==================
 
-let stop = () => {
-  return;
-};
+let stop = () => do
+  return ();
+end;
 
 ---
 
@@ -41,4 +41,6 @@ let stop = () => {
       (parameter_list)
       (postfix_expression
         (block
-          (return_statement))))))
+          (return_statement
+            (postfix_expression
+              (unit_pattern))))))))

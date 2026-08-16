@@ -15,10 +15,10 @@ type FixtureState = NetworkApprovalState
 type FixtureRequest = NetworkRequest
 type FixtureResult = NetworkPolicyResult
 
-let https: FixtureProtocol = `Https ();
+let https: FixtureProtocol = #Https;
 let state: FixtureState = empty_network_approval_state();
-let deferred: FixtureMode = `Deferred ();
-let no_outcome: FixtureOutcome = `NoOutcome ();
+let deferred: FixtureMode = #Deferred;
+let no_outcome: FixtureOutcome = #NoOutcome;
 let call: FixtureCall = [
   "registration-1",
   "local",
@@ -29,12 +29,12 @@ let call: FixtureCall = [
 ];
 state = register_network_call(state, call)
 
-let execution: FixtureTextOption = `Some "missing-registration";
-let no_environment: FixtureTextOption = `None ();
-let local_environment: FixtureTextOption = `Some "local";
+let execution: FixtureTextOption = #Some "missing-registration";
+let no_environment: FixtureTextOption = #None;
+let local_environment: FixtureTextOption = #Some "local";
 let request: FixtureRequest = ["example.com", https, 443, execution, no_environment];
-let policy: FixturePolicy = `OnRequest ();
-let profile: FixtureProfile = `Managed ();
+let policy: FixturePolicy = #OnRequest;
+let profile: FixtureProfile = #Managed;
 let planned: FixtureResult = plan_network_request(
   state,
   request,
@@ -45,10 +45,10 @@ let planned: FixtureResult = plan_network_request(
 );
 let [_, decision] = planned;
 let score = 0;
-if let `Reject message = decision {
-  if message == "network request does not match an active call" {
+if let #Reject message = decision then
+  if message == "network request does not match an active call" then
     score = score + 1
-  }
-}
+  end;
+end;
 
 return { .score = score };

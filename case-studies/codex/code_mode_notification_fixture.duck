@@ -12,34 +12,34 @@ let blank: FixtureNotification = [
   .call_id = "call-blank",
   .cell_id = "cell-blank",
   .text = "　\n"];
-if let `CompleteBlankNotification () = plan_code_mode_notification blank {
+if let #CompleteBlankNotification = plan_code_mode_notification blank then
   score = score + 1
-}
+end;
 
 let visible: FixtureNotification = [
   .call_id = "call-visible",
   .cell_id = "cell-visible",
   .text = " working "];
-if let `InjectCodeModeNotification output = plan_code_mode_notification visible {
-  if output.call_id == "call-visible" && output.name == "exec" && output.text == " working " {
+if let #InjectCodeModeNotification output = plan_code_mode_notification visible then
+  if output.call_id == "call-visible" && output.name == "exec" && output.text == " working " then
     score = score + 10
-  }
-}
+  end;
+end;
 
-if let `NotificationComplete () = finish_code_mode_notification(
+if let #NotificationComplete = finish_code_mode_notification(
   "cell-visible",
-  `NotificationInjected (),
-) {
+  #NotificationInjected,
+) then
   score = score + 100
-}
+end;
 
-if let `NotificationRejected message = finish_code_mode_notification(
+if let #NotificationRejected message = finish_code_mode_notification(
   "cell-missing",
-  `NotificationTurnMissing (),
-) {
-  if message == "failed to inject exec notify message for cell cell-missing: no active turn" {
+  #NotificationTurnMissing,
+) then
+  if message == "failed to inject exec notify message for cell cell-missing: no active turn" then
     score = score + 1000
-  }
-}
+  end;
+end;
 
 return { .score = score };

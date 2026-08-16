@@ -7,15 +7,15 @@ type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexDeleteOptionsResult
 type FixtureNode = ListNode Text
 
-const prepend_arg = (value: Text, values: FixtureArgs) => {
+const prepend_arg = (value: Text, values: FixtureArgs) => do
   let node: FixtureNode = [value, values];
-  let result: FixtureArgs = `Cons node;
+  let result: FixtureArgs = #Cons node;
   result
-};
-const singleton_arg = (value: Text) => {
-  let empty: FixtureArgs = `Nil ();
+end;
+const singleton_arg = (value: Text) => do
+  let empty: FixtureArgs = #Nil;
   prepend_arg(value, empty)
-};
+end;
 let uuid_input: FixtureArgs = prepend_arg(
   "--force",
   singleton_arg "123e4567-e89b-12d3-a456-426614174000",
@@ -25,12 +25,16 @@ let name_input: FixtureArgs = prepend_arg("--force", singleton_arg "my-thread");
 let name_result: FixtureResult = parse_delete_options name_input;
 let score = 0;
 
-if let `Ok options = uuid_result {
-  if options.force && options.target == "123e4567-e89b-12d3-a456-426614174000" { score = score + 1 }
-}
+if let #Ok options = uuid_result then
+  if options.force && options.target == "123e4567-e89b-12d3-a456-426614174000" then
+    score = score + 1
+  end;
+end;
 
-if let `Err message = name_result {
-  if message == "--force requires a session UUID; names must be confirmed interactively" { score = score + 10 }
-}
+if let #Err message = name_result then
+  if message == "--force requires a session UUID; names must be confirmed interactively" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

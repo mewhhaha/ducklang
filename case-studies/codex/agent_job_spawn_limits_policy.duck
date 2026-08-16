@@ -10,41 +10,52 @@ type AgentJobSpawnLimitsI64 = I64
 type AgentJobSpawnLimitsOption = AgentJobTextOption
 type AgentJobSpawnLimitsPlan = AgentJobSpawnPlan
 
-const prepare_agent_job_spawn_limits: [AgentJobSpawnLimitsDecoded, I32,
-  AgentJobSpawnLimitsOption] -> AgentJobSpawnLimitsPlan = (
+const prepare_agent_job_spawn_limits: (AgentJobSpawnLimitsDecoded, I32,
+  AgentJobSpawnLimitsOption) -> AgentJobSpawnLimitsPlan = (
     decoded: AgentJobSpawnLimitsDecoded,
     maximum_threads: I32,
     configured_runtime_seconds: AgentJobSpawnLimitsOption,
-  ) => {
+  ) => do
     let concurrency_text: AgentJobSpawnLimitsOption = decoded.max_concurrency;
-    if let `None () = concurrency_text { concurrency_text = decoded.max_workers }
+    if let #None = concurrency_text then
+      concurrency_text = decoded.max_workers
+    end;
     let requested_concurrency: AgentJobSpawnLimitsI64 = 16i64;
     let runtime: AgentJobSpawnLimitsOption = decoded.max_runtime_seconds;
-    if let `None () = runtime { runtime = configured_runtime_seconds }
+    if let #None = runtime then
+      runtime = configured_runtime_seconds
+    end;
     let failure = "";
 
-    if let `Some number = concurrency_text {
+    if let #Some number = concurrency_text then
       let parsed = parse_u32_decimal number;
-      if let `Ok concurrency_value = parsed { requested_concurrency = concurrency_value } else {
-        failure = "max_concurrency must be a non-negative integer" }
-    }
-    if let `Some number = runtime {
+      if let #Ok concurrency_value = parsed then
+        requested_concurrency = concurrency_value
+      else
+        failure = "max_concurrency must be a non-negative integer" end;
+    end;
+    if let #Some number = runtime then
       let parsed = parse_u64_decimal_text number;
-      if let `Ok runtime_value = parsed {
-        runtime = `Some runtime_value
-        if runtime_value == "0" { failure = "max_runtime_seconds must be >= 1" }
-      } else {
+      if let #Ok runtime_value = parsed then
+        runtime = #Some runtime_value
+        if runtime_value == "0" then
+          failure = "max_runtime_seconds must be >= 1"
+        end;
+      else
         failure = "max_runtime_seconds must be a non-negative integer"
-      }
-    }
+      end;
+    end;
 
-    if failure != "" {
-      `RejectSpawn failure
-    } else {
-      let bounded: AgentJobSpawnLimitsI64 = if requested_concurrency < 1i64 { 1i64
-      } else if requested_concurrency > 64i64 { 64i64 } else { requested_concurrency };
-      let maximum_threads_i64: AgentJobSpawnLimitsI64 = unsafe_i64_extend_i32_signed maximum_threads;
-      if maximum_threads > 0 && bounded > maximum_threads_i64 { bounded = maximum_threads_i64 }
+    if failure != "" then
+      #RejectSpawn failure
+    else
+      let bounded: AgentJobSpawnLimitsI64 = if requested_concurrency < 1i64 then 1i64
+      else requested_concurrency > 64i64 then 64i64 else requested_concurrency end;
+      let maximum_threads_i64: AgentJobSpawnLimitsI64 =
+        unsafe_i64_extend_i32_signed maximum_threads;
+      if maximum_threads > 0 && bounded > maximum_threads_i64 then
+        bounded = maximum_threads_i64
+      end;
       let args: AgentJobSpawnLimitsArgs = [
         .input_path = decoded.csv_path,
         .instruction = decoded.instruction,
@@ -54,8 +65,8 @@ const prepare_agent_job_spawn_limits: [AgentJobSpawnLimitsDecoded, I32,
         .max_concurrency = unsafe_i32_wrap_i64 bounded,
         .max_runtime_seconds = runtime,
       ];
-      `ReadCsv args
-    }
-  };
+      #ReadCsv args
+    end;
+  end;
 
 return { .prepare_agent_job_spawn_limits };

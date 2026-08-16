@@ -9,51 +9,53 @@ type ResourcePolicyTextOption = McpResourceTextOption
 type ResourcePolicyListValidation = McpResourceListValidation
 type ResourcePolicyReadValidation = McpResourceReadValidation
 
-const model_can_access_mcp_server: [Text, Bool] -> Bool = (
+const model_can_access_mcp_server: (Text, Bool) -> Bool = (
   server: Text,
   orchestrator_mcp_enabled: Bool,
-) => {
+) => do
   orchestrator_mcp_enabled || server != "codex_apps"
-};
+end;
 
-const inaccessible_mcp_server_message: Text -> Text = server => {
+const inaccessible_mcp_server_message: Text -> Text = server => do
   text_append("MCP server '", text_append(server, "' is disabled by `orchestrator.mcp.enabled`"))
-};
+end;
 
-const validate_list_mcp_resource_args: [ResourcePolicyListArgs, Bool] ->
+const validate_list_mcp_resource_args: (ResourcePolicyListArgs, Bool) ->
   ResourcePolicyListValidation = (
     args: ResourcePolicyListArgs,
     orchestrator_mcp_enabled: Bool,
-  ) => {
+  ) => do
     let cursor_without_server = false;
-    if let `Some _ = args.cursor {
-      if let `None () = args.server { cursor_without_server = true }
-    }
+    if let #Some _ = args.cursor then
+      if let #None = args.server then
+        cursor_without_server = true
+      end;
+    end;
 
-    if cursor_without_server {
-      `ListValidationFailed "cursor can only be used when a server is specified"
-    } else if let `Some server = args.server {
-      if !(model_can_access_mcp_server(server, orchestrator_mcp_enabled)) {
-        `ListValidationFailed (inaccessible_mcp_server_message server)
-      } else {
-        `ListValid args
-      }
-    } else {
-      `ListValid args
-    }
-  };
+    if cursor_without_server then
+      #ListValidationFailed "cursor can only be used when a server is specified"
+    else let #Some server = args.server then
+      if !(model_can_access_mcp_server(server, orchestrator_mcp_enabled)) then
+        #ListValidationFailed (inaccessible_mcp_server_message server)
+      else
+        #ListValid args
+      end;
+    else
+      #ListValid args
+    end;
+  end;
 
-const validate_read_mcp_resource_args: [ResourcePolicyReadArgs, Bool] ->
+const validate_read_mcp_resource_args: (ResourcePolicyReadArgs, Bool) ->
   ResourcePolicyReadValidation = (
     args: ResourcePolicyReadArgs,
     orchestrator_mcp_enabled: Bool,
-  ) => {
-    if model_can_access_mcp_server(args.server, orchestrator_mcp_enabled) {
-      `ReadValid args
-    } else {
-      `ReadValidationFailed (inaccessible_mcp_server_message args.server)
-    }
-  };
+  ) => do
+    if model_can_access_mcp_server(args.server, orchestrator_mcp_enabled) then
+      #ReadValid args
+    else
+      #ReadValidationFailed (inaccessible_mcp_server_message args.server)
+    end;
+  end;
 
 return {
   .inaccessible_mcp_server_message,

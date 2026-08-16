@@ -1,16 +1,18 @@
 const { .thread_goal_availability } = import "./app_server_goals.duck" ();
 
 let score = 0;
-if let `ThreadGoalsDisabled () = thread_goal_availability(false, `PersistentThread (), "thread-1") {
-  score = score + 1 }
-if let `EphemeralThreadGoalsUnsupported thread_id = thread_goal_availability(
+if let #ThreadGoalsDisabled = thread_goal_availability(false, #PersistentThread, "thread-1") then
+  score = score + 1 end;
+if let #EphemeralThreadGoalsUnsupported thread_id = thread_goal_availability(
   true,
-  `EphemeralThread (),
+  #EphemeralThread,
   "thread-2",
-) {
-  if thread_id == "thread-2" { score = score + 10 }
-}
-if let `ThreadGoalsAvailable () = thread_goal_availability(true, `PersistentThread (), "thread-3") {
-  score = score + 100 }
+) then
+  if thread_id == "thread-2" then
+    score = score + 10
+  end;
+end;
+if let #ThreadGoalsAvailable = thread_goal_availability(true, #PersistentThread, "thread-3") then
+  score = score + 100 end;
 
 return { .score = score };

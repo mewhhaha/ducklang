@@ -12,9 +12,11 @@ export abstract class ParserStmtControl extends ParserExpr {
     }
 
     const cond = this.parse_expr_without_postfix_block();
-    const then_branch = this.parse_block();
+    this.expect_keyword("then");
+    const then_branch = this.parse_conditional_branch();
     expect(then_branch.tag === "block", "Expected if body block");
     const else_branch = this.parse_optional_else_branch();
+    this.expect_keyword("end");
 
     if (else_branch) {
       return {
@@ -265,9 +267,11 @@ export abstract class ParserStmtControl extends ParserExpr {
 
   private parse_if_let_stmt_after_if(): Stmt {
     const pattern = this.parse_if_let_condition();
-    const then_branch = this.parse_block();
+    this.expect_keyword("then");
+    const then_branch = this.parse_conditional_branch();
     expect(then_branch.tag === "block", "Expected if let body block");
     const else_branch = this.parse_optional_else_branch();
+    this.expect_keyword("end");
 
     if (else_branch) {
       if (pattern.tag === "literal") {

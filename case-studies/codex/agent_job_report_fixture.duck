@@ -5,29 +5,37 @@ const { .plan_report_agent_job_result } = import "./agent_job_report_call.duck" 
 
 let score = 0;
 let valid = plan_report_agent_job_result(
-  `Function "{\"job_id\":\"job-1\",\"item_id\":\"row-1\",\"result\":{\"answer\":42},\"stop\":true}"
+  #Function "{\"job_id\":\"job-1\",\"item_id\":\"row-1\",\"result\":{\"answer\":42},\"stop\":true}"
 );
-if let `RecordResult args = valid {
-  if args.job_id == "job-1" && args.item_id == "row-1" && args.result_json == "{\"answer\":42}" && args.stop { score = score + 1 }
-}
+if let #RecordResult args = valid then
+  if args.job_id == "job-1" && args.item_id == "row-1" && args.result_json == "{\"answer\":42}"
+    && args.stop then
+      score = score + 1
+    end;
+end;
 
 let default_stop = plan_report_agent_job_result(
-  `Function "{\"job_id\":\"job-1\",\"item_id\":\"row-2\",\"result\":{}}"
+  #Function "{\"job_id\":\"job-1\",\"item_id\":\"row-2\",\"result\":{}}"
 );
-if let `RecordResult args = default_stop {
-  if !(args.stop) { score = score + 10 }
-}
+if let #RecordResult args = default_stop then
+  if !(args.stop) then
+    score = score + 10
+  end;
+end;
 
 let scalar = plan_report_agent_job_result(
-  `Function "{\"job_id\":\"job-1\",\"item_id\":\"row-3\",\"result\":42}"
+  #Function "{\"job_id\":\"job-1\",\"item_id\":\"row-3\",\"result\":42}"
 );
-if let `RejectRequest message = scalar {
-  if message == "result must be a JSON object" { score = score + 100 }
-}
+if let #RejectRequest message = scalar then
+  if message == "result must be a JSON object" then
+    score = score + 100
+  end;
+end;
 
-let unsupported = plan_report_agent_job_result(`Unsupported ());
-if let `RejectRequest message = unsupported {
-  if message == "report_agent_job_result handler received unsupported payload" { score = score + 1000 }
-}
+let unsupported = plan_report_agent_job_result(#Unsupported);
+if let #RejectRequest message = unsupported then
+  if message == "report_agent_job_result handler received unsupported payload" then
+    score = score + 1000 end;
+end;
 
 return { .score = score };

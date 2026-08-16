@@ -22,4 +22,4 @@ let matches = texts.length(command) == 4 && texts.nth_or("", 0, command) == "car
   command,
 ) == "test" && texts.nth_or("", 2, command) == "-p" && texts.nth_or("", 3, command) == "codex-core";
 
-return { .score = if matches { 1 } else { 0 } };
+return { .score = if matches then 1 else 0 end };

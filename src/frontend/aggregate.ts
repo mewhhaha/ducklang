@@ -1,3 +1,4 @@
+import { expect } from "../expect.ts";
 import type { Field, FrontExpr, TypeExpr } from "./ast.ts";
 
 export function elaborate_product_expr(
@@ -43,11 +44,10 @@ export function elaborate_product_expr(
 export function elaborate_fixed_array_expr(
   expr: Extract<FrontExpr, { tag: "array" }>,
 ): Extract<FrontExpr, { tag: "struct_value" }> {
-  if (expr.rest !== undefined) {
-    throw new Error(
-      "Cannot lower array spread to the fixed aggregate representation",
-    );
-  }
+  expect(
+    expr.rest === undefined,
+    "Unresolved array spread reached Core construction.",
+  );
 
   return {
     tag: "struct_value",

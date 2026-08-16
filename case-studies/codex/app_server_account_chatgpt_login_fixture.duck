@@ -12,15 +12,17 @@ fields = json_object_prepend("useHostedLoginSuccessPage", json_bool true, fields
 fields = json_object_prepend("codexStreamlinedLogin", json_bool true, fields)
 let decoded: FixtureResult = decode_account_chatgpt_login fields;
 let score = 0;
-if let `AccountLoginOk login = decoded {
-  if let `AccountChatgptLogin state = login {
+if let #AccountLoginOk login = decoded then
+  if let #AccountChatgptLogin state = login then
     let [streamlined, hosted_page, brand] = state;
-    if streamlined && hosted_page {
-      if let `Some value = brand {
-        if let `ChatgptBrand () = value { score = 1 }
-      }
-    }
-  }
-}
+    if streamlined && hosted_page then
+      if let #Some value = brand then
+        if let #ChatgptBrand = value then
+          score = 1
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

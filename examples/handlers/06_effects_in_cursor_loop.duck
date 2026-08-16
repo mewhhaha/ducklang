@@ -7,27 +7,27 @@ effect Counter {
   add: (I32) => Unit
 }
 
-let run: Ints -> <Counter> Unit = (values: Ints) => {
-  for value in values {
+let run: Ints -> <Counter> Unit = (values: Ints) => do
+  for value in values do
     _ <- Counter.add(value)
-  }
+  end
   ()
-};
+end;
 
-let counter = {
+let counter = do
   let sum = 0;
   handler Counter {
-    add: (value, !resume) => {
+    add: (value, !resume) => do
       sum = sum + value
       !resume(())
-    },
+    end,
     return: _ => sum,
   }
-};
+end;
 
-let third: IntNode = [12, `Nil ()];
-let second: IntNode = [20, `Cons third];
-let first: IntNode = [10, `Cons second];
-let values: Ints = `Cons first;
+let third: IntNode = [12, #Nil];
+let second: IntNode = [20, #Cons third];
+let first: IntNode = [10, #Cons second];
+let values: Ints = #Cons first;
 
-try run(values) with counter
+try run values with counter

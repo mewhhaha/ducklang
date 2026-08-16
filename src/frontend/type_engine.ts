@@ -1,74 +1,8 @@
-export type TypeScalar =
-  | "Bool"
-  | "Char"
-  | "Unit"
-  | "Int"
-  | "I32"
-  | "U32"
-  | "I64"
-  | "F32"
-  | "F64"
-  | "F32x4"
-  | "Text"
-  | "Bytes"
-  | "Resume"
-  | "Type";
-
-export type TypeOwnership =
-  | "scalar"
-  | "bounded_borrow"
-  | "frozen_shareable"
-  | "ownership_transfer"
-  | "unique_heap";
-
-export type TypeEffect = {
-  effect: string;
-  operation: string | undefined;
-};
-
-export type Type =
-  | { tag: "variable"; id: number; hint: string | undefined }
-  | { tag: "rigid"; id: number; name: string }
-  | { tag: "forall"; quantified_variables: number[]; body: Type }
-  | { tag: "top" }
-  | { tag: "never" }
-  | { tag: "scalar"; name: TypeScalar }
-  | { tag: "integer"; signed: boolean; width: number }
-  | { tag: "named"; name: string; args: Type[] }
-  | { tag: "product"; fields: TypeProductField[] }
-  | { tag: "record"; fields: TypeRecordField[] }
-  | { tag: "fixed_array"; length: number; element: Type }
-  | { tag: "sum"; cases: TypeSumCase[] }
-  | {
-    tag: "function";
-    params: Type[];
-    effects: TypeEffect[];
-    result: Type;
-  }
-  | {
-    tag: "owned";
-    ownership: TypeOwnership;
-    value: Type;
-  }
-  | { tag: "type_value"; represented: Type }
-  | { tag: "union"; members: Type[] }
-  | { tag: "intersection"; members: Type[] }
-  | { tag: "difference"; base: Type; removed: Type };
-
-export type TypeProductField = {
-  label: string | undefined;
-  type: Type;
-};
-
-export type TypeRecordField = {
-  label: string;
-  type: Type;
-};
-
-export type TypeSumCase = {
-  label: string;
-  payload: Type;
-};
+import type {
+  RepresentationEffect as TypeEffect,
+  RepresentationScalar as TypeScalar,
+  RepresentationType as Type,
+} from "./representation_type.ts";
 
 export type TypeAliasNormalizer = (
   type: Extract<Type, { tag: "named" }>,
@@ -81,7 +15,7 @@ export type TypeConstraint = {
 };
 
 export type TypeScheme = {
-  quantified_variables: number[];
+  quantified_variables: readonly number[];
   type: Type;
 };
 
@@ -1329,7 +1263,7 @@ export class TypeEngine {
     }
   }
 
-  private normalize_union(members: Type[]): Type {
+  private normalize_union(members: readonly Type[]): Type {
     const by_key = new Map<string, Type>();
 
     for (const member of members) {
@@ -1374,7 +1308,7 @@ export class TypeEngine {
     return { tag: "union", members: normalized };
   }
 
-  private normalize_intersection(members: Type[]): Type {
+  private normalize_intersection(members: readonly Type[]): Type {
     const by_key = new Map<string, Type>();
 
     for (const member of members) {
@@ -2070,8 +2004,8 @@ export class TypeEngine {
 }
 
 function same_effects(
-  left: TypeEffect[],
-  right: TypeEffect[],
+  left: readonly TypeEffect[],
+  right: readonly TypeEffect[],
 ): boolean {
   if (left.length !== right.length) {
     return false;

@@ -15,19 +15,19 @@ let input: FixtureArgs = args.prepend(
   args.prepend("debug", args.prepend("--json", args.singleton("--available"))),
 );
 let listed: FixtureResult = parse_plugin_list input;
-if let `Ok command = listed {
-  if let `PluginList options = command {
-    if let `Some marketplace_name = options.marketplace_name {
-      if marketplace_name == "debug" && options.json && options.available {
+if let #Ok command = listed then
+  if let #PluginList options = command then
+    if let #Some marketplace_name = options.marketplace_name then
+      if marketplace_name == "debug" && options.json && options.available then
         score = score + 1
-      }
-    }
-  }
-}
+      end;
+    end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_plugin_list(args.singleton("--available"));
-if let `Err _ = invalid {
+if let #Err _ = invalid then
   score = score + 10
-}
+end;
 
 return { .score = score };

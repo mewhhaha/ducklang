@@ -4,16 +4,16 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "duck:prelude/abstractions" ();
 
 type TurnTimingResponseSignal =
-  | `OutputDelta Unit
-  | `ReasoningDelta Unit
-  | `CompletedOutputText Text
-  | `CompletedReasoningText Text
-  | `ToolCall Unit
-  | `NoOutput Unit
+  | #OutputDelta
+  | #ReasoningDelta
+  | #CompletedOutputText Text
+  | #CompletedReasoningText Text
+  | #ToolCall
+  | #NoOutput
 
 type TurnTimingItemSignal =
-  | `AgentMessage Unit
-  | `OtherItem Unit
+  | #AgentMessage
+  | #OtherItem
 
 type TurnTimingDurationOption = Option DurationMs
 

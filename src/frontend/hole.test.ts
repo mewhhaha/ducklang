@@ -10,7 +10,7 @@ function diagnostics(text: string): string[] {
 
 Deno.test("a hole lifts its application into a lambda", () => {
   const parsed = parse_source_with_diagnostics(
-    "let add = [a: I32, b: I32] => a + b;\nlet inc = add [1, _];\ninc 41\n",
+    "let add = (a: I32, b: I32) => a + b;\nlet inc = add(1, _);\ninc 41\n",
   );
 
   assert_equals(parsed.diagnostics, []);
@@ -28,7 +28,7 @@ Deno.test("a hole lifts its application into a lambda", () => {
 
 Deno.test("several holes bind left to right", () => {
   const parsed = parse_source_with_diagnostics(
-    "let add = [a: I32, b: I32] => a + b;\nlet both = add [_, _];\nboth [1, 41]\n",
+    "let add = (a: I32, b: I32) => a + b;\nlet both = add(_, _);\nboth(1, 41)\n",
   );
 
   assert_equals(parsed.diagnostics, []);
@@ -50,16 +50,38 @@ Deno.test("several holes bind left to right", () => {
 
 Deno.test("a hole inside a nested call is rejected", () => {
   const messages = diagnostics(
-    "let add = [a: I32, b: I32] => a + b;\nlet bad = add [add [1, _], _];\nbad [1, 2]\n",
+    "let add = (a: I32, b: I32) => a + b;\nlet bad = add(add(1, _), _);\nbad(1, 2)\n",
   );
 
   assert_equals(messages.length > 0, true);
-  assert_includes(messages[0] ?? "", "hole cannot appear inside a nested call");
+  const message = messages[0];
+  if (message === undefined) {
+    throw new Error("Missing nested hole diagnostic");
+  }
+  assert_includes(message, "hole cannot appear inside a nested call");
+});
+
+Deno.test("nested aggregate and postfix holes are rejected", () => {
+  for (
+    const text of [
+      "let bad = outer({ .value = inner _ }, _);\n",
+      "let bad = outer(inner _.field, _);\n",
+      "let bad = outer({ .value = _ });\n",
+    ]
+  ) {
+    const messages = diagnostics(text);
+    assert_equals(messages.length, 1);
+    const message = messages[0];
+    if (message === undefined) {
+      throw new Error("Missing nested aggregate hole diagnostic");
+    }
+    assert_includes(message, "hole cannot appear inside a nested call");
+  }
 });
 
 Deno.test("a hole survives a format round trip", () => {
   const text =
-    "let add = [a: I32, b: I32] => a + b;\nlet inc = add [1, _];\ninc 41\n";
+    "let add = (a: I32, b: I32) => a + b;\nlet inc = add(1, _);\ninc 41\n";
   const once = format_source(parse_source_with_diagnostics(text).source);
   const twice = format_source(parse_source_with_diagnostics(once).source);
 

@@ -8,19 +8,24 @@ type FixtureOutputInput = AgentToolSpawnOutputInput
 
 let visible: FixtureSnapshot = [
   .task_name = "/root/reviewer",
-  .nickname = `Some "reviewer",
-  .status = `Running (),
+  .nickname = #Some "reviewer",
+  .status = #Running,
 ];
 let visible_input: FixtureOutputInput = [.snapshot = visible, .hide_metadata = false];
 let score = 0;
-if render_spawn_agent_output visible_input == "{\"task_name\":\"/root/reviewer\",\"nickname\":\"reviewer\"}" { score = score + 1 }
+if render_spawn_agent_output visible_input
+  == "{\"task_name\":\"/root/reviewer\",\"nickname\":\"reviewer\"}" then
+    score = score + 1
+  end;
 
 let hidden: FixtureSnapshot = [
   .task_name = "/root/reviewer",
-  .nickname = `Some "reviewer",
-  .status = `Running (),
+  .nickname = #Some "reviewer",
+  .status = #Running,
 ];
 let hidden_input: FixtureOutputInput = [.snapshot = hidden, .hide_metadata = true];
-if render_spawn_agent_output hidden_input == "{\"task_name\":\"/root/reviewer\"}" { score = score + 10 }
+if render_spawn_agent_output hidden_input == "{\"task_name\":\"/root/reviewer\"}" then
+  score = score + 10
+end;
 
 return { .score = score };

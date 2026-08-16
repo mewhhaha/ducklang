@@ -26,12 +26,9 @@ import {
   resolve_source_imports,
 } from "./load.ts";
 import { specialize_const_module_imports } from "./module_specialize.ts";
-import type { ParseSourceResult } from "./parser.ts";
+import type { ParseSourceResult } from "./source_parse.ts";
 import { validate_frontend_semantics } from "./semantic_validation.ts";
-import {
-  type SourceDiagnostic,
-  SourceDiagnosticError,
-} from "./semantic_diagnostic.ts";
+import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
 import {
   source_facts,
   source_inference_diagnostics,
@@ -86,7 +83,7 @@ export function analyze_frontend(
     );
     derive_missing_source_spans(analyzed_source, { start: 0, end: 0 });
   } catch (error) {
-    if (error instanceof SourceDiagnosticError) {
+    if (error instanceof CompilerDiagnosticError) {
       diagnostics.push(error.diagnostic);
       return {
         source: analyzed_source,
@@ -106,7 +103,7 @@ export function analyze_frontend(
       analyzed_source = infer_default_effect_handlers(analyzed_source);
     }
   } catch (error) {
-    if (error instanceof SourceDiagnosticError) {
+    if (error instanceof CompilerDiagnosticError) {
       diagnostics.push(error.diagnostic);
     } else {
       throw error;

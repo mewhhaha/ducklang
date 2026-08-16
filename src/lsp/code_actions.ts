@@ -1,7 +1,7 @@
 import { is_const_expr_known } from "../frontend/const_known.ts";
 import { diagnostic_codes } from "../diagnostic.ts";
 import type { BindingIndex } from "../frontend/binding_index.ts";
-import type { ParseSourceResult } from "../frontend/parser.ts";
+import type { ParseSourceResult } from "../frontend/source_parse.ts";
 import { Source } from "../frontend/source.ts";
 import type {
   EffectOperation,
@@ -697,7 +697,7 @@ export function code_actions(
       syntax.text,
       uri,
       version,
-      "Add explicit `" + missing.name + " branch",
+      "Add explicit #" + missing.name + " branch",
       "refactor.rewrite",
       expr_span.start,
       expr_span.end,

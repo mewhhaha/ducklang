@@ -6,42 +6,42 @@ const {} = import "./network_policy_message_types.duck" ();
 type BlockedRequest = NetworkPolicyBlockedRequest
 type PolicyMessageOption = NetworkPolicyMessageOption
 
-const denied_network_policy_message: BlockedRequest -> PolicyMessageOption = blocked_request => {
-  let missing_message: PolicyMessageOption = `NoPolicyMessage ();
-  if let `MessageText decision = blocked_request.decision {
-    if decision != "deny" {
+const denied_network_policy_message: BlockedRequest -> PolicyMessageOption = blocked_request => do
+  let missing_message: PolicyMessageOption = #NoPolicyMessage;
+  if let #MessageText decision = blocked_request.decision then
+    if decision != "deny" then
       return missing_message;
-    }
-  } else {
+    end;
+  else
     return missing_message;
-  }
+  end;
 
   let host = text_trim_whitespace blocked_request.host;
-  if host == "" {
+  if host == "" then
     let blocked_message: PolicyMessageOption =
-      `PolicyMessage "Network access was blocked by policy.";
+      #PolicyMessage "Network access was blocked by policy.";
     return blocked_message;
-  }
+  end;
 
   let detail = "request is blocked by network policy";
-  if blocked_request.reason == "denied" {
+  if blocked_request.reason == "denied" then
     detail = "domain is explicitly denied by policy and cannot be approved from this prompt"
-  } else if blocked_request.reason == "not_allowed" {
+  else blocked_request.reason == "not_allowed" then
     detail = "domain is not on the allowlist for the current sandbox mode"
-  } else if blocked_request.reason == "not_allowed_local" {
+  else blocked_request.reason == "not_allowed_local" then
     detail = "local/private network addresses are blocked by the sandbox policy"
-  } else if blocked_request.reason == "method_not_allowed" {
+  else blocked_request.reason == "method_not_allowed" then
     detail = "request method is blocked by the current network mode"
-  } else if blocked_request.reason == "proxy_disabled" {
+  else blocked_request.reason == "proxy_disabled" then
     detail = "network proxy is disabled"
-  }
+  end;
 
   let message = text_append(
     "Network access to \"",
     text_append(host, text_append("\" was blocked: ", text_append(detail, "."))),
   );
-  let blocked_message: PolicyMessageOption = `PolicyMessage message;
+  let blocked_message: PolicyMessageOption = #PolicyMessage message;
   blocked_message
-};
+end;
 
 return { .denied_network_policy_message };

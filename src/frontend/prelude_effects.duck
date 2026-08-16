@@ -43,12 +43,12 @@ effect Random {
 
 effect Console {
   read_line: () => Text
-  write: (#Text) => Unit
-  write_line: (#Text) => Unit
+  write: (freeze Text) => Unit
+  write_line: (freeze Text) => Unit
 }
 
 effect Environment value {
-  lookup: (#Text) => value
+  lookup: (freeze Text) => value
 }
 
 effect Resource resource {

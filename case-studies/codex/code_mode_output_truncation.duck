@@ -6,35 +6,37 @@ const { .truncate_code_mode_mixed_output } = import "./code_mode_mixed_output_tr
 
 type OutputTruncationItems = FunctionOutputContentItems
 
-const truncate_code_mode_output: [I64, OutputTruncationItems] -> OutputTruncationItems = (
+const truncate_code_mode_output: (I64, OutputTruncationItems) -> OutputTruncationItems = (
   maximum_tokens,
   items,
-) => {
+) => do
   let current = items;
   let all_text = true;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [item, tail] = node;
-      if let `InputText _ = item {
+      if let #InputText _ = item then
         ()
-      } else {
+      else
         all_text = false
-      }
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  if all_text {
+  if all_text then
     truncate_code_mode_text_output(maximum_tokens, items)
-  } else {
+  else
     truncate_code_mode_mixed_output(maximum_tokens, items)
-  }
-};
+  end;
+end;
 
 return { .truncate_code_mode_output };

@@ -10,7 +10,7 @@ type SearchSpec = ToolSpec
 type SearchSpecs = ToolSpecs
 type SearchSpecSources = ToolSearchSourceInfos
 
-const tool_search_parameters: I32 -> Text = default_limit => {
+const tool_search_parameters: I32 -> Text = default_limit => do
   text_append(
     "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of tools to return. Defaults to ",
     text_append(
@@ -18,21 +18,21 @@ const tool_search_parameters: I32 -> Text = default_limit => {
       ".\"},\"query\":{\"type\":\"string\",\"description\":\"Search query for deferred tools.\"}},\"required\":[\"query\"],\"additionalProperties\":false}",
     ),
   )
-};
+end;
 
-const tool_search_tool_specs: [SearchSpecSources, I32] -> SearchSpecs = (
+const tool_search_tool_specs: (SearchSpecSources, I32) -> SearchSpecs = (
   searchable_sources: SearchSpecSources,
   default_limit: I32,
-) => {
+) => do
   let spec: SearchSpec = [
     tool_search_tool_name(),
-    `ToolSearchSpec (),
+    #ToolSearchSpec,
     tool_search_description searchable_sources,
     tool_search_parameters default_limit,
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
     false,
   ];
-  `Cons ([spec, `Nil ()])
-};
+  #Cons ([spec, #Nil])
+end;
 
 return { .tool_search_parameters, .tool_search_tool_specs };

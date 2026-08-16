@@ -1,6 +1,6 @@
-let combine = (left, right) => {
+let combine = (left, right) => do
   let doubled = left * 2;
   doubled + right
-};
+end;
 
 combine(20, 2)

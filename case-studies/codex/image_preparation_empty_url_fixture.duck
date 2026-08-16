@@ -5,19 +5,19 @@ const { .apply_image_processing_results } = import "./image_preparation.duck" ()
 const { .single_image_processing_fixture_response, .single_image_processing_fixture_result } =
   import "./image_preparation_failure_fixture_common.duck" ();
 
-const verify_image_preparation_empty_url_fixture: () -> I32 = () => {
+const verify_image_preparation_empty_url_fixture: () -> I32 = () => do
   let responses = single_image_processing_fixture_response();
   let results = single_image_processing_fixture_result(0, "");
   let rewrite = apply_image_processing_results(responses, results);
-  if let `RejectedImageRewrite failure = rewrite {
-    if let `InvalidProcessedImageUrl index = failure {
-      if index == 0 { 1 } else { 0 }
-    } else {
+  if let #RejectedImageRewrite failure = rewrite then
+    if let #InvalidProcessedImageUrl index = failure then
+      if index == 0 then 1 else 0 end;
+    else
       0
-    }
-  } else {
+    end;
+  else
     0
-  }
-};
+  end;
+end;
 
 return { .verify_image_preparation_empty_url_fixture };

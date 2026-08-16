@@ -13,29 +13,29 @@ type FixtureResults = ImageProcessingResults
 type FixtureDetail = OutputImageDetail
 type FixtureDetailOption = OutputImageDetailOption
 
-const verify_image_preparation_function_response_fixture: () -> I32 = () => {
-  let low: FixtureDetail = `Low ();
-  let low_detail: FixtureDetailOption = `Some low;
-  let original: FixtureDetail = `Original ();
-  let original_detail: FixtureDetailOption = `Some original;
+const verify_image_preparation_function_response_fixture: () -> I32 = () => do
+  let low: FixtureDetail = #Low;
+  let low_detail: FixtureDetailOption = #Some low;
+  let original: FixtureDetail = #Original;
+  let original_detail: FixtureDetailOption = #Some original;
 
-  let contents: FixtureContents = `Nil ();
+  let contents: FixtureContents = #Nil;
   let content_node: FixtureContentNode = [
-    `InputImage (["data:image/png;base64,ORIGINAL", original_detail]),
+    #InputImage (["data:image/png;base64,ORIGINAL", original_detail]),
     contents,
   ];
-  contents = `Cons content_node
-  content_node = [`InputImage (["data:image/png;base64,LOW", low_detail]), contents]
-  contents = `Cons content_node
+  contents = #Cons content_node
+  content_node = [#InputImage (["data:image/png;base64,LOW", low_detail]), contents]
+  contents = #Cons content_node
 
-  let responses: FixtureResponses = `Nil ();
+  let responses: FixtureResponses = #Nil;
   let response_node: FixtureResponseNode = [
-    `FunctionOutput (["function", "call-function", contents]),
+    #FunctionOutput (["function", "call-function", contents]),
     responses,
   ];
-  responses = `Cons response_node
+  responses = #Cons response_node
 
-  let results: FixtureResults = `ImageResultsNil ();
+  let results: FixtureResults = #ImageResultsNil;
   let result: FixtureResult = [
     .status_code = 1,
     .image_url = "",
@@ -43,35 +43,44 @@ const verify_image_preparation_function_response_fixture: () -> I32 = () => {
     .size = 0,
   ];
   let result_node: FixtureResultNode = [result, results];
-  results = `ImageResultsCons result_node
+  results = #ImageResultsCons result_node
 
   let rewrite = apply_image_processing_results(responses, results);
   let score = 0;
-  if let `PreparedImageResponses rewritten = rewrite {
-    if let `Cons response_node = rewritten {
+  if let #PreparedImageResponses rewritten = rewrite then
+    if let #Cons response_node = rewritten then
       let [response, response_tail] = response_node;
-      if let `FunctionOutput output = response {
+      if let #FunctionOutput output = response then
         let [identifier, call_id, rewritten_contents] = output;
-        if identifier == "function" && call_id == "call-function" {
+        if identifier == "function" && call_id == "call-function" then
           score = score + 1
-          if let `Cons first_node = rewritten_contents {
+          if let #Cons first_node = rewritten_contents then
             let [first, after_first] = first_node;
-            if let `InputText value = first { if value == "image content omitted because detail 'low' is not supported; use 'high', 'original', or 'auto'" { score = score + 10 } }
-            if let `Cons second_node = after_first {
+            if let #InputText value = first then
+              if value
+                == "image content omitted because detail 'low' is not supported; use 'high', 'original', or 'auto'" then
+                  score = score + 10
+                end;
+            end;
+            if let #Cons second_node = after_first then
               let [second, content_tail] = second_node;
-              if let `InputText value = second {
-                if value == "image content omitted because it could not be processed" {
-                  if let `Nil () = content_tail { if let `Nil () = response_tail { score = score + 100 } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+              if let #InputText value = second then
+                if value == "image content omitted because it could not be processed" then
+                  if let #Nil = content_tail then
+                    if let #Nil = response_tail then
+                      score = score + 100
+                    end;
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
 
   score
-};
+end;
 
 return { .verify_image_preparation_function_response_fixture };

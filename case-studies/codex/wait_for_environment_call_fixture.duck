@@ -8,18 +8,21 @@ type FixtureEnvironmentNode = WaitForEnvironmentNode
 type FixtureEnvironments = WaitForEnvironments
 type FixturePayload = WaitForEnvironmentPayload
 
-let environments: FixtureEnvironments = `Cons (
-  [[.environment_id = "gpu", .status = `Starting ()] as FixtureEnvironment, `Nil ()] as FixtureEnvironmentNode
+let environments: FixtureEnvironments = #Cons (
+  [[.environment_id = "gpu", .status = #Starting] as FixtureEnvironment, #Nil] as FixtureEnvironmentNode
 );
-let unsupported: FixturePayload = `Unsupported ();
-let valid: FixturePayload = `Function "{\"environment_id\":\"gpu\"}";
+let unsupported: FixturePayload = #Unsupported;
+let valid: FixturePayload = #Function "{\"environment_id\":\"gpu\"}";
 let score = 0;
 
-if let `Fatal message = plan_wait_for_environment_call(unsupported, environments) {
-  if message == "wait_for_environment handler received unsupported payload" { score = score + 1 }
-}
-if let `Wait environment_id = plan_wait_for_environment_call(valid, environments) {
-  if environment_id == "gpu" { score = score + 10 }
-}
+if let #Fatal message = plan_wait_for_environment_call(unsupported, environments) then
+  if message == "wait_for_environment handler received unsupported payload" then
+    score = score + 1 end;
+end;
+if let #Wait environment_id = plan_wait_for_environment_call(valid, environments) then
+  if environment_id == "gpu" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

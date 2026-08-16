@@ -4,8 +4,8 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "./agent_job_common_types.duck" ();
 
 type AgentJobOptionalTextResult =
-  | `AgentJobTextDecoded AgentJobTextOption
-  | `AgentJobTextDecodeFailed Text
+  | #AgentJobTextDecoded AgentJobTextOption
+  | #AgentJobTextDecodeFailed Text
 
 type AgentJobSpawnArgs = struct {
   .input_path = Text,
@@ -29,11 +29,11 @@ type AgentJobSpawnDecodedArgs = struct {
 }
 
 type AgentJobSpawnDecodeResult =
-  | `SpawnDecoded AgentJobSpawnDecodedArgs
-  | `SpawnDecodeFailed Text
+  | #SpawnDecoded AgentJobSpawnDecodedArgs
+  | #SpawnDecodeFailed Text
 
 type AgentJobSpawnPlan =
-  | `ReadCsv AgentJobSpawnArgs
-  | `RejectSpawn Text
+  | #ReadCsv AgentJobSpawnArgs
+  | #RejectSpawn Text
 
 return {};

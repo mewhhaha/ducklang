@@ -12,22 +12,23 @@ let score = 0;
 
 let add_input: FixtureArgs = args.prepend("sample@debug", args.singleton("--json"));
 let added: FixtureResult = parse_plugin_add add_input;
-if let `Ok command = added {
-  if let `PluginAdd options = command {
-    if options.selector.plugin_name == "sample" && options.selector.marketplace_name == "debug" && options.json {
-      score = score + 1
-    }
-  }
-}
+if let #Ok command = added then
+  if let #PluginAdd options = command then
+    if options.selector.plugin_name == "sample" && options.selector.marketplace_name == "debug"
+      && options.json then
+        score = score + 1
+      end;
+  end;
+end;
 
 let remove_input: FixtureArgs = args.prepend("sample", args.prepend("-m", args.singleton("debug")));
 let removed: FixtureResult = parse_plugin_remove remove_input;
-if let `Ok command = removed {
-  if let `PluginRemove options = command {
-    if options.selector.plugin_name == "sample" && options.selector.marketplace_name == "debug" {
+if let #Ok command = removed then
+  if let #PluginRemove options = command then
+    if options.selector.plugin_name == "sample" && options.selector.marketplace_name == "debug" then
       score = score + 10
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

@@ -2,21 +2,21 @@ import { assert_equals } from "../assert.ts";
 import { Source } from "../frontend.ts";
 import { analysis_diagnostics, parse_diagnostics } from "./diagnostics.ts";
 
-Deno.test("parse diagnostics use scanner offsets instead of error text positions", () => {
+Deno.test("parse diagnostics use Baba recovery offsets", () => {
   const diagnostics = parse_diagnostics("let = 1;\n");
 
   assert_equals(diagnostics, [{
     range: {
       start: { line: 0, character: 4 },
-      end: { line: 0, character: 5 },
+      end: { line: 0, character: 4 },
     },
     severity: 1,
     source: "duck",
-    message: "Expected pattern binding at 1:5",
+    message: "Baba parser rejected MISSING",
   }]);
 });
 
-Deno.test("parse diagnostics report one range for an invalid Unicode scalar", () => {
+Deno.test("Baba parse diagnostics report one UTF-16 Unicode range", () => {
   const diagnostics = parse_diagnostics("😀\nlet value = 1;\n");
 
   assert_equals(diagnostics, [{
@@ -26,7 +26,7 @@ Deno.test("parse diagnostics report one range for an invalid Unicode scalar", ()
     },
     severity: 1,
     source: "duck",
-    message: "Unexpected character: 😀",
+    message: "Baba parser rejected ERROR",
   }]);
 });
 
@@ -159,4 +159,29 @@ Deno.test("LSP preserves the compiler diagnostic sequence and identities", () =>
       };
     }),
   );
+});
+
+Deno.test("LSP anchors closed dependency syntax errors at their import", () => {
+  const uri = "file:///main.duck";
+  const source = 'const dependency = import "./dep.duck";\ndependency\n';
+  const analysis = Source.analyze(source, {
+    uri,
+    resolve_import: (dependency_uri) => {
+      if (dependency_uri === "file:///dep.duck") {
+        return "module () where\nlet value = ;\nreturn {};\n";
+      }
+      return undefined;
+    },
+  });
+
+  assert_equals(analysis_diagnostics(analysis, uri, "utf-16"), [{
+    range: {
+      start: { line: 0, character: 19 },
+      end: { line: 0, character: 38 },
+    },
+    severity: 1,
+    source: "duck",
+    code: "DUCK1001",
+    message: "Imported source file:///dep.duck: Baba parser rejected MISSING",
+  }]);
 });

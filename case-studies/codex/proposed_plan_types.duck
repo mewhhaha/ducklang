@@ -9,10 +9,10 @@ type ProposedPlanParser = struct {
 }
 
 type ProposedPlanSegment =
-  | `Normal Text
-  | `ProposedPlanStart Unit
-  | `ProposedPlanDelta Text
-  | `ProposedPlanEnd Unit
+  | #Normal Text
+  | #ProposedPlanStart
+  | #ProposedPlanDelta Text
+  | #ProposedPlanEnd
 
 type ProposedPlanSegments = List ProposedPlanSegment
 type ProposedPlanChunk = [ProposedPlanParser, Text, ProposedPlanSegments]

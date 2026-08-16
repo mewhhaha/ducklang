@@ -12,6 +12,12 @@ import { format_effect_row } from "./effect_row.ts";
 import { format_character_literal, front_literal_expr } from "./literal.ts";
 import { integer_literal_suffix } from "../integer.ts";
 
+/**
+ * Block delimiters, which end a type rather than extending it. Mirrors
+ * `block_stop_keyword` in `tree-sitter-duck/src/scanner.c`.
+ */
+const block_keywords = new Set(["do", "else", "end", "then"]);
+
 export function parse_type_expr(tokens: Token[]): TypeExpr {
   const parser = new TypeExprParser(tokens.filter((token) => {
     return token.kind !== "newline" || token.raw === ";";
@@ -23,6 +29,66 @@ export function parse_type_expr(tokens: Token[]): TypeExpr {
 
 export function format_type_expr(type: TypeExpr): string {
   return format(type, 0);
+}
+
+export function resolve_transparent_type_aliases(
+  type_name: string,
+  aliases: ReadonlyMap<string, string>,
+  resolving = new Set<string>(),
+): string {
+  let resolved = "";
+  let index = 0;
+  while (index < type_name.length) {
+    const character = type_name[index];
+    expect(character !== undefined, "Canonical type character disappeared.");
+    if (character === '"' || character === "'") {
+      const quote = character;
+      resolved += character;
+      index += 1;
+      let escaped = false;
+      while (index < type_name.length) {
+        const literal_character = type_name[index];
+        expect(
+          literal_character !== undefined,
+          "Canonical singleton type character disappeared.",
+        );
+        resolved += literal_character;
+        index += 1;
+        if (escaped) {
+          escaped = false;
+        } else if (literal_character === "\\") {
+          escaped = true;
+        } else if (literal_character === quote) {
+          break;
+        }
+      }
+      continue;
+    }
+    if (!/[A-Za-z_]/.test(character)) {
+      resolved += character;
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < type_name.length) {
+      const next = type_name[end];
+      expect(next !== undefined, "Canonical type name character disappeared.");
+      if (!/[A-Za-z0-9_]/.test(next)) break;
+      end += 1;
+    }
+    const name = type_name.slice(index, end);
+    const target = aliases.get(name);
+    if (target === undefined || resolving.has(name)) {
+      resolved += name;
+      index = end;
+      continue;
+    }
+    const nested = new Set(resolving);
+    nested.add(name);
+    resolved += resolve_transparent_type_aliases(target, aliases, nested);
+    index = end;
+  }
+  return resolved;
 }
 
 export function function_type_expr(
@@ -156,6 +222,12 @@ class TypeExprParser {
       return this.parse_hash_type();
     }
 
+    const token = this.peek();
+    if (token?.kind === "name" && token.text === "freeze") {
+      this.index += 1;
+      return { tag: "frozen", value: this.parse_prefix_value() };
+    }
+
     if (this.match_symbol("&")) {
       return { tag: "borrow", value: this.parse_prefix_value() };
     }
@@ -164,24 +236,14 @@ class TypeExprParser {
   }
 
   private parse_hash_type(): TypeExpr {
-    if (this.match_symbol("(")) {
-      const value = this.parse_arrow();
-      this.expect_symbol(")");
-      return { tag: "frozen", value };
-    }
-
     const token = this.peek();
-    expect(token && token.kind === "name", "Expected type after `#`");
+    expect(token && token.kind === "name", "Expected atom name after `#`");
     this.index += 1;
-    if (is_snake_case(token.text)) {
-      return { tag: "atom", name: token.text };
-    }
-
     expect(
-      /^[A-Z][A-Za-z0-9]*$/.test(token.text),
-      "Frozen type name must use PascalCase: " + token.text,
+      is_snake_case(token.text),
+      "Atom type name must use snake_case: " + token.text,
     );
-    return { tag: "frozen", value: { tag: "name", name: token.text } };
+    return { tag: "atom", name: token.text };
   }
 
   private parse_prefix_value(): TypeExpr {
@@ -239,7 +301,7 @@ class TypeExprParser {
 
     if (this.match_symbol("(")) {
       if (this.match_symbol(")")) {
-        return { tag: "product", entries: [] };
+        return { tag: "product", entries: [], value_pack: true };
       }
 
       const first = this.parse_product_entry();
@@ -267,6 +329,10 @@ class TypeExprParser {
       const entries = [first];
 
       while (true) {
+        if (this.match_symbol(")")) {
+          break;
+        }
+
         const entry = this.parse_product_entry();
         expect(
           entry.label === undefined,
@@ -301,7 +367,10 @@ class TypeExprParser {
       return { tag: "literal", value: literal };
     }
 
-    expect(token.kind === "name", "Expected type name");
+    expect(
+      token.kind === "name",
+      "Expected type name, got " + token.raw,
+    );
     this.index += 1;
     if (token.text === "Never") {
       return { tag: "never" };
@@ -485,11 +554,20 @@ class TypeExprParser {
   private starts_atom(): boolean {
     const token = this.peek();
 
-    return token !== undefined &&
-      (token.kind === "name" || token.kind === "number" ||
-        token.kind === "string" || token.kind === "character" ||
-        (token.kind === "symbol" &&
-          (token.text === "(" || token.text === "#" || token.text === "[")));
+    if (token === undefined) {
+      return false;
+    }
+
+    // A block keyword never continues a type, so `value is Int then do` reads
+    // as a test against `Int` followed by `then`, not `Int` applied to `then`.
+    if (token.kind === "name" && block_keywords.has(token.text)) {
+      return false;
+    }
+
+    return token.kind === "name" || token.kind === "number" ||
+      token.kind === "string" || token.kind === "character" ||
+      (token.kind === "symbol" &&
+        (token.text === "(" || token.text === "#" || token.text === "["));
   }
 
   private match_symbol(text: string): boolean {
@@ -544,19 +622,20 @@ function format(type: TypeExpr, parent_precedence: number): string {
   }
 
   if (type.tag === "frozen" || type.tag === "borrow") {
-    let prefix = "&";
     if (type.tag === "frozen") {
-      prefix = "#";
-    }
-    const value = type.value;
-    if (
-      value.tag === "name" &&
-      (type.tag === "borrow" || /^[A-Z][A-Za-z0-9]*$/.test(value.name))
-    ) {
-      return prefix + value.name;
+      if (type.value.tag === "name") {
+        return "freeze " + type.value.name;
+      }
+
+      return "freeze (" + format(type.value, 0) + ")";
     }
 
-    return prefix + "(" + format(value, 0) + ")";
+    const value = type.value;
+    if (value.tag === "name") {
+      return "&" + value.name;
+    }
+
+    return "&(" + format(value, 0) + ")";
   }
 
   if (type.tag === "product") {

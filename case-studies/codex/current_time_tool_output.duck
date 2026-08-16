@@ -7,13 +7,13 @@ const { .render_current_time_reminder } = import "./current_time_format.duck" ()
 
 type ClockSleepHostResult = CurrentTimeSleepHostResult
 
-const render_current_time_tool_output: I64 -> Text = current_time => {
+const render_current_time_tool_output: I64 -> Text = current_time => do
   render_current_time_reminder current_time
-};
+end;
 
-const render_sleep_tool_output: ClockSleepHostResult -> Text = result => {
-  let message = if result.interrupted { "Sleep interrupted by new input." } else {
-    "Sleep completed." };
+const render_sleep_tool_output: ClockSleepHostResult -> Text = result => do
+  let message = if result.interrupted then "Sleep interrupted by new input." else
+    "Sleep completed." end;
   text_append(
     "Wall time: ",
     text_append(
@@ -21,7 +21,7 @@ const render_sleep_tool_output: ClockSleepHostResult -> Text = result => {
       text_append(" seconds\n", message),
     ),
   )
-};
+end;
 
 return {
   .render_current_time_tool_output,

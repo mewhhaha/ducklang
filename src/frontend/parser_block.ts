@@ -13,19 +13,36 @@ export abstract class ParserBlock extends ParserConditional {
     this.block_depth += 1;
 
     try {
-      const block = this.parse_block_inner();
+      this.expect_keyword("do");
+      const block = this.parse_statement_sequence(() => this.at_keyword("end"));
+      this.expect_keyword("end");
       return this.concrete_node(start, block);
     } finally {
       this.block_depth -= 1;
     }
   }
 
-  private parse_block_inner(): FrontExpr {
-    this.expect_symbol("{");
+  protected parse_conditional_branch(): FrontExpr {
+    const start = this.index;
+    this.block_depth += 1;
+
+    try {
+      const block = this.parse_statement_sequence(() =>
+        this.at_keyword("else") || this.at_keyword("end")
+      );
+      return this.concrete_node(start, block);
+    } finally {
+      this.block_depth -= 1;
+    }
+  }
+
+  private parse_statement_sequence(
+    at_terminator: () => boolean,
+  ): FrontExpr {
     const statements: Stmt[] = [];
     this.skip_newlines();
 
-    while (!this.match_symbol("}")) {
+    while (!at_terminator()) {
       expect(!this.is("eof"), "Unterminated block");
       const state = this.parser_state();
       let stmt: Stmt;
@@ -50,10 +67,7 @@ export abstract class ParserBlock extends ParserConditional {
 
       const final_expr = block_final_conditional_expr(stmt);
 
-      if (
-        final_expr && this.peek().kind === "symbol" &&
-        this.peek().text === "}"
-      ) {
+      if (final_expr && at_terminator()) {
         statements.push({ tag: "expr", expr: final_expr });
       } else {
         statements.push(stmt);

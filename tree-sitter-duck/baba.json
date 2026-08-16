@@ -31,6 +31,22 @@
       "linear_reference"
     ],
     [
+      "condition_postfix_expression",
+      "linear_reference"
+    ],
+    [
+      "prefix_proposition_postfix_term",
+      "linear_reference"
+    ],
+    [
+      "prefix_atomic_proposition",
+      "prefix_proposition_parenthesized_term"
+    ],
+    [
+      "prefix_signature_result",
+      "type_application"
+    ],
+    [
       "shape_field_block",
       "block"
     ],
@@ -43,6 +59,18 @@
       "_primary_expression"
     ],
     [
+      "union_pattern",
+      "_primary_expression"
+    ],
+    [
+      "_array_union_pattern_body",
+      "union_pattern"
+    ],
+    [
+      "_array_union_pattern_body",
+      "union_case"
+    ],
+    [
       "parameter",
       "_single_match_pattern",
       "_primary_expression"
@@ -52,8 +80,24 @@
       "_single_match_pattern"
     ],
     [
+      "_single_binding_pattern",
+      "_single_match_pattern"
+    ],
+    [
+      "type_pattern_statement",
+      "_single_match_pattern"
+    ],
+    [
+      "else_if_clause",
+      "else_clause"
+    ],
+    [
       "array_expression",
       "array_pattern"
+    ],
+    [
+      "_primary_expression",
+      "_array_pattern_element"
     ],
     [
       "parameter",
@@ -71,6 +115,40 @@
     [
       "_primary_expression",
       "array_type"
+    ],
+    [
+      "condition_expression",
+      "_primary_expression"
+    ],
+    [
+      "condition_expression",
+      "_primary_expression",
+      "linear_reference"
+    ],
+    [
+      "parameter",
+      "condition_expression",
+      "_primary_expression"
+    ],
+    [
+      "parameter",
+      "condition_expression",
+      "_primary_expression",
+      "linear_reference"
+    ],
+    [
+      "condition_field_expression",
+      "field_expression"
+    ],
+    [
+      "union_case"
+    ],
+    [
+      "type_case"
+    ],
+    [
+      "row_variable",
+      "top_type"
     ]
   ],
   "inline": [
@@ -113,6 +191,12 @@
         "value": 1
       }
     },
+    "prefix_proof_term": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    },
     "recursive_call_expression": {
       "wrap": {
         "kind": "prec.left",
@@ -124,10 +208,63 @@
         "kind": "prec.right"
       }
     },
+    "else_clause": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
     "condition_binary_expression": {
       "wrap": {
         "kind": "prec.left",
         "value": 6
+      }
+    },
+    "prefix_proposition_binary_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 6
+      }
+    },
+    "prefix_signature_result": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "prefix_proposition_unary_term": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 8
+      }
+    },
+    "prefix_proposition_call_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
+    "prefix_proposition_call_arguments": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "prefix_proposition_field_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
+    "prefix_proposition_index_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      },
+      "paths": {
+        "open": {
+          "hidden_path": true
+        }
       }
     },
     "condition_is_expression": {
@@ -145,7 +282,13 @@
     "condition_call_expression": {
       "wrap": {
         "kind": "prec.left",
-        "value": 9
+        "value": 10
+      }
+    },
+    "condition_call_arguments": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
       }
     },
     "condition_application_expression": {
@@ -201,7 +344,12 @@
         "value": 10
       }
     },
-    "match_expression": {
+    "case_expression": {
+      "wrap": {
+        "kind": "prec.right"
+      }
+    },
+    "case_function_expression": {
       "wrap": {
         "kind": "prec.right"
       }
@@ -220,6 +368,12 @@
       "wrap": {
         "kind": "prec.left",
         "value": 9
+      }
+    },
+    "call_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
       }
     },
     "field_expression": {
@@ -246,10 +400,43 @@
         }
       }
     },
+    "_array_union_pattern": {
+      "paths": {
+        "": {
+          "alias_ref": "union_pattern"
+        }
+      }
+    },
+    "_array_union_pattern_body": {
+      "wrap": {
+        "kind": "prec",
+        "value": -1
+      }
+    },
+    "_array_union_alternative_pattern": {
+      "paths": {
+        "": {
+          "alias_ref": "alternative_pattern"
+        }
+      }
+    },
+    "_immediate_array_pattern": {
+      "paths": {
+        "": {
+          "alias_ref": "array_pattern"
+        }
+      }
+    },
     "union_case": {
       "wrap": {
         "kind": "prec",
         "value": -1
+      }
+    },
+    "shape_nullary_union_case": {
+      "wrap": {
+        "kind": "prec",
+        "value": 3
       }
     },
     "named_product": {
@@ -262,6 +449,12 @@
       "wrap": {
         "kind": "prec",
         "value": 1
+      }
+    },
+    "shape_value": {
+      "wrap": {
+        "kind": "prec",
+        "value": 2
       }
     },
     "forall_type": {
@@ -298,6 +491,12 @@
       "wrap": {
         "kind": "prec.left",
         "value": 5
+      }
+    },
+    "type_sum": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
       }
     },
     "_type_atom": {
@@ -388,24 +587,6 @@
         "value": 100
       }
     },
-    "_if_consequence": {
-      "wrap": {
-        "kind": "prec",
-        "value": 10
-      }
-    },
-    "_else_block": {
-      "wrap": {
-        "kind": "prec",
-        "value": 10
-      }
-    },
-    "_else_if": {
-      "wrap": {
-        "kind": "prec",
-        "value": 10
-      }
-    },
     "_effect_identifier_alias": {
       "paths": {
         "": {
@@ -414,6 +595,13 @@
       }
     },
     "_row_identifier_alias": {
+      "paths": {
+        "": {
+          "alias_ref": "identifier"
+        }
+      }
+    },
+    "_fixity_identifier_alias": {
       "paths": {
         "": {
           "alias_ref": "identifier"

@@ -10,8 +10,8 @@ type AgentJobActiveWorker = struct {
 
 type AgentJobActiveWorkerNode = [AgentJobActiveWorker, AgentJobActiveWorkers]
 type AgentJobActiveWorkers =
-  | `Nil Unit
-  | `Cons AgentJobActiveWorkerNode
+  | #Nil
+  | #Cons AgentJobActiveWorkerNode
 
 type AgentJobRunnerState = struct {
   .pending = AgentJobPreparedItems,
@@ -24,14 +24,14 @@ type AgentJobRunnerState = struct {
 }
 
 type AgentJobRunnerAction =
-  | `SpawnWorker AgentJobPreparedItem
-  | `WaitForWorker AgentJobActiveWorkers
-  | `FinalizeJob Bool
+  | #SpawnWorker AgentJobPreparedItem
+  | #WaitForWorker AgentJobActiveWorkers
+  | #FinalizeJob Bool
 
 type AgentJobSpawnOutcome =
-  | `WorkerSpawned Text
-  | `WorkerSpawnDeferred Unit
-  | `WorkerSpawnFailed Text
+  | #WorkerSpawned Text
+  | #WorkerSpawnDeferred
+  | #WorkerSpawnFailed Text
 
 type AgentJobWorkerCompletion = struct {
   .thread_id = Text,
@@ -40,7 +40,7 @@ type AgentJobWorkerCompletion = struct {
 }
 
 type AgentJobRunnerTransition =
-  | `RunnerAdvanced AgentJobRunnerState
-  | `RunnerInvariantFailed Text
+  | #RunnerAdvanced AgentJobRunnerState
+  | #RunnerInvariantFailed Text
 
 return {};

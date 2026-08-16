@@ -14,60 +14,60 @@ type BudgetToolSpecs = ToolSpecs
 const new_context_window_tool_name: () -> BudgetToolName = () => ["", "new_context"];
 const get_context_remaining_tool_name: () -> BudgetToolName = () => ["", "get_context_remaining"];
 
-const token_budget_tool_definitions: Bool -> BudgetToolDefinitions = enabled => {
-  if enabled {
+const token_budget_tool_definitions: Bool -> BudgetToolDefinitions = enabled => do
+  if enabled then
     let remaining: BudgetToolDefinition = [
       get_context_remaining_tool_name(),
-      `Direct (),
-      `GetContextRemaining (),
-      `FunctionPayload (),
+      #Direct,
+      #GetContextRemaining,
+      #FunctionPayload,
       false,
       false,
     ];
     let new_context: BudgetToolDefinition = [
       new_context_window_tool_name(),
-      `DirectModelOnly (),
-      `NewContextWindow (),
-      `FunctionPayload (),
+      #DirectModelOnly,
+      #NewContextWindow,
+      #FunctionPayload,
       false,
       false,
     ];
-    let remaining_definitions: BudgetToolDefinitions = `Cons (
-      [remaining, `Nil ()] as BudgetToolDefinitionNode
+    let remaining_definitions: BudgetToolDefinitions = #Cons (
+      [remaining, #Nil] as BudgetToolDefinitionNode
     );
-    `Cons ([new_context, remaining_definitions] as BudgetToolDefinitionNode)
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([new_context, remaining_definitions] as BudgetToolDefinitionNode)
+  else
+    #Nil
+  end;
+end;
 
-const token_budget_tool_specs: Bool -> BudgetToolSpecs = enabled => {
-  if enabled {
+const token_budget_tool_specs: Bool -> BudgetToolSpecs = enabled => do
+  if enabled then
     let empty_parameters = "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}";
     let remaining_output =
       "{\"type\":\"object\",\"properties\":{\"tokens_left\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"description\":\"Remaining tokens in the current context window, or null when unavailable.\"}},\"required\":[\"tokens_left\"],\"additionalProperties\":false}";
     let remaining: BudgetToolSpec = [
       get_context_remaining_tool_name(),
-      `FunctionSpec (),
+      #FunctionSpec,
       "Get the remaining tokens in the current context window.",
       empty_parameters,
-      `ToolOutputSchemaPresent remaining_output,
+      #ToolOutputSchemaPresent remaining_output,
       false,
     ];
     let new_context: BudgetToolSpec = [
       new_context_window_tool_name(),
-      `FunctionSpec (),
+      #FunctionSpec,
       "Start a new context window. Does not clear, reset, or otherwise affect environment state.",
       empty_parameters,
-      `ToolOutputSchemaMissing (),
+      #ToolOutputSchemaMissing,
       false,
     ];
-    let remaining_specs: BudgetToolSpecs = `Cons ([remaining, `Nil ()] as BudgetToolSpecNode);
-    `Cons ([new_context, remaining_specs] as BudgetToolSpecNode)
-  } else {
-    `Nil ()
-  }
-};
+    let remaining_specs: BudgetToolSpecs = #Cons ([remaining, #Nil] as BudgetToolSpecNode);
+    #Cons ([new_context, remaining_specs] as BudgetToolSpecNode)
+  else
+    #Nil
+  end;
+end;
 
 return {
   .new_context_window_tool_name,

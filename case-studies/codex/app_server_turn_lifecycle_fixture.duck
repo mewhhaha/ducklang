@@ -15,34 +15,41 @@ let initial: FixtureState = initial_turn_state "thread-1";
 let submitted: FixtureTransition = submitted_turn(initial, "turn-1");
 let [submitted_state, submitted_value] = submitted;
 let [submitted_id, _, _, _, _, _, _, _] = submitted_value;
-if submitted_id == "turn-1" { score = score + 1 }
+if submitted_id == "turn-1" then
+  score = score + 1
+end;
 
 let wrong_interrupt: FixtureInterruptResult = plan_turn_interrupt(submitted_state, "turn-other");
-if let `Err message = wrong_interrupt {
-  if message == "expected active turn id turn-other but found turn-1" { score = score + 10 }
-}
+if let #Err message = wrong_interrupt then
+  if message == "expected active turn id turn-other but found turn-1" then
+    score = score + 10 end;
+end;
 
 let interrupt: FixtureInterruptResult = plan_turn_interrupt(submitted_state, "turn-1");
 let interrupt_state = submitted_state;
-if let `Ok decision = interrupt {
-  if let `InterruptActive state = decision {
+if let #Ok decision = interrupt then
+  if let #InterruptActive state = decision then
     interrupt_state = state
     let [_, _, _, pending] = state;
-    if pending { score = score + 100 }
-  }
-}
+    if pending then
+      score = score + 100
+    end;
+  end;
+end;
 
 let started_result: FixtureTransitionResult = record_turn_started(
   interrupt_state,
   "turn-1",
-  `Some 100i64,
+  #Some 100i64,
 );
-if let `Ok started = started_result {
+if let #Ok started = started_result then
   let [_, turn] = started;
   let [_, _, _, _, _, started_at, _, _] = turn;
-  if let `Some value = started_at {
-    if value == 100i64 { score = score + 1000 }
-  }
-}
+  if let #Some value = started_at then
+    if value == 100i64 then
+      score = score + 1000
+    end;
+  end;
+end;
 
 return { .score = score };

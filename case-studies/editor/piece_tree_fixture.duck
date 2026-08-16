@@ -1,0 +1,26 @@
+module () where
+
+const { .cast } = import "duck:prelude/types" ();
+const {
+  .piece_table,
+  .piece_table_length,
+  .byte_at,
+  .insert_bytes,
+  .delete_bytes,
+  .materialize,
+} = import "./piece_tree.duck" ();
+
+let original_bytes = Bytes.generate(4, index => cast('a', I32) + index);
+let snapshot = piece_table original_bytes;
+let inserted_bytes = Bytes.generate(2, index => cast('X', I32) + index);
+let inserted = insert_bytes(snapshot, 2, inserted_bytes);
+let edited = delete_bytes(inserted, 1, 4);
+let snapshot_contents: Bytes = materialize snapshot;
+let edited_contents: Bytes = materialize edited;
+
+return {
+  .snapshot = snapshot_contents,
+  .edited = edited_contents,
+  .length = piece_table_length edited,
+  .first = byte_at(edited, 0),
+};

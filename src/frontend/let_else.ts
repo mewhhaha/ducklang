@@ -2,6 +2,7 @@ import { expect } from "../expect.ts";
 import type { FrontExpr, Source, Stmt } from "./ast.ts";
 import { invalidate_source_facts } from "./source_facts.ts";
 import { derive_missing_source_spans, source_span } from "./syntax.ts";
+import { is_irrefutable_binding_pattern } from "./pattern.ts";
 
 type RewriteState = {
   changed: boolean;
@@ -51,6 +52,11 @@ function rewrite_statements(
     expect(statement.mutual === undefined, "Let-else cannot be mutual");
     const pattern = statement.pattern;
     expect(pattern !== undefined, "Let-else requires a source pattern");
+    if (binding_pattern_matches_every_value(pattern, statement.value)) {
+      rewritten.push({ ...statement, else_branch: undefined });
+      state.changed = true;
+      continue;
+    }
     const remaining = rewrite_statements(
       statements.slice(index + 1),
       seen,
@@ -118,6 +124,91 @@ function rewrite_statements(
   }
 
   return statements;
+}
+
+function binding_pattern_matches_every_value(
+  pattern: NonNullable<Extract<Stmt, { tag: "bind" }>["pattern"]>,
+  value: FrontExpr,
+): boolean {
+  if (
+    pattern.tag === "binding" || pattern.tag === "wildcard"
+  ) {
+    return true;
+  }
+  if (pattern.tag === "unit") return value.tag === "unit";
+  if (pattern.tag === "or") {
+    return pattern.alternatives.some((alternative) =>
+      binding_pattern_matches_every_value(alternative, value)
+    );
+  }
+  if (!is_irrefutable_binding_pattern(pattern)) return false;
+  if (pattern.tag === "product") {
+    let entries: FrontExpr[] = [];
+    if (value.tag === "product" || value.tag === "shape") {
+      entries = value.entries.map((entry) => entry.value);
+    } else if (value.tag === "array") {
+      entries = value.items;
+    } else if (value.tag === "struct_value") {
+      entries = value.fields.map((field) => field.value);
+    } else {
+      return false;
+    }
+    if (
+      pattern.rest === undefined && entries.length !== pattern.entries.length
+    ) {
+      return false;
+    }
+    if (
+      pattern.rest !== undefined && entries.length < pattern.entries.length
+    ) {
+      return false;
+    }
+    return pattern.entries.every((entry, index) => {
+      const projected = entries[index];
+      if (projected === undefined) return false;
+      return binding_pattern_matches_every_value(entry.pattern, projected);
+    });
+  }
+  if (pattern.tag === "record") {
+    let fields: Array<{ name: string; value: FrontExpr }> = [];
+    if (value.tag === "struct_value") {
+      fields = value.fields;
+    } else if (value.tag === "product" || value.tag === "shape") {
+      for (const entry of value.entries) {
+        if (entry.label === undefined) return false;
+        fields.push({ name: entry.label, value: entry.value });
+      }
+    } else {
+      return false;
+    }
+    return pattern.fields.every((field) => {
+      const projected = fields.find((candidate) =>
+        candidate.name === field.name
+      )?.value;
+      if (projected === undefined) return false;
+      return binding_pattern_matches_every_value(field.pattern, projected);
+    });
+  }
+  if (pattern.tag !== "array") return false;
+  let items: FrontExpr[] = [];
+  if (value.tag === "array") {
+    items = value.items;
+  } else if (value.tag === "product" || value.tag === "shape") {
+    items = value.entries.map((entry) => entry.value);
+  } else {
+    return false;
+  }
+  if (pattern.rest === undefined && items.length !== pattern.items.length) {
+    return false;
+  }
+  if (pattern.rest !== undefined && items.length < pattern.items.length) {
+    return false;
+  }
+  return pattern.items.every((item, index) => {
+    const projected = items[index];
+    if (projected === undefined) return false;
+    return binding_pattern_matches_every_value(item, projected);
+  });
 }
 
 function rewrite_nested_statement_lists(

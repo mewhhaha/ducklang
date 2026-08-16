@@ -16,4 +16,4 @@ const update = comptime patch_compose(double, increment);
 
 let valid = predicate_test(accepted, 7);
 
-if valid { patch_apply(update, 20) } else { 0 }
+if valid then patch_apply(update, 20) else 0 end;

@@ -36,9 +36,9 @@ type ApplyPatchUpdate = struct {
 }
 
 type ApplyPatchHunk =
-  | `AddFile ApplyPatchAdd
-  | `DeleteFile Text
-  | `UpdateFile ApplyPatchUpdate
+  | #AddFile ApplyPatchAdd
+  | #DeleteFile Text
+  | #UpdateFile ApplyPatchUpdate
 
 type ApplyPatchHunks = List ApplyPatchHunk
 
@@ -58,8 +58,8 @@ type ApplyPatchFailureReason = struct {
 }
 
 type ApplyPatchFileSnapshot =
-  | `PatchFile ApplyPatchFileContent
-  | `PatchReadFailed ApplyPatchFailureReason
+  | #PatchFile ApplyPatchFileContent
+  | #PatchReadFailed ApplyPatchFailureReason
 
 type ApplyPatchWriteRequest = struct {
   .path = Text,
@@ -67,11 +67,11 @@ type ApplyPatchWriteRequest = struct {
 }
 
 type ApplyPatchMutationResult =
-  | `PatchChanged Unit
-  | `PatchChangeFailed ApplyPatchFailureReason
+  | #PatchChanged
+  | #PatchChangeFailed ApplyPatchFailureReason
 
 type ApplyPatchExecutionResult =
-  | `PatchApplied Text
-  | `PatchRejected Text
+  | #PatchApplied Text
+  | #PatchRejected Text
 
 return {};

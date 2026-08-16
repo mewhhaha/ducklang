@@ -1,0 +1,65 @@
+module () where
+
+const { .format_i32, .panic, .text_append } = import "duck:prelude/runtime" ();
+
+type UserShellTimeout = [I32, Text]
+type UserShellOutput =
+  | #CompletedShellOutput Text
+  | #TimedOutShellOutput UserShellTimeout
+
+const format_user_shell_output: UserShellOutput -> Text = output => do
+  case output of
+    #CompletedShellOutput aggregated_output => aggregated_output,
+    #TimedOutShellOutput timeout => do
+      let [duration_milliseconds, aggregated_output] = timeout;
+      text_append (
+        "command timed out after ",
+        text_append (
+          format_i32 duration_milliseconds,
+          text_append (" milliseconds\n", aggregated_output),
+        ),
+      )
+    end;
+end;
+
+const render_user_shell_command: (Text, I32, I32, UserShellOutput) -> Text = (
+  command: Text,
+  exit_code: I32,
+  duration_milliseconds: I32,
+  output: UserShellOutput,
+) => do
+  if duration_milliseconds < 0 then
+    panic(
+      text_append (
+        "user shell duration must not be negative: ",
+        format_i32 duration_milliseconds,
+      )
+    )
+  end;
+
+  let duration_seconds = duration_milliseconds / 1000;
+  let milliseconds = duration_milliseconds % 1000;
+  let fraction = format_i32 milliseconds;
+
+  if milliseconds < 10 then
+    fraction = text_append ("00", fraction)
+  else milliseconds < 100 then
+    fraction = text_append ("0", fraction)
+  end;
+
+  fraction = text_append (fraction, "0")
+
+  let rendered = "<user_shell_command>\n<command>\n";
+  rendered = text_append (rendered, command)
+  rendered = text_append (rendered, "\n</command>\n<result>\nExit code: ")
+  rendered = text_append (rendered, format_i32 exit_code)
+  rendered = text_append (rendered, "\nDuration: ")
+  rendered = text_append (rendered, format_i32 duration_seconds)
+  rendered = text_append (rendered, ".")
+  rendered = text_append (rendered, fraction)
+  rendered = text_append (rendered, " seconds\nOutput:\n")
+  rendered = text_append (rendered, format_user_shell_output output)
+  text_append (rendered, "\n</result>\n</user_shell_command>")
+end;
+
+return { .format_user_shell_output, .render_user_shell_command };

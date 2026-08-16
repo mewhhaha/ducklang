@@ -11,51 +11,54 @@ type FixturePathNode = RequestPermissionPathNode
 type FixtureProfile = RequestPermissionProfile
 
 let profile: FixtureProfile = [
-  .network = `NetworkPresent ([.enabled = `Some false] as FixtureNetwork),
-  .file_system = `FileSystemPresent (
-    [.entries = `Cons (
+  .network = #NetworkPresent ([.enabled = #Some false] as FixtureNetwork),
+  .file_system = #FileSystemPresent (
+    [.entries = #Cons (
       [
-        [.path = "/workspace", .access = `Read ()] as FixturePath,
-        `Cons (
+        [.path = "/workspace", .access = #Read] as FixturePath,
+        #Cons (
           [
-            [.path = "/workspace", .access = `Read ()] as FixturePath,
-            `Cons (
-              [[.path = "/workspace", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode
-            ) ] as FixturePathNode
-        ) ] as FixturePathNode
+            [.path = "/workspace", .access = #Read] as FixturePath,
+            #Cons (
+              [[.path = "/workspace", .access = #Write] as FixturePath, #Nil] as FixturePathNode
+            )] as FixturePathNode
+        )] as FixturePathNode
     )] as FixtureFileSystem
   )];
-let args: FixtureArgs = [.environment_id = `None (), .reason = `None (), .permissions = profile];
+let args: FixtureArgs = [.environment_id = #None, .reason = #None, .permissions = profile];
 let score = 0;
 
-if let `Normalized normalized = normalize_request_permissions_args args {
-  if let `NetworkPresent normalized_network = normalized.permissions.network {
-    if let `Some enabled = normalized_network.enabled {
-      if !(enabled) {
-        if let `FileSystemPresent normalized_file_system = normalized.permissions.file_system {
-          if let `Cons first_node = normalized_file_system.entries {
+if let #Normalized normalized = normalize_request_permissions_args args then
+  if let #NetworkPresent normalized_network = normalized.permissions.network then
+    if let #Some enabled = normalized_network.enabled then
+      if !(enabled) then
+        if let #FileSystemPresent normalized_file_system = normalized.permissions.file_system then
+          if let #Cons first_node = normalized_file_system.entries then
             let [_, tail] = first_node;
-            if let `Cons second_node = tail {
-              let [second, end] = second_node;
-              if let `Write () = second.access {
-                if let `Nil () = end { score = score + 1 }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+            if let #Cons second_node = tail then
+              let [second, finish] = second_node;
+              if let #Write = second.access then
+                if let #Nil = finish then
+                  score = score + 1
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let empty_args: FixtureArgs = [
-  .environment_id = `None (),
-  .reason = `None (),
+  .environment_id = #None,
+  .reason = #None,
   .permissions = [
-    .network = `NetworkPresent ([.enabled = `None ()] as FixtureNetwork),
-    .file_system = `FileSystemPresent ([.entries = `Nil ()] as FixtureFileSystem)] as FixtureProfile];
-if let `Invalid message = normalize_request_permissions_args empty_args {
-  if message == "request_permissions requires at least one permission" { score = score + 10 }
-}
+    .network = #NetworkPresent ([.enabled = #None] as FixtureNetwork),
+    .file_system = #FileSystemPresent ([.entries = #Nil] as FixtureFileSystem)] as FixtureProfile];
+if let #Invalid message = normalize_request_permissions_args empty_args then
+  if message == "request_permissions requires at least one permission" then
+    score = score + 10 end;
+end;
 
 return { .score = score };

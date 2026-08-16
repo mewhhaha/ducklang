@@ -31,71 +31,72 @@ const texts = comptime list Text;
 const loaded_plugins = comptime list PluginsLoaded;
 const summaries = comptime list PluginsSummary;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 const prepend_text = (value: Text, values: PluginsTexts) => texts.prepend(value, values);
 const prepend_summary = (value: PluginsSummary, values: PluginsSummaries) => summaries.prepend(
   value,
   values,
 );
 
-let rec text_values_contain: [PluginsTexts, Text] -> Bool = (values: PluginsTexts, expected: Text) => {
-    if let `Cons node = values {
+let rec text_values_contain: (PluginsTexts, Text) -> Bool =
+  (values: PluginsTexts, expected: Text) => do
+    if let #Cons node = values then
       let [value, tail] = node;
-      if value == expected { true } else { text_values_contain(tail, expected) }
-    } else {
+      if value == expected then true else text_values_contain(tail, expected) end;
+    else
       false
-    }
-  };
+    end;
+  end;
 
-let rec append_unique_texts_reversed: [PluginsTexts, PluginsTexts] -> PluginsTexts = (
+let rec append_unique_texts_reversed: (PluginsTexts, PluginsTexts) -> PluginsTexts = (
   values: PluginsTexts,
   reversed: PluginsTexts,
-) => {
-  if let `Cons node = values {
+) => do
+  if let #Cons node = values then
     let [value, tail] = node;
-    let next = if text_values_contain(reversed, value) { reversed } else { prepend_text(
+    let next = if text_values_contain(reversed, value) then reversed else prepend_text(
       value,
       reversed,
-    ) };
+    ) end;
     append_unique_texts_reversed(tail, next)
-  } else {
+  else
     reversed
-  }
-};
+  end;
+end;
 
-const plugin_is_active = (plugin: PluginsLoaded) => {
+const plugin_is_active = (plugin: PluginsLoaded) => do
   let [_, _, _, _, _, enabled, error, _, _, _, _, _, _] = plugin;
 
-  if enabled {
-    if let `Some _ = error { false } else { true }
-  } else {
+  if enabled then
+    if let #Some _ = error then false else true end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const plugin_display_name = (plugin: PluginsLoaded) => {
+const plugin_display_name = (plugin: PluginsLoaded) => do
   let [config_name, manifest_name, _, _, _, _, _, _, _, _, _, _, _] = plugin;
-  if let `Some name = manifest_name { name } else { config_name }
-};
+  if let #Some name = manifest_name then name else config_name end;
+end;
 
-const prompt_safe_plugin_description = (description: PluginsTextOption) => {
-  if let `Some value = description {
+const prompt_safe_plugin_description = (description: PluginsTextOption) => do
+  if let #Some value = description then
     let normalized = text_collapse_ascii_whitespace value;
 
-    if normalized == "" {
-      `None ()
-    } else if text_utf8_length normalized > 1024 {
-      `Some (text_take_utf8_characters(normalized, 1024))
-    } else {
-      `Some normalized
-    }
-  } else {
-    `None ()
-  }
-};
+    if normalized == "" then
+      #None
+    else text_utf8_length normalized > 1024 then
+      #Some (text_take_utf8_characters(normalized, 1024))
+    else
+      #Some normalized
+    end;
+  else
+    #None
+  end;
+end;
 
-const plugin_capability_summary = (plugin: PluginsLoaded) => {
-  if plugin_is_active plugin {
+const plugin_capability_summary = (plugin: PluginsLoaded) => do
+  if plugin_is_active plugin then
     let [config_name, _, _, description, _, _, _, has_skills, _, mcp_servers, app_ids, _, _] =
       plugin;
     let summary: PluginsSummary = [
@@ -107,70 +108,70 @@ const plugin_capability_summary = (plugin: PluginsLoaded) => {
       app_ids,
     ];
 
-    if has_skills {
-      `Some summary
-    } else if texts.length(mcp_servers) > 0 {
-      `Some summary
-    } else if texts.length(app_ids) > 0 {
-      `Some summary
-    } else {
-      `None ()
-    }
-  } else {
-    `None ()
-  }
-};
+    if has_skills then
+      #Some summary
+    else texts.length(mcp_servers) > 0 then
+      #Some summary
+    else texts.length(app_ids) > 0 then
+      #Some summary
+    else
+      #None
+    end;
+  else
+    #None
+  end;
+end;
 
-let rec build_plugin_summaries: [PluginsLoadedValues, PluginsSummaries] -> PluginsSummaries = (
+let rec build_plugin_summaries: (PluginsLoadedValues, PluginsSummaries) -> PluginsSummaries = (
   plugins: PluginsLoadedValues,
   reversed: PluginsSummaries,
-) => {
-  if let `Cons node = plugins {
+) => do
+  if let #Cons node = plugins then
     let [plugin, tail] = node;
     let candidate = plugin_capability_summary plugin;
-    let next = if let `Some summary = candidate { prepend_summary(summary, reversed) } else {
-      reversed };
+    let next = if let #Some summary = candidate then prepend_summary(summary, reversed) else
+      reversed end;
     build_plugin_summaries(tail, next)
-  } else {
+  else
     summaries.reverse reversed
-  }
-};
+  end;
+end;
 
-const plugin_load_outcome = (plugins: PluginsLoadedValues) => {
+const plugin_load_outcome = (plugins: PluginsLoadedValues) => do
   [plugins, build_plugin_summaries(plugins, summaries.empty())] as PluginsOutcome
-};
+end;
 
-let rec effective_plugin_values: [PluginsLoadedValues, I32, PluginsTexts] -> PluginsTexts = (
+let rec effective_plugin_values: (PluginsLoadedValues, I32, PluginsTexts) -> PluginsTexts = (
   plugins: PluginsLoadedValues,
   field: I32,
   reversed: PluginsTexts,
-) => {
-  if let `Cons node = plugins {
+) => do
+  if let #Cons node = plugins then
     let [plugin, tail] = node;
     let [_, _, _, _, _, _, _, _, skill_roots, mcp_servers, app_ids, hook_sources, hook_warnings] =
       plugin;
-    let values = if field == 0 {
+    let values = if field == 0 then
       skill_roots
-    } else if field == 1 {
+    else field == 1 then
       mcp_servers
-    } else if field == 2 {
+    else field == 2 then
       app_ids
-    } else if field == 3 {
+    else field == 3 then
       hook_sources
-    } else {
+    else
       hook_warnings
-    };
-    let next = if plugin_is_active plugin { append_unique_texts_reversed(values, reversed) } else {
-      reversed };
+    end;
+    let next = if plugin_is_active plugin then append_unique_texts_reversed(values, reversed) else
+      reversed end;
     effective_plugin_values(tail, field, next)
-  } else {
+  else
     texts.reverse reversed
-  }
-};
+  end;
+end;
 
 const effective_skill_roots = (plugins: PluginsLoadedValues) => texts.sort_by(
   effective_plugin_values(plugins, 0, texts.empty()),
-  (left: Text, right: Text) => text_less_than [left, right],
+  (left: Text, right: Text) => text_less_than (left, right),
 );
 const effective_mcp_servers = (plugins: PluginsLoadedValues) => effective_plugin_values(
   plugins,
@@ -193,149 +194,150 @@ const effective_hook_warnings = (plugins: PluginsLoadedValues) => effective_plug
   texts.empty(),
 );
 
-const plugin_name_from_path = (path: Text) => {
-  if text_starts_with [path, "plugin://"] && text_length path > 9 {
-    `Some (text_slice [path, 9, text_length path])
-  } else {
-    `None ()
-  }
-};
+const plugin_name_from_path = (path: Text) => do
+  if text_starts_with (path, "plugin://") && text_length path > 9 then
+    #Some (text_slice (path, 9, text_length path))
+  else
+    #None
+  end;
+end;
 
-const valid_plugin_segment = (segment: Text) => {
-  if segment == "" {
+const valid_plugin_segment = (segment: Text) => do
+  if segment == "" then
     false
-  } else {
+  else
     let valid = true;
 
-    for byte in segment {
-      if text_byte_is_ascii_alphanumeric byte || byte == 45 || byte == 95 {
+    for byte in segment do
+      if text_byte_is_ascii_alphanumeric byte || byte == 45 || byte == 95 then
         ()
-      } else {
+      else
         valid = false
-      }
-    }
+      end;
+    end
 
     valid
-  }
-};
+  end;
+end;
 
-const parse_plugin_id = (key: Text) => {
+const parse_plugin_id = (key: Text) => do
   let separator = -1;
 
-  for index in 0..text_length key {
-    if text_get [key, index] == 64 {
+  for index in 0..text_length key do
+    if text_get (key, index) == 64 then
       separator = index
-    }
-  }
+    end;
+  end
 
-  if separator <= 0 || separator >= text_length key - 1 {
-    `Err (
+  if separator <= 0 || separator >= text_length key - 1 then
+    #Err (
       append_text("invalid plugin key `", append_text(key, "`; expected <plugin>@<marketplace>"))
     )
-  } else {
-    let plugin_name = text_slice [key, 0, separator];
-    let marketplace_name = text_slice [key, separator + 1, text_length key];
+  else
+    let plugin_name = text_slice (key, 0, separator);
+    let marketplace_name = text_slice (key, separator + 1, text_length key);
 
-    if valid_plugin_segment plugin_name {
-      if valid_plugin_segment marketplace_name {
+    if valid_plugin_segment plugin_name then
+      if valid_plugin_segment marketplace_name then
         let plugin_id: PluginsId = [plugin_name, marketplace_name];
-        `Ok plugin_id;
-      } else {
-        `Err (append_text("invalid marketplace name in `", append_text(key, "`")))
-      }
-    } else {
-      `Err (append_text("invalid plugin name in `", append_text(key, "`")))
-    }
-  }
-};
+        #Ok plugin_id;
+      else
+        #Err (append_text("invalid marketplace name in `", append_text(key, "`")))
+      end;
+    else
+      #Err (append_text("invalid plugin name in `", append_text(key, "`")))
+    end;
+  end;
+end;
 
-let rec mentioned_plugin_names: [PluginsTexts, PluginsTexts] -> PluginsTexts = (
+let rec mentioned_plugin_names: (PluginsTexts, PluginsTexts) -> PluginsTexts = (
   paths: PluginsTexts,
   reversed: PluginsTexts,
-) => {
-  if let `Cons node = paths {
+) => do
+  if let #Cons node = paths then
     let [path, tail] = node;
     let candidate = plugin_name_from_path path;
-    let next = if let `Some name = candidate {
-      if text_values_contain(reversed, name) { reversed } else { prepend_text(name, reversed) }
-    } else {
+    let next = if let #Some name = candidate then
+      if text_values_contain(reversed, name) then reversed else prepend_text(name, reversed) end;
+    else
       reversed
-    };
+    end;
     mentioned_plugin_names(tail, next)
-  } else {
+  else
     reversed
-  }
-};
+  end;
+end;
 
-let rec select_plugin_summaries: [PluginsSummaries, PluginsTexts, PluginsSelection] -> PluginsSelection = (
+let rec select_plugin_summaries: (PluginsSummaries, PluginsTexts, PluginsSelection) -> PluginsSelection =
+  (
     available: PluginsSummaries,
     names: PluginsTexts,
     reversed: PluginsSelection,
-  ) => {
-    if let `Cons node = available {
+  ) => do
+    if let #Cons node = available then
       let [summary, tail] = node;
       let [config_name, _, _, _, _, _] = summary;
-      let next = if text_values_contain(names, config_name) { prepend_summary(summary, reversed)
-      } else { reversed };
+      let next = if text_values_contain(names, config_name) then prepend_summary(summary, reversed)
+      else reversed end;
       select_plugin_summaries(tail, names, next)
-    } else {
+    else
       summaries.reverse reversed
-    }
-  };
+    end;
+  end;
 
-const collect_explicit_plugin_mentions = (paths: PluginsTexts, available: PluginsSummaries) => {
+const collect_explicit_plugin_mentions = (paths: PluginsTexts, available: PluginsSummaries) => do
   select_plugin_summaries(
     available,
     mentioned_plugin_names(paths, texts.empty()),
     summaries.empty(),
   )
-};
+end;
 
-let rec append_quoted_values: [PluginsTexts, Text, Bool] -> Text = (
+let rec append_quoted_values: (PluginsTexts, Text, Bool) -> Text = (
   values: PluginsTexts,
   output: Text,
   first: Bool,
-) => {
-  if let `Cons node = values {
+) => do
+  if let #Cons node = values then
     let [value, tail] = node;
-    let separator = if first { "" } else { ", " };
+    let separator = if first then "" else ", " end;
     append_quoted_values(
       tail,
       append_text(output, append_text(separator, append_text("`", append_text(value, "`")))),
       false,
     )
-  } else {
+  else
     output
-  }
-};
+  end;
+end;
 
-let rec filter_available_values: [PluginsTexts, PluginsTexts, PluginsTexts] -> PluginsTexts = (
+let rec filter_available_values: (PluginsTexts, PluginsTexts, PluginsTexts) -> PluginsTexts = (
   declared: PluginsTexts,
   available: PluginsTexts,
   reversed: PluginsTexts,
-) => {
-  if let `Cons node = declared {
+) => do
+  if let #Cons node = declared then
     let [value, tail] = node;
-    let next = if text_values_contain(available, value) { prepend_text(value, reversed) } else {
-      reversed };
+    let next = if text_values_contain(available, value) then prepend_text(value, reversed) else
+      reversed end;
     filter_available_values(tail, available, next)
-  } else {
+  else
     texts.reverse reversed
-  }
-};
+  end;
+end;
 
 const render_explicit_plugin_instructions = (
   plugin: PluginsSummary,
   available_mcp: PluginsTexts,
   available_apps: PluginsTexts,
-) => {
+) => do
   let [_, display_name, _, has_skills, declared_mcp, declared_apps] = plugin;
   let mcp = filter_available_values(declared_mcp, available_mcp, texts.empty());
   let apps = filter_available_values(declared_apps, available_apps, texts.empty());
   let output = append_text("Capabilities from the `", append_text(display_name, "` plugin:"));
   let capability_count = 0;
 
-  if has_skills {
+  if has_skills then
     output = append_text(
       output,
       append_text(
@@ -344,9 +346,9 @@ const render_explicit_plugin_instructions = (
       ),
     )
     capability_count = capability_count + 1
-  }
+  end;
 
-  if texts.length(mcp) > 0 {
+  if texts.length(mcp) > 0 then
     output = append_text(
       output,
       append_text(
@@ -355,9 +357,9 @@ const render_explicit_plugin_instructions = (
       ),
     )
     capability_count = capability_count + 1
-  }
+  end;
 
-  if texts.length(apps) > 0 {
+  if texts.length(apps) > 0 then
     output = append_text(
       output,
       append_text(
@@ -366,16 +368,16 @@ const render_explicit_plugin_instructions = (
       ),
     )
     capability_count = capability_count + 1
-  }
+  end;
 
-  if capability_count == 0 {
-    `None ()
-  } else {
-    `Some (
+  if capability_count == 0 then
+    #None
+  else
+    #Some (
       append_text(output, "\nUse these plugin-associated capabilities to help solve the task.")
     )
-  }
-};
+  end;
+end;
 
 return {
   .plugin_is_active,

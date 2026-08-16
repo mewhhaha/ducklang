@@ -9,35 +9,37 @@ type InstallExecutionCompletion = RequestPluginInstallCompletion
 type InstallExecutionHostRequest = RequestPluginInstallHostRequest
 type InstallExecutionHostResponse = RequestPluginInstallHostResponse
 
-const elicitation_action_text = (response: InstallExecutionHostResponse) => {
-  if let `Accept () = response.action {
+const elicitation_action_text = (response: InstallExecutionHostResponse) => do
+  if let #Accept = response.action then
     "accept"
-  } else if let `Decline () = response.action {
+  else let #Decline = response.action then
     "decline"
-  } else if let `Cancel () = response.action {
+  else let #Cancel = response.action then
     "cancel"
-  } else {
+  else
     "unavailable"
-  }
-};
+  end;
+end;
 
-const install_tool_type_text = (request: InstallExecutionHostRequest) => {
-  if let `Connector () = request.candidate.tool_type { "connector" } else { "plugin" }
-};
+const install_tool_type_text = (request: InstallExecutionHostRequest) => do
+  if let #Connector = request.candidate.tool_type then "connector" else "plugin" end;
+end;
 
-let finish_request_plugin_install: [InstallExecutionHostRequest, InstallExecutionHostResponse] ->
+let finish_request_plugin_install: (InstallExecutionHostRequest, InstallExecutionHostResponse) ->
   InstallExecutionCompletion = (
     request: InstallExecutionHostRequest,
     response: InstallExecutionHostResponse,
-  ) => {
-    let user_confirmed = if let `Accept () = response.action { true } else { false };
+  ) => do
+    let user_confirmed = if let #Accept = response.action then true else false end;
     let completed = user_confirmed && response.verified;
-    let persist_disabled = if let `Decline () = response.action { response.persist_always } else {
-      false };
+    let persist_disabled = if let #Decline = response.action then response.persist_always else
+      false end;
     let merge_connector = false;
-    if completed {
-      if let `Connector () = request.candidate.tool_type { merge_connector = true }
-    }
+    if completed then
+      if let #Connector = request.candidate.tool_type then
+        merge_connector = true
+      end;
+    end;
 
     let output: Text = encode_json(json_object(
       json_object_prepend("completed", json_bool completed,
@@ -60,6 +62,6 @@ let finish_request_plugin_install: [InstallExecutionHostRequest, InstallExecutio
       .response_action = elicitation_action_text response,
     ];
     completion
-  };
+  end;
 
 return { .finish_request_plugin_install };

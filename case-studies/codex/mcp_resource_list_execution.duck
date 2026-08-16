@@ -15,42 +15,42 @@ let run_list_mcp_resources = (
   prepared: ResourceListExecutionPrepared,
   orchestrator_mcp_enabled: Bool,
   maximum_bytes: I32,
-) => {
-  let supported = if let `ListResources _ = prepared.operation {
+) => do
+  let supported = if let #ListResources _ = prepared.operation then
     true
-  } else if let `ListResourceTemplates _ = prepared.operation {
+  else let #ListResourceTemplates _ = prepared.operation then
     true
-  } else {
+  else
     false
-  };
+  end;
 
-  if !(supported) {
+  if !(supported) then
     let result: ResourceListExecutionResult =
-      `Rejected "MCP resource list received the wrong operation";
+      #Rejected "MCP resource list received the wrong operation";
     result
-  } else {
-    let server = if let `ListResources args = prepared.operation {
-      if let `Some name = args.server { name } else { "codex" }
-    } else if let `ListResourceTemplates args = prepared.operation {
-      if let `Some name = args.server { name } else { "codex" }
-    } else {
+  else
+    let server = if let #ListResources args = prepared.operation then
+      if let #Some name = args.server then name else "codex" end;
+    else let #ListResourceTemplates args = prepared.operation then
+      if let #Some name = args.server then name else "codex" end;
+    else
       "codex"
-    };
-    let tool = if let `ListResources _ = prepared.operation { "list_mcp_resources" } else {
-      "list_mcp_resource_templates" };
+    end;
+    let tool = if let #ListResources _ = prepared.operation then "list_mcp_resources" else
+      "list_mcp_resource_templates" end;
     let started: ResourceListExecutionEvent = [
       .call_id = prepared.call_id,
       .server = server,
       .tool = tool,
       .completed = false,
       .success = true,
-      .message = `None (),
+      .message = #None,
     ];
     _ <- McpResourceHost.event(&started)
     let request: ResourceListExecutionHostRequest = [.operation = prepared.operation];
     response <- McpResourceHost.invoke(&request)
     let host_response: ResourceListExecutionHostResponse = response;
-    let output: ResourceListExecutionTextResult = if let `Listed pages = host_response {
+    let output: ResourceListExecutionTextResult = if let #Listed pages = host_response then
       let input: ResourceListExecutionOutputInput = [
         .operation = prepared.operation,
         .pages = pages,
@@ -59,44 +59,44 @@ let run_list_mcp_resources = (
       stage_output <- McpResourceStages.list_output(&input)
       let typed_output: ResourceListExecutionTextResult = stage_output;
       typed_output
-    } else if let `Failed reason = host_response {
-      `ResourceFailed reason
-    } else {
-      `ResourceFailed "MCP resource list host returned the wrong response"
-    };
+    else let #Failed reason = host_response then
+      #ResourceFailed reason
+    else
+      #ResourceFailed "MCP resource list host returned the wrong response"
+    end;
 
-    if let `ResourceText text = output {
+    if let #ResourceText text = output then
       let completed: ResourceListExecutionEvent = [
         .call_id = prepared.call_id,
         .server = server,
         .tool = tool,
         .completed = true,
         .success = true,
-        .message = `Some text,
+        .message = #Some text,
       ];
       _ <- McpResourceHost.event(&completed)
-      let result: ResourceListExecutionResult = `Completed (
+      let result: ResourceListExecutionResult = #Completed (
         bound_resource_output(text, maximum_bytes)
       );
       result
-    } else if let `ResourceFailed reason = output {
+    else let #ResourceFailed reason = output then
       let completed: ResourceListExecutionEvent = [
         .call_id = prepared.call_id,
         .server = server,
         .tool = tool,
         .completed = true,
         .success = false,
-        .message = `Some reason,
+        .message = #Some reason,
       ];
       _ <- McpResourceHost.event(&completed)
-      let result: ResourceListExecutionResult = `Rejected reason;
+      let result: ResourceListExecutionResult = #Rejected reason;
       result
-    } else {
+    else
       let result: ResourceListExecutionResult =
-        `Rejected "MCP resource list output produced no result";
+        #Rejected "MCP resource list output produced no result";
       result
-    }
-  }
-};
+    end;
+  end;
+end;
 
 return { .run_list_mcp_resources };

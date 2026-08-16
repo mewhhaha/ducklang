@@ -66,9 +66,19 @@
 
 [
   "if"
+  "then"
   "else"
-  "match"
+  "case"
+  "of"
 ] @keyword.control.conditional
+
+; Block delimiters. These carry the shape of the code, so they get the plain
+; control scope rather than the operator scope `do` had when it was the unary
+; effect keyword.
+[
+  "do"
+  "end"
+] @keyword.control
 
 [
   "for"
@@ -95,7 +105,10 @@
 ] @keyword.operator
 
 "comptime" @keyword.directive
-"do" @keyword.operator
+
+; `perform` lifts a value into the effect context. It was spelled `do` until
+; `do` became the block opener.
+"perform" @keyword.operator
 
 [
   "scalar"
@@ -140,6 +153,11 @@
 ; Literals and comments
 (number) @constant.numeric.integer
 (string) @string
+(template_start) @string
+(template_text) @string
+(template_literal "`" @string)
+(template_interpolation
+  ["{" "}"] @punctuation.special)
 (character) @constant.character
 (boolean) @constant.builtin.boolean
 (atom_expression

@@ -6,43 +6,43 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "./tool_types.duck" ();
 
 type CodeModePlanMode =
-  | `DirectTools Unit
-  | `CodeMode Unit
-  | `CodeModeOnly Unit
+  | #DirectTools
+  | #CodeMode
+  | #CodeModeOnly
 
 type CodeModePlanSpecKind =
-  | `CodeFunctionSpec Unit
-  | `CodeFreeformSpec Unit
-  | `CodeToolSearchSpec Unit
-  | `CodeWebSearchSpec Unit
+  | #CodeFunctionSpec
+  | #CodeFreeformSpec
+  | #CodeToolSearchSpec
+  | #CodeWebSearchSpec
 
 type CodeModePlanRuntime = [ToolName, ToolExposure, CodeModePlanSpecKind, Text, Text]
 type CodeModePlanRuntimeNode = [CodeModePlanRuntime, CodeModePlanRuntimes]
 type CodeModePlanRuntimes =
-  | `CodeRuntimesNil Unit
-  | `CodeRuntimesCons CodeModePlanRuntimeNode
+  | #CodeRuntimesNil
+  | #CodeRuntimesCons CodeModePlanRuntimeNode
 
 type CodeModePlanTextNode = [Text, CodeModePlanTexts]
 type CodeModePlanTexts =
-  | `CodeTextsNil Unit
-  | `CodeTextsCons CodeModePlanTextNode
+  | #CodeTextsNil
+  | #CodeTextsCons CodeModePlanTextNode
 
 type CodeModePlanDefinition = [Text, ToolName, Text, CodeModePlanSpecKind]
 type CodeModePlanDefinitionNode = [CodeModePlanDefinition, CodeModePlanDefinitions]
 type CodeModePlanDefinitions =
-  | `CodeDefinitionsNil Unit
-  | `CodeDefinitionsCons CodeModePlanDefinitionNode
+  | #CodeDefinitionsNil
+  | #CodeDefinitionsCons CodeModePlanDefinitionNode
 type CodeModePlanDefinitionOption =
-  | `CodeDefinitionMissing Unit
-  | `CodeDefinitionPresent CodeModePlanDefinition
+  | #CodeDefinitionMissing
+  | #CodeDefinitionPresent CodeModePlanDefinition
 
 type CodeModePlanNamespaceDescription = [Text, Text]
 type CodeModePlanNamespaceDescriptionNode = [
   CodeModePlanNamespaceDescription,
-  CodeModePlanNamespaceDescriptions ]
+  CodeModePlanNamespaceDescriptions]
 type CodeModePlanNamespaceDescriptions =
-  | `CodeNamespacesNil Unit
-  | `CodeNamespacesCons CodeModePlanNamespaceDescriptionNode
+  | #CodeNamespacesNil
+  | #CodeNamespacesCons CodeModePlanNamespaceDescriptionNode
 
 type CodeModePlanFacts = struct {
   .mode = CodeModePlanMode,
@@ -59,313 +59,324 @@ type CodeModeExecutorPlan = struct {
   .namespace_descriptions = CodeModePlanNamespaceDescriptions,
 }
 
-const code_mode_name: ToolName -> Text = tool_name => {
+const code_mode_name: ToolName -> Text = tool_name => do
   let [namespace, local_name] = tool_name;
-  if namespace == "" {
+  if namespace == "" then
     return local_name;
-  }
-  if text_ends_with [namespace, "_"] || text_starts_with [local_name, "_"] {
-    return text_append [namespace, local_name];
-  }
-  text_append [text_append [namespace, "__"], local_name]
-};
+  end;
+  if text_ends_with (namespace, "_") || text_starts_with (local_name, "_") then
+    return text_append (namespace, local_name);
+  end;
+  text_append (text_append (namespace, "__"), local_name)
+end;
 
-const namespace_is_excluded: [Text, CodeModePlanTexts] -> Bool = (namespace,
-  excluded_namespaces) => {
-    if namespace == "" {
+const namespace_is_excluded: (Text, CodeModePlanTexts) -> Bool = (namespace,
+  excluded_namespaces) => do
+    if namespace == "" then
       return false;
-    }
+    end;
 
     let current = excluded_namespaces;
     let found = false;
     let done = false;
-    loop {
-      if let `CodeTextsCons node = current {
+    loop do
+      if let #CodeTextsCons node = current then
         let [candidate, tail] = node;
-        if candidate == namespace {
+        if candidate == namespace then
           found = true
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     found
-  };
+  end;
 
-const exposure_is_omitted: ToolExposure -> Bool = exposure => {
-  if let `DirectModelOnly () = exposure {
+const exposure_is_omitted: ToolExposure -> Bool = exposure => do
+  if let #DirectModelOnly = exposure then
     true
-  } else if let `Hidden () = exposure {
+  else let #Hidden = exposure then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const spec_is_supported: CodeModePlanSpecKind -> Bool = kind => {
-  if let `CodeFunctionSpec () = kind {
+const spec_is_supported: CodeModePlanSpecKind -> Bool = kind => do
+  if let #CodeFunctionSpec = kind then
     true
-  } else if let `CodeFreeformSpec () = kind {
+  else let #CodeFreeformSpec = kind then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const definition_for_runtime: CodeModePlanRuntime -> CodeModePlanDefinitionOption = runtime => {
+const definition_for_runtime: CodeModePlanRuntime -> CodeModePlanDefinitionOption = runtime => do
   let [tool_name, _, kind, description, _] = runtime;
-  if !(spec_is_supported kind) {
-    return `CodeDefinitionMissing ();
-  }
+  if !(spec_is_supported kind) then
+    return #CodeDefinitionMissing;
+  end;
 
   let name = code_mode_name tool_name;
-  if name == "exec" || name == "wait" {
-    return `CodeDefinitionMissing ();
-  }
+  if name == "exec" || name == "wait" then
+    return #CodeDefinitionMissing;
+  end;
 
   let definition: CodeModePlanDefinition = [name, tool_name, description, kind];
-  `CodeDefinitionPresent definition;
-};
+  #CodeDefinitionPresent definition;
+end;
 
-const prepend_runtime: [CodeModePlanRuntime, CodeModePlanRuntimes] -> CodeModePlanRuntimes = (
+const prepend_runtime: (CodeModePlanRuntime, CodeModePlanRuntimes) -> CodeModePlanRuntimes = (
   runtime,
   runtimes,
-) => {
-  `CodeRuntimesCons ([runtime, runtimes])
-};
+) => do
+  #CodeRuntimesCons ([runtime, runtimes])
+end;
 
-const reverse_runtimes: CodeModePlanRuntimes -> CodeModePlanRuntimes = runtimes => {
+const reverse_runtimes: CodeModePlanRuntimes -> CodeModePlanRuntimes = runtimes => do
   let current = runtimes;
-  let reversed: CodeModePlanRuntimes = `CodeRuntimesNil ();
+  let reversed: CodeModePlanRuntimes = #CodeRuntimesNil;
   let done = false;
-  loop {
-    if let `CodeRuntimesCons node = current {
+  loop do
+    if let #CodeRuntimesCons node = current then
       let [runtime, tail] = node;
       reversed = prepend_runtime(runtime, reversed)
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   reversed
-};
+end;
 
-const prepend_definition: [CodeModePlanDefinition, CodeModePlanDefinitions] -> CodeModePlanDefinitions = (
+const prepend_definition: (CodeModePlanDefinition, CodeModePlanDefinitions) -> CodeModePlanDefinitions =
+  (
     definition,
     definitions,
-  ) => {
-    `CodeDefinitionsCons ([definition, definitions])
-  };
+  ) => do
+    #CodeDefinitionsCons ([definition, definitions])
+  end;
 
-let rec definition_exists: [Text, CodeModePlanDefinitions] -> Bool = (name, definitions) => {
-  if let `CodeDefinitionsCons node = definitions {
+let rec definition_exists: (Text, CodeModePlanDefinitions) -> Bool = (name, definitions) => do
+  if let #CodeDefinitionsCons node = definitions then
     let [definition, tail] = node;
     let [definition_name, _, _, _] = definition;
-    if definition_name == name {
+    if definition_name == name then
       true
-    } else {
+    else
       definition_exists(name, tail)
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
-let rec insert_by_code_name: [CodeModePlanDefinition, CodeModePlanDefinitions] -> CodeModePlanDefinitions = (
+let rec insert_by_code_name: (CodeModePlanDefinition, CodeModePlanDefinitions) -> CodeModePlanDefinitions =
+  (
     definition,
     definitions,
-  ) => {
+  ) => do
     let [definition_name, _, _, _] = definition;
-    if let `CodeDefinitionsCons node = definitions {
+    if let #CodeDefinitionsCons node = definitions then
       let [existing, tail] = node;
       let [existing_name, _, _, _] = existing;
-      if text_compare [definition_name, existing_name] < 0 {
+      if text_compare (definition_name, existing_name) < 0 then
         prepend_definition(definition, definitions)
-      } else {
+      else
         prepend_definition(existing, insert_by_code_name(definition, tail))
-      }
-    } else {
+      end;
+    else
       prepend_definition(definition, definitions)
-    }
-  };
+    end;
+  end;
 
-const add_by_code_name: [CodeModePlanDefinition, CodeModePlanDefinitions] -> CodeModePlanDefinitions = (
+const add_by_code_name: (CodeModePlanDefinition, CodeModePlanDefinitions) -> CodeModePlanDefinitions =
+  (
     definition,
     definitions,
-  ) => {
+  ) => do
     let [name, _, _, _] = definition;
-    if definition_exists(name, definitions) {
+    if definition_exists(name, definitions) then
       definitions
-    } else {
+    else
       insert_by_code_name(definition, definitions)
-    }
-  };
+    end;
+  end;
 
-let rec namespace_description_known: [Text, CodeModePlanNamespaceDescriptions] -> Bool = (
+let rec namespace_description_known: (Text, CodeModePlanNamespaceDescriptions) -> Bool = (
   namespace,
   descriptions,
-) => {
-  if let `CodeNamespacesCons node = descriptions {
+) => do
+  if let #CodeNamespacesCons node = descriptions then
     let [[candidate, _], tail] = node;
-    if candidate == namespace {
+    if candidate == namespace then
       true
-    } else {
+    else
       namespace_description_known(namespace, tail)
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
-let rec insert_namespace_description: [
+let rec insert_namespace_description: (
   CodeModePlanNamespaceDescription,
   CodeModePlanNamespaceDescriptions,
-] -> CodeModePlanNamespaceDescriptions = (description, descriptions) => {
+) -> CodeModePlanNamespaceDescriptions = (description, descriptions) => do
   let [namespace, text] = description;
-  if let `CodeNamespacesCons node = descriptions {
+  if let #CodeNamespacesCons node = descriptions then
     let [existing, tail] = node;
     let [existing_namespace, existing_text] = existing;
-    if namespace == existing_namespace {
-      if text_trim_whitespace existing_text == "" && text_trim_whitespace text != "" {
-        `CodeNamespacesCons ([[namespace, text], tail])
-      } else {
+    if namespace == existing_namespace then
+      if text_trim_whitespace existing_text == "" && text_trim_whitespace text != "" then
+        #CodeNamespacesCons ([[namespace, text], tail])
+      else
         descriptions
-      }
-    } else if text_compare [namespace, existing_namespace] < 0 {
-      `CodeNamespacesCons ([description, descriptions])
-    } else {
-      `CodeNamespacesCons ([existing, insert_namespace_description(description, tail)])
-    }
-  } else {
-    `CodeNamespacesCons ([description, `CodeNamespacesNil ()])
-  }
-};
+      end;
+    else text_compare (namespace, existing_namespace) < 0 then
+      #CodeNamespacesCons ([description, descriptions])
+    else
+      #CodeNamespacesCons ([existing, insert_namespace_description(description, tail)])
+    end;
+  else
+    #CodeNamespacesCons ([description, #CodeNamespacesNil])
+  end;
+end;
 
-const definition_precedes: [
+const definition_precedes: (
   CodeModePlanDefinition,
   CodeModePlanDefinition,
   CodeModePlanNamespaceDescriptions,
-] -> Bool = (left, right, namespace_descriptions) => {
+) -> Bool = (left, right, namespace_descriptions) => do
   let [left_code_name, [left_namespace, left_local_name], _, _] = left;
   let [right_code_name, [right_namespace, right_local_name], _, _] = right;
   let left_grouped = namespace_description_known(left_namespace, namespace_descriptions);
   let right_grouped = namespace_description_known(right_namespace, namespace_descriptions);
-  if !(left_grouped) && right_grouped {
+  if !(left_grouped) && right_grouped then
     return true;
-  }
-  if left_grouped && !(right_grouped) {
+  end;
+  if left_grouped && !(right_grouped) then
     return false;
-  }
+  end;
 
-  if left_grouped {
-    let namespace_order = text_compare [left_namespace, right_namespace];
-    if namespace_order != 0 {
+  if left_grouped then
+    let namespace_order = text_compare (left_namespace, right_namespace);
+    if namespace_order != 0 then
       return namespace_order < 0;
-    }
-  }
+    end;
+  end;
 
-  let local_order = text_compare [left_local_name, right_local_name];
-  if local_order != 0 {
+  let local_order = text_compare (left_local_name, right_local_name);
+  if local_order != 0 then
     return local_order < 0;
-  }
-  text_compare [left_code_name, right_code_name] < 0
-};
+  end;
+  text_compare (left_code_name, right_code_name) < 0
+end;
 
-let rec insert_enabled_definition: [
+let rec insert_enabled_definition: (
   CodeModePlanDefinition,
   CodeModePlanDefinitions,
   CodeModePlanNamespaceDescriptions,
-] -> CodeModePlanDefinitions = (definition, definitions, namespace_descriptions) => {
-  if let `CodeDefinitionsCons node = definitions {
+) -> CodeModePlanDefinitions = (definition, definitions, namespace_descriptions) => do
+  if let #CodeDefinitionsCons node = definitions then
     let [existing, tail] = node;
-    if definition_precedes(definition, existing, namespace_descriptions) {
+    if definition_precedes(definition, existing, namespace_descriptions) then
       prepend_definition(definition, definitions)
-    } else {
+    else
       prepend_definition(
         existing,
         insert_enabled_definition(definition, tail, namespace_descriptions),
       )
-    }
-  } else {
+    end;
+  else
     prepend_definition(definition, definitions)
-  }
-};
+  end;
+end;
 
-const sort_enabled_definitions: [CodeModePlanDefinitions, CodeModePlanNamespaceDescriptions] -> CodeModePlanDefinitions = (
+const sort_enabled_definitions: (CodeModePlanDefinitions, CodeModePlanNamespaceDescriptions) -> CodeModePlanDefinitions =
+  (
     definitions,
     namespace_descriptions,
-  ) => {
+  ) => do
     let current = definitions;
-    let sorted: CodeModePlanDefinitions = `CodeDefinitionsNil ();
+    let sorted: CodeModePlanDefinitions = #CodeDefinitionsNil;
     let done = false;
-    loop {
-      if let `CodeDefinitionsCons node = current {
+    loop do
+      if let #CodeDefinitionsCons node = current then
         let [definition, tail] = node;
         sorted = insert_enabled_definition(definition, sorted, namespace_descriptions)
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     sorted
-  };
+  end;
 
-const empty_code_mode_plan: () -> CodeModeExecutorPlan = () => {
+const empty_code_mode_plan: () -> CodeModeExecutorPlan = () => do
   [
     .code_mode_only = false,
-    .executor_names = `CodeTextsNil (),
-    .nested_runtimes = `CodeRuntimesNil (),
-    .enabled_tools = `CodeDefinitionsNil (),
-    .deferred_tools = `CodeDefinitionsNil (),
-    .namespace_descriptions = `CodeNamespacesNil (),
+    .executor_names = #CodeTextsNil,
+    .nested_runtimes = #CodeRuntimesNil,
+    .enabled_tools = #CodeDefinitionsNil,
+    .deferred_tools = #CodeDefinitionsNil,
+    .namespace_descriptions = #CodeNamespacesNil,
   ]
-};
+end;
 
-const build_code_mode_executor_plan: [CodeModePlanRuntimes, CodeModePlanFacts] -> CodeModeExecutorPlan = (
+const build_code_mode_executor_plan: (CodeModePlanRuntimes, CodeModePlanFacts) -> CodeModeExecutorPlan =
+  (
     runtimes,
     facts,
-  ) => {
-    if let `DirectTools () = facts.mode {
+  ) => do
+    if let #DirectTools = facts.mode then
       return empty_code_mode_plan();
-    }
+    end;
 
-    let nested_reversed: CodeModePlanRuntimes = `CodeRuntimesNil ();
-    let enabled_candidates: CodeModePlanDefinitions = `CodeDefinitionsNil ();
-    let deferred_tools: CodeModePlanDefinitions = `CodeDefinitionsNil ();
-    let namespace_descriptions: CodeModePlanNamespaceDescriptions = `CodeNamespacesNil ();
+    let nested_reversed: CodeModePlanRuntimes = #CodeRuntimesNil;
+    let enabled_candidates: CodeModePlanDefinitions = #CodeDefinitionsNil;
+    let deferred_tools: CodeModePlanDefinitions = #CodeDefinitionsNil;
+    let namespace_descriptions: CodeModePlanNamespaceDescriptions = #CodeNamespacesNil;
     let current = runtimes;
     let done = false;
 
-    loop {
-      if let `CodeRuntimesCons node = current {
+    loop do
+      if let #CodeRuntimesCons node = current then
         let [runtime, tail] = node;
         let [[namespace, _], exposure, kind, _, namespace_description] = runtime;
         if !(exposure_is_omitted exposure) && !(
           namespace_is_excluded(namespace, facts.excluded_namespaces)
-        ) {
+        ) then
           nested_reversed = prepend_runtime(runtime, nested_reversed)
           let definition = definition_for_runtime runtime;
-          if let `Deferred () = exposure {
-            if facts.deferred_guidance {
-              if let `CodeDefinitionPresent value = definition {
+          if let #Deferred = exposure then
+            if facts.deferred_guidance then
+              if let #CodeDefinitionPresent value = definition then
                 deferred_tools = add_by_code_name(value, deferred_tools)
-              }
-            }
-          } else {
-            if let `CodeDefinitionPresent value = definition {
+              end;
+            end;
+          else
+            if let #CodeDefinitionPresent value = definition then
               let [name, _, _, _] = value;
-              if !(definition_exists(name, enabled_candidates)) {
+              if !(definition_exists(name, enabled_candidates)) then
                 enabled_candidates = prepend_definition(value, enabled_candidates)
-              }
-            }
-            if namespace != "" {
-              if let `CodeFunctionSpec () = kind {
+              end;
+            end;
+            if namespace != "" then
+              if let #CodeFunctionSpec = kind then
                 let description: CodeModePlanNamespaceDescription = [
                   namespace,
                   namespace_description,
@@ -374,21 +385,25 @@ const build_code_mode_executor_plan: [CodeModePlanRuntimes, CodeModePlanFacts] -
                   description,
                   namespace_descriptions,
                 )
-              }
-            }
-          }
-        }
+              end;
+            end;
+          end;
+        end;
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
 
     let code_mode_only = false;
-    if let `CodeModeOnly () = facts.mode { code_mode_only = true }
-    let executor_names: CodeModePlanTexts = `CodeTextsCons (
-      ["exec", `CodeTextsCons (["wait", `CodeTextsNil ()])]
+    if let #CodeModeOnly = facts.mode then
+      code_mode_only = true
+    end;
+    let executor_names: CodeModePlanTexts = #CodeTextsCons (
+      ["exec", #CodeTextsCons (["wait", #CodeTextsNil])]
     );
     [
       .code_mode_only = code_mode_only,
@@ -398,6 +413,6 @@ const build_code_mode_executor_plan: [CodeModePlanRuntimes, CodeModePlanFacts] -
       .deferred_tools = deferred_tools,
       .namespace_descriptions = namespace_descriptions,
     ];
-  };
+  end;
 
 return { .build_code_mode_executor_plan, .code_mode_name };

@@ -1,0 +1,70 @@
+module () where
+
+const {} = import "./apps_types.duck" ();
+
+type RenderAppsConnectorVisibilities = AppsConnectorVisibilities
+type RenderAppsSection = AppsSection
+type RenderAppsPreviousState = AppsPreviousState
+
+const apps_instructions = () => do
+  "<apps_instructions>\n## Apps (Connectors)\nApps (Connectors) can be explicitly triggered in user messages in the format `[$app-name](app://{connector_id})`. Apps can also be implicitly triggered as long as the context suggests usage of available apps.\nAn app is equivalent to a set of MCP tools within the `codex_apps` MCP.\nAn installed app's MCP tools are either provided to you already, or can be lazy-loaded through the `tool_search` tool. If `tool_search` is available, the apps that are searchable by `tools_search` will be listed by it.\nDo not additionally call list_mcp_resources or list_mcp_resource_templates for apps.\n</apps_instructions>"
+end;
+
+const render_apps_section: RenderAppsConnectorVisibilities -> RenderAppsSection = (
+  connector_visibilities: RenderAppsConnectorVisibilities,
+) => do
+  let current = connector_visibilities;
+  let available = false;
+  let complete = false;
+
+  loop do
+    if let #Cons node = current then
+      let [visibility, tail] = node;
+
+      if visibility == 1 then
+        available = true
+        complete = true
+      else
+        current = tail
+      end;
+    else
+      complete = true
+    end;
+
+    if complete then
+      break;
+    end;
+  end;
+
+  if available then
+    let rendered: RenderAppsSection = #RenderAppsSection (apps_instructions());
+    rendered
+  else
+    let omitted: RenderAppsSection = #OmitAppsSection;
+    omitted
+  end;
+end;
+
+const render_apps_diff: RenderAppsPreviousState -> RenderAppsSection = (
+  previous: RenderAppsPreviousState,
+) => do
+  let omitted: RenderAppsSection = #OmitAppsSection;
+
+  case previous of
+    #Absent => do
+      let rendered: RenderAppsSection = #RenderAppsSection (apps_instructions());
+      rendered
+    end,
+    #KnownUnavailable => do
+      let rendered: RenderAppsSection = #RenderAppsSection (apps_instructions());
+      rendered
+    end,
+    #KnownAvailable => omitted,
+    #Unknown => omitted;
+end;
+
+return {
+  .apps_instructions,
+  .render_apps_section,
+  .render_apps_diff,
+};

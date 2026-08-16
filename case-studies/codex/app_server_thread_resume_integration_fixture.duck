@@ -22,17 +22,17 @@ fields = json_object_prepend("path", json_string "/rollouts/thread-1.jsonl", fie
 fields = json_object_prepend("history", json_array(json_array_empty()), fields)
 fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let decoded: FixtureDecodeResult = decode_thread_resume(json_object fields);
-let loaded: FixtureLoadedThreads = `Nil ();
-let score = if let `MethodOk method = decoded {
-  if let `ThreadResume params = method {
+let loaded: FixtureLoadedThreads = #Nil;
+let score = if let #MethodOk method = decoded then
+  if let #ThreadResume params = method then
     let input: FixturePlanInput = [params, loaded];
     let planned: FixturePlanResult = plan_decoded_thread_resume input;
-    if let `Ok plan = planned {
-      if let `ResumeHistory history = plan.source {
-        if let `Array _ = history { 1 } else { 0 }
-      } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+    if let #Ok plan = planned then
+      if let #ResumeHistory history = plan.source then
+        if let #Array _ = history then 1 else 0 end;
+      else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

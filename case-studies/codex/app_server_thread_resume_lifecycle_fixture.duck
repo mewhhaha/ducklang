@@ -9,21 +9,24 @@ type FixtureResult = AppServerThreadResumePlanResult
 type FixtureJson = AppServerJson
 type FixtureInput = AppServerThreadResumePlanInput
 
-let history: FixtureJson = `Array (json_array_empty());
+let history: FixtureJson = #Array (json_array_empty());
 let input: FixtureInput = [
-  `Nil (),
+  #Nil,
   "thread-1",
-  `Some history,
-  `Some "/rollouts/thread-1.jsonl",
-  `TurnsIncluded (),
-  `None (),
+  #Some history,
+  #Some "/rollouts/thread-1.jsonl",
+  #TurnsIncluded,
+  #None,
 ];
 let planned: FixtureResult = plan_thread_resume input;
-let score = if let `Ok plan = planned {
+let score = if let #Ok plan = planned then
   let [source, include_turns, _] = plan;
-  let source_valid = if let `ResumeHistory value = source { if let `Array _ = value { true } else {
-    false } } else { false };
-  if source_valid && include_turns { 1 } else { 0 }
-} else { 0 };
+  let source_valid =
+    if let #ResumeHistory value = source then
+      if let #Array _ = value then true else
+        false end;
+    else false end;
+  if source_valid && include_turns then 1 else 0 end;
+else 0 end;
 
 return { .score = score };

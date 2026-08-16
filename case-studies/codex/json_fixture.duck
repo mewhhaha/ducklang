@@ -5,93 +5,91 @@ let document =
   "{\"type\":\"function_call\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"flags\":[true,false,null],\"number\":-12.5e+2}";
 let parsed = parse_json(document, 0);
 
-if let `Ok value_and_index = parsed {
+if let #Ok value_and_index = parsed then
   let [value, index] = value_and_index;
-  let score = if index == text_length document { 10000 } else { 0 };
+  let score = if index == text_length document then 10000 else 0 end;
 
-  if let `Object members = value {
+  if let #Object members = value then
     let current = members;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [member, tail] = node;
         let [key, member_value] = member;
 
-        if key == "type" {
-          if let `String text = member_value {
-            if text == "function_call" {
+        if key == "type" then
+          if let #String text = member_value then
+            if text == "function_call" then
               score = score + 1
-            }
-          }
-        } else if key == "arguments" {
-          if let `String text = member_value {
-            if text == "{\"path\":\"README.md\"}" {
+            end;
+          end;
+        else key == "arguments" then
+          if let #String text = member_value then
+            if text == "{\"path\":\"README.md\"}" then
               score = score + 10
-            }
-          }
-        } else if key == "flags" {
-          if let `Array values = member_value {
+            end;
+          end;
+        else key == "flags" then
+          if let #Array values = member_value then
             let flags = values;
             let flag_score = 0;
             let flag_index = 0;
             let flags_done = false;
 
-            loop {
-              if let `Cons flag_node = flags {
+            loop do
+              if let #Cons flag_node = flags then
                 let [flag, tail_flags] = flag_node;
 
-                if flag_index == 0 {
-                  if let `Bool true = flag {
+                if flag_index == 0 then
+                  if let #Bool true = flag then
                     flag_score = flag_score + 1
-                  }
-                } else if flag_index == 1 {
-                  if let `Bool false = flag {
+                  end;
+                else flag_index == 1 then
+                  if let #Bool false = flag then
                     flag_score = flag_score + 2
-                  }
-                } else if flag_index == 2 {
-                  if let `Null () = flag {
+                  end;
+                else flag_index == 2 then
+                  if let #Null = flag then
                     flag_score = flag_score + 3
-                  }
-                }
+                  end;
+                end;
 
                 flags = tail_flags
                 flag_index = flag_index + 1
-              } else {
+              else
                 flags_done = true
-              }
+              end;
 
-              if flags_done {
+              if flags_done then
                 break;
-              }
-            }
+              end;
+            end;
 
-            if flag_score == 6 && flag_index == 3 {
+            if flag_score == 6 && flag_index == 3 then
               score = score + 100
-            }
-          }
-        } else if key == "number" {
-          if let `Number number = member_value {
-            if number == "-12.5e+2" {
+            end;
+          end;
+        else key == "number" then
+          if let #Number number = member_value then
+            if number == "-12.5e+2" then
               score = score + 1000
-            }
-          }
-        }
+            end;
+          end;
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     score
-  } else {
-    -1
-  }
-} else {
-  -2
-}
+  else -1
+  end;
+else -2
+end;

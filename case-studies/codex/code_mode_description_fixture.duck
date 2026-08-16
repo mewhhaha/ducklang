@@ -14,18 +14,22 @@ let function_definition = code_mode_function_definition(
   "{ ok: boolean; }",
 );
 let function_description = materialize_code_mode_description function_definition;
-if function_description == "Test tool\n\nexec tool declaration:\n```ts\ndeclare const tools: { hidden_dynamic_tool(args: { city: string; }): Promise<{ ok: boolean; }>; };\n```" {
-  score = score + 1
-}
+if function_description
+  == "Test tool\n\nexec tool declaration:\n```ts\ndeclare const tools: { hidden_dynamic_tool(args: { city: string; }): Promise<{ ok: boolean; }>; };\n```" then
+    score = score + 1
+  end;
 
 let freeform_definition = code_mode_freeform_definition("apply-patch", "Apply changes", "unknown");
 let freeform_description = materialize_code_mode_description freeform_definition;
-if freeform_description == "Apply changes\n\nexec tool declaration:\n```ts\ndeclare const tools: { apply_patch(input: string): Promise<unknown>; };\n```" {
-  score = score + 10
-}
+if freeform_description
+  == "Apply changes\n\nexec tool declaration:\n```ts\ndeclare const tools: { apply_patch(input: string): Promise<unknown>; };\n```" then
+    score = score + 10
+  end;
 
 let exec_definition = code_mode_freeform_definition("exec", "Executor", "never");
-if materialize_code_mode_description exec_definition == "Executor" { score = score + 100 }
+if materialize_code_mode_description exec_definition == "Executor" then
+  score = score + 100
+end;
 
 let mcp_definition = code_mode_function_definition(
   "mcp__sample__echo",
@@ -35,7 +39,8 @@ let mcp_definition = code_mode_function_definition(
 );
 let mcp_expected =
   "Echo\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sample__echo(args: {}): Promise<CallToolResult<{ echo: string; }>>; };\n```";
-if materialize_code_mode_description mcp_definition == mcp_expected { score = score + 1000 }
+if materialize_code_mode_description mcp_definition == mcp_expected then
+  score = score + 1000 end;
 
 let raw_definition = code_mode_function_definition(
   "mcp__sample__raw",
@@ -45,6 +50,7 @@ let raw_definition = code_mode_function_definition(
 );
 let raw_expected =
   "Raw\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sample__raw(args: unknown): Promise<CallToolResult>; };\n```";
-if materialize_code_mode_description raw_definition == raw_expected { score = score + 10000 }
+if materialize_code_mode_description raw_definition == raw_expected then
+  score = score + 10000 end;
 
 return { .score = score };

@@ -12,16 +12,16 @@ type FixtureState = AgentJobRunnerState
 let item: FixtureItem = [
   .item_id = "row-1",
   .row_index = 0,
-  .source_id = `None (),
-  .row_values = `Nil (),
+  .source_id = #None,
+  .row_values = #Nil,
   .row_json = "{}",
   .prompt = "run",
 ];
-let item_node: FixtureItemNode = [item, `Nil ()];
-let pending: FixtureItems = `Cons item_node;
+let item_node: FixtureItemNode = [item, #Nil];
+let pending: FixtureItems = #Cons item_node;
 let state: FixtureState = [
   .pending = pending,
-  .active = `Nil (),
+  .active = #Nil,
   .total_items = 1,
   .completed_items = 0,
   .failed_items = 0,
@@ -30,44 +30,51 @@ let state: FixtureState = [
 ];
 let score = 0;
 
-let spawned = apply_agent_job_spawn(state, `WorkerSpawned "thread-1");
-if let `RunnerAdvanced next = spawned {
+let spawned = apply_agent_job_spawn(state, #WorkerSpawned "thread-1");
+if let #RunnerAdvanced next = spawned then
   state = next
-  if let `Nil () = state.pending { score = score + 1 }
-}
+  if let #Nil = state.pending then
+    score = score + 1
+  end;
+end;
 
 let completed = apply_agent_job_completion(
   state,
   [.thread_id = "thread-1", .reported = true, .cancel_requested = true],
 );
-if let `RunnerAdvanced next = completed {
+if let #RunnerAdvanced next = completed then
   state = next
-  if state.completed_items == 1 && state.cancelled { score = score + 10 }
-}
+  if state.completed_items == 1 && state.cancelled then
+    score = score + 10
+  end;
+end;
 
 let unknown = apply_agent_job_completion(
   state,
   [.thread_id = "missing", .reported = true, .cancel_requested = false],
 );
-if let `RunnerInvariantFailed message = unknown {
-  if message == "agent job completion referenced inactive worker missing" { score = score + 100 }
-}
+if let #RunnerInvariantFailed message = unknown then
+  if message == "agent job completion referenced inactive worker missing" then
+    score = score + 100 end;
+end;
 
 let failed_state: FixtureState = [
   .pending = pending,
-  .active = `Nil (),
+  .active = #Nil,
   .total_items = 1,
   .completed_items = 0,
   .failed_items = 0,
   .spawn_blocked = false,
   .cancelled = false,
 ];
-let deferred = apply_agent_job_spawn(failed_state, `WorkerSpawnDeferred ());
-if let `RunnerAdvanced blocked = deferred {
-  let failed = apply_agent_job_spawn(blocked, `WorkerSpawnFailed "capacity");
-  if let `RunnerAdvanced next = failed {
-    if blocked.spawn_blocked && next.failed_items == 1 && !(next.spawn_blocked) { score = score + 1000 }
-  }
-}
+let deferred = apply_agent_job_spawn(failed_state, #WorkerSpawnDeferred);
+if let #RunnerAdvanced blocked = deferred then
+  let failed = apply_agent_job_spawn(blocked, #WorkerSpawnFailed "capacity");
+  if let #RunnerAdvanced next = failed then
+    if blocked.spawn_blocked && next.failed_items == 1 && !(next.spawn_blocked) then
+      score = score + 1000
+    end;
+  end;
+end;
 
 return { .score = score };

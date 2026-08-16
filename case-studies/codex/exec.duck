@@ -26,253 +26,260 @@ type ProcessState = ExecProcessState
 
 const texts = comptime list Text;
 
-const shell_type_from_path: [Text, ProcessShell] -> ProcessShell = (
+const shell_type_from_path: (Text, ProcessShell) -> ProcessShell = (
   path: Text,
   fallback: ProcessShell,
-) => {
+) => do
   let name = path_basename path;
 
-  if text_equal_ascii_case_insensitive [name, "zsh"] {
-    [path, `Zsh ()]
-  } else if text_equal_ascii_case_insensitive [name, "bash"] {
-    [path, `Bash ()]
-  } else if text_equal_ascii_case_insensitive [name, "sh"] {
-    [path, `Sh ()]
-  } else if text_equal_ascii_case_insensitive [name, "cmd"] || text_equal_ascii_case_insensitive [
+  if text_equal_ascii_case_insensitive (name, "zsh") then
+    [path, #Zsh]
+  else text_equal_ascii_case_insensitive (name, "bash") then
+    [path, #Bash]
+  else text_equal_ascii_case_insensitive (name, "sh") then
+    [path, #Sh]
+  else text_equal_ascii_case_insensitive (name, "cmd") || text_equal_ascii_case_insensitive (
     name,
     "cmd.exe",
-  ] {
-    [path, `Cmd ()]
-  } else if text_equal_ascii_case_insensitive [name, "pwsh"] || text_equal_ascii_case_insensitive [
+  ) then
+    [path, #Cmd]
+  else text_equal_ascii_case_insensitive (name, "pwsh") || text_equal_ascii_case_insensitive (
     name,
     "pwsh.exe",
-  ] || text_equal_ascii_case_insensitive [name, "powershell"] || text_equal_ascii_case_insensitive [
+  ) || text_equal_ascii_case_insensitive (name, "powershell") || text_equal_ascii_case_insensitive (
     name,
     "powershell.exe",
-  ] {
-    [path, `PowerShell ()]
-  } else {
+  ) then
+    [path, #PowerShell]
+  else
     fallback
-  }
-};
+  end;
+  end;
 
-const resolve_command: [
-  Text,
-  ProcessTextOption,
-  ProcessBoolOption,
-  ProcessShellMode,
-  ProcessShell,
-  Bool,
-] -> ProcessCommandResolution = (
-  command_text: Text,
-  requested_shell: ProcessTextOption,
-  requested_login: ProcessBoolOption,
-  shell_mode: ProcessShellMode,
-  session_shell: ProcessShell,
-  allow_login_shell: Bool,
-) => {
-  let login: ProcessLoginResolution = if let `Some requested = requested_login {
-    if requested && !(allow_login_shell) {
-      `LoginRejected ("login shell is disabled by config; omit login or set it to false")
-    } else {
-      `LoginAllowed requested
-    }
-  } else {
-    `LoginAllowed allow_login_shell
-  };
+    const resolve_command: (
+      Text,
+      ProcessTextOption,
+      ProcessBoolOption,
+      ProcessShellMode,
+      ProcessShell,
+      Bool,
+    ) -> ProcessCommandResolution = (
+      command_text: Text,
+      requested_shell: ProcessTextOption,
+      requested_login: ProcessBoolOption,
+      shell_mode: ProcessShellMode,
+      session_shell: ProcessShell,
+      allow_login_shell: Bool,
+    ) => do
+      let login: ProcessLoginResolution = if let #Some requested = requested_login then
+        if requested && !(allow_login_shell) then
+          #LoginRejected ("login shell is disabled by config; omit login or set it to false")
+        else
+          #LoginAllowed requested
+        end;
+      else
+        #LoginAllowed allow_login_shell
+      end;
 
-  if let `LoginRejected message = login {
-    `Err message
-  } else if let `LoginAllowed use_login_shell = login {
-    if let `ZshFork fork_shell = shell_mode {
-      if let `Some _ = requested_shell {
-        `Err ("shell is not supported for local zsh-fork exec")
-      } else {
-        let [shell_path, _] = fork_shell;
-        let flag = if use_login_shell { "-lc" } else { "-c" };
-        let command: ProcessTexts = texts.prepend(
-          shell_path,
-          texts.prepend(flag, texts.singleton(command_text)),
-        );
-        `Ok ([command, `Zsh ()]);
-      }
-    } else {
-      let shell = if let `Some path = requested_shell {
-        shell_type_from_path(path, session_shell)
-      } else {
-        session_shell
-      };
-      let [shell_path, shell_type] = shell;
+      if let #LoginRejected message = login then
+        #Err message
+      else let #LoginAllowed use_login_shell = login then
+        if let #ZshFork fork_shell = shell_mode then
+          if let #Some _ = requested_shell then
+            #Err ("shell is not supported for local zsh-fork exec")
+          else
+            let [shell_path, _] = fork_shell;
+            let flag = if use_login_shell then "-lc" else "-c" end;
+            let command: ProcessTexts = texts.prepend(
+              shell_path,
+              texts.prepend(flag, texts.singleton(command_text)),
+            );
+            #Ok ([command, #Zsh]);
+          end;
+        else
+          let shell = if let #Some path = requested_shell then
+            shell_type_from_path(path, session_shell)
+          else
+            session_shell
+          end;
+          let [shell_path, shell_type] = shell;
 
-      if let `PowerShell () = shell_type {
-        let command: ProcessTexts = if use_login_shell {
-          texts.prepend(shell_path, texts.prepend("-Command", texts.singleton(command_text)))
-        } else {
-          texts.prepend(
-            shell_path,
-            texts.prepend("-NoProfile", texts.prepend("-Command", texts.singleton(command_text))),
-          )
-        };
-        `Ok ([command, shell_type]);
-      } else if let `Cmd () = shell_type {
-        let command: ProcessTexts = texts.prepend(
-          shell_path,
-          texts.prepend("/c", texts.singleton(command_text)),
-        );
-        `Ok ([command, shell_type]);
-      } else {
-        let flag = if use_login_shell { "-lc" } else { "-c" };
-        let command: ProcessTexts = texts.prepend(
-          shell_path,
-          texts.prepend(flag, texts.singleton(command_text)),
-        );
-        `Ok ([command, shell_type]);
-      }
-    }
-  } else {
-    `Err ("invalid login-shell decision")
-  }
-};
+          if let #PowerShell = shell_type then
+            let command: ProcessTexts = if use_login_shell then
+              texts.prepend(shell_path, texts.prepend("-Command", texts.singleton(command_text)))
+            else
+              texts.prepend(
+                shell_path,
+                texts.prepend(
+                  "-NoProfile",
+                  texts.prepend("-Command", texts.singleton(command_text)),
+                ),
+              )
+            end;
+            #Ok ([command, shell_type]);
+          else let #Cmd = shell_type then
+            let command: ProcessTexts = texts.prepend(
+              shell_path,
+              texts.prepend("/c", texts.singleton(command_text)),
+            );
+            #Ok ([command, shell_type]);
+          else
+            let flag = if use_login_shell then "-lc" else "-c" end;
+            let command: ProcessTexts = texts.prepend(
+              shell_path,
+              texts.prepend(flag, texts.singleton(command_text)),
+            );
+            #Ok ([command, shell_type]);
+          end;
+        end;
+      else
+        #Err ("invalid login-shell decision")
+      end;
+    end;
 
-const clamp_initial_yield_time = (requested_ms: I32, windows: Bool) => {
-  let platform_minimum = if windows { 2000 } else { 250 };
-  min_i32 [30000, max_i32 [platform_minimum, requested_ms]]
-};
+    const clamp_initial_yield_time = (requested_ms: I32, windows: Bool) => do
+      let platform_minimum = if windows then 2000 else 250 end;
+      min_i32 (30000, max_i32 (platform_minimum, requested_ms))
+    end;
 
-const clamp_write_stdin_yield_time = (input: Text, requested_ms: I32, max_background_ms: I32) => {
-  if input == "" {
-    let background_limit = max_i32 [5000, max_background_ms];
-    min_i32 [background_limit, max_i32 [5000, requested_ms]]
-  } else {
-    min_i32 [30000, max_i32 [250, requested_ms]]
-  }
-};
+    const clamp_write_stdin_yield_time =
+      (input: Text, requested_ms: I32, max_background_ms: I32) => do
+        if input == "" then
+          let background_limit = max_i32 (5000, max_background_ms);
+          min_i32 (background_limit, max_i32 (5000, requested_ms))
+        else
+          min_i32 (30000, max_i32 (250, requested_ms))
+        end;
+      end;
 
-const resolve_max_output_tokens = (requested: ProcessI32Option) => {
-  if let `Some value = requested { max_i32 [0, value] } else { 10000 }
-};
+    const resolve_max_output_tokens = (requested: ProcessI32Option) => do
+      if let #Some value = requested then max_i32 (0, value) else 10000 end;
+    end;
 
-const empty_output_buffer: I32 -> ProcessOutputBuffer = (max_bytes: I32) => {
-  [max_i32 [0, max_bytes], "", "", 0]
-};
+    const empty_output_buffer: I32 -> ProcessOutputBuffer = (max_bytes: I32) => do
+      [max_i32 (0, max_bytes), "", "", 0]
+    end;
 
-const push_output: [ProcessOutputBuffer, Text] -> ProcessOutputBuffer = (
-  buffer: ProcessOutputBuffer,
-  chunk: Text,
-) => {
-  let [max_bytes, head, tail, omitted_bytes] = buffer;
-  let chunk_length = text_length chunk;
+    const push_output: (ProcessOutputBuffer, Text) -> ProcessOutputBuffer = (
+      buffer: ProcessOutputBuffer,
+      chunk: Text,
+    ) => do
+      let [max_bytes, head, tail, omitted_bytes] = buffer;
+      let chunk_length = text_length chunk;
 
-  if chunk_length == 0 {
-    buffer
-  } else if max_bytes == 0 {
-    [max_bytes, "", "", omitted_bytes + chunk_length]
-  } else {
-    let head_budget = max_bytes / 2;
-    let tail_budget = max_bytes - head_budget;
-    let remaining_head = max_i32 [0, head_budget - text_length head];
-    let head_length = min_i32 [remaining_head, chunk_length];
-    let next_head = text_append [head, text_slice [chunk, 0, head_length]];
-    let tail_input = text_slice [chunk, head_length, chunk_length];
-    let tail_input_length = text_length tail_input;
+      if chunk_length == 0 then
+        buffer
+      else max_bytes == 0 then
+        [max_bytes, "", "", omitted_bytes + chunk_length]
+      else
+        let head_budget = max_bytes / 2;
+        let tail_budget = max_bytes - head_budget;
+        let remaining_head = max_i32 (0, head_budget - text_length head);
+        let head_length = min_i32 (remaining_head, chunk_length);
+        let next_head = text_append (head, text_slice (chunk, 0, head_length));
+        let tail_input = text_slice (chunk, head_length, chunk_length);
+        let tail_input_length = text_length tail_input;
 
-    if tail_input_length == 0 {
-      [max_bytes, next_head, tail, omitted_bytes]
-    } else if tail_budget == 0 {
-      [max_bytes, next_head, "", omitted_bytes + tail_input_length]
-    } else if tail_input_length >= tail_budget {
-      let kept = text_slice [tail_input, tail_input_length - tail_budget, tail_input_length];
-      let dropped = text_length tail + tail_input_length - tail_budget;
-      [max_bytes, next_head, kept, omitted_bytes + dropped];
-    } else {
-      let combined = text_append [tail, tail_input];
-      let combined_length = text_length combined;
+        if tail_input_length == 0 then
+          [max_bytes, next_head, tail, omitted_bytes]
+        else tail_budget == 0 then
+          [max_bytes, next_head, "", omitted_bytes + tail_input_length]
+        else tail_input_length >= tail_budget then
+          let kept = text_slice (tail_input, tail_input_length - tail_budget, tail_input_length);
+          let dropped = text_length tail + tail_input_length - tail_budget;
+          [max_bytes, next_head, kept, omitted_bytes + dropped];
+        else
+          let combined = text_append (tail, tail_input);
+          let combined_length = text_length combined;
 
-      if combined_length <= tail_budget {
-        [max_bytes, next_head, combined, omitted_bytes]
-      } else {
-        let dropped = combined_length - tail_budget;
-        let kept = text_slice [combined, dropped, combined_length];
-        [max_bytes, next_head, kept, omitted_bytes + dropped];
-      }
-    }
-  }
-};
+          if combined_length <= tail_budget then
+            [max_bytes, next_head, combined, omitted_bytes]
+          else
+            let dropped = combined_length - tail_budget;
+            let kept = text_slice (combined, dropped, combined_length);
+            [max_bytes, next_head, kept, omitted_bytes + dropped];
+          end;
+        end;
+      end;
+    end;
 
-const retained_output_bytes = (buffer: ProcessOutputBuffer) => {
-  let [_, head, tail, _] = buffer;
-  text_length head + text_length tail
-};
+    const retained_output_bytes = (buffer: ProcessOutputBuffer) => do
+      let [_, head, tail, _] = buffer;
+      text_length head + text_length tail
+    end;
 
-const total_output_bytes = (buffer: ProcessOutputBuffer) => {
-  let [_, _, _, omitted_bytes] = buffer;
-  retained_output_bytes buffer + omitted_bytes
-};
+    const total_output_bytes = (buffer: ProcessOutputBuffer) => do
+      let [_, _, _, omitted_bytes] = buffer;
+      retained_output_bytes buffer + omitted_bytes
+    end;
 
-const render_output = (buffer: ProcessOutputBuffer) => {
-  let [_, head, tail, omitted_bytes] = buffer;
+    const render_output = (buffer: ProcessOutputBuffer) => do
+      let [_, head, tail, omitted_bytes] = buffer;
 
-  if omitted_bytes == 0 {
-    text_append [head, tail]
-  } else {
-    text_append [
-      head,
-      text_append [
-        "\n... ",
-        text_append [format_i32 omitted_bytes, text_append [" bytes omitted ...\n", tail]],
-      ],
-    ]
-  }
-};
+      if omitted_bytes == 0 then
+        text_append (head, tail)
+      else
+        text_append (
+          head,
+          text_append (
+            "\n... ",
+            text_append (format_i32 omitted_bytes, text_append (" bytes omitted ...\n", tail)),
+          ),
+        )
+      end;
+    end;
 
-const initial_process_state: () -> ProcessState = () => [false, `None (), `None (), false];
+    const initial_process_state: () -> ProcessState = () => [false, #None, #None, false];
 
-const process_exited: [ProcessState, ProcessI32Option] -> ProcessState = (
-  state: ProcessState,
-  exit_code: ProcessI32Option,
-) => {
-  let [_, _, failure, sandbox_denied] = state;
-  [true, exit_code, failure, sandbox_denied];
-};
+    const process_exited: (ProcessState, ProcessI32Option) -> ProcessState = (
+      state: ProcessState,
+      exit_code: ProcessI32Option,
+    ) => do
+      let [_, _, failure, sandbox_denied] = state;
+      [true, exit_code, failure, sandbox_denied];
+    end;
 
-const process_failed: [ProcessState, Text] -> ProcessState = (state: ProcessState, message: Text) => {
-    let [_, exit_code, _, sandbox_denied] = state;
-    [true, exit_code, `Some message, sandbox_denied];
-  };
+    const process_failed: (ProcessState, Text) -> ProcessState = (
+      state: ProcessState,
+      message: Text,
+    ) => do
+      let [_, exit_code, _, sandbox_denied] = state;
+      [true, exit_code, #Some message, sandbox_denied];
+    end;
 
-const process_sandbox_denied: ProcessState -> ProcessState = (state: ProcessState) => {
-  let [has_exited, exit_code, failure, _] = state;
-  [has_exited, exit_code, failure, true];
-};
+    const process_sandbox_denied: ProcessState -> ProcessState = (state: ProcessState) => do
+      let [has_exited, exit_code, failure, _] = state;
+      [has_exited, exit_code, failure, true];
+    end;
 
-const process_succeeded = (state: ProcessState) => {
-  let [has_exited, exit_code, failure, _] = state;
+    const process_succeeded = (state: ProcessState) => do
+      let [has_exited, exit_code, failure, _] = state;
 
-  if !(has_exited) {
-    false
-  } else if let `Some _ = failure {
-    false
-  } else if let `Some code = exit_code {
-    code == 0
-  } else {
-    false
-  }
-};
+      if !(has_exited) then
+        false
+      else let #Some _ = failure then
+        false
+      else let #Some code = exit_code then
+        code == 0
+      else
+        false
+      end;
+    end;
 
-return {
-  .shell_type_from_path,
-  .resolve_command,
-  .clamp_initial_yield_time,
-  .clamp_write_stdin_yield_time,
-  .resolve_max_output_tokens,
-  .empty_output_buffer,
-  .push_output,
-  .retained_output_bytes,
-  .total_output_bytes,
-  .render_output,
-  .initial_process_state,
-  .process_exited,
-  .process_failed,
-  .process_sandbox_denied,
-  .process_succeeded,
-};
+    return {
+      .shell_type_from_path,
+      .resolve_command,
+      .clamp_initial_yield_time,
+      .clamp_write_stdin_yield_time,
+      .resolve_max_output_tokens,
+      .empty_output_buffer,
+      .push_output,
+      .retained_output_bytes,
+      .total_output_bytes,
+      .render_output,
+      .initial_process_state,
+      .process_exited,
+      .process_failed,
+      .process_sandbox_denied,
+      .process_succeeded,
+    };

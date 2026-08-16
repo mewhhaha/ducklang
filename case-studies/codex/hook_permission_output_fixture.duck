@@ -9,29 +9,29 @@ let parsed =
   parse_permission_output "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\" blocked \"}}}";
 let score: I32 = 0;
 
-if let `PermissionOk output = parsed {
+if let #PermissionOk output = parsed then
   let [universal, decision, invalid] = output;
   let [continue_processing, _, suppress_output, _] = universal;
 
-  if continue_processing {
+  if continue_processing then
     score = score + 1
-  }
+  end;
 
-  if suppress_output {
+  if suppress_output then
     ()
-  } else {
+  else
     score = score + 10
-  }
+  end;
 
-  if let `Some value = decision {
-    if let `Deny message = value {
-      if message == "blocked" {
-        if let `None () = invalid {
+  if let #Some value = decision then
+    if let #Deny message = value then
+      if message == "blocked" then
+        if let #None = invalid then
           score = score + 100
-        }
-      }
-    }
-  }
-}
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

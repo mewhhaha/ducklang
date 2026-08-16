@@ -12,13 +12,13 @@ type FixtureRetryDecision = ToolSandboxRetryDecision
 
 const paths = comptime list Text;
 
-let restricted_kind: FixtureSandboxKind = `Restricted ();
+let restricted_kind: FixtureSandboxKind = #Restricted;
 let roots = paths.singleton "/repo";
 let restricted: FixtureSandbox = [restricted_kind, roots, false, false];
 let denied_reads: FixtureSandbox = [restricted_kind, roots, false, true];
-let unless_trusted: FixtureApproval = `UnlessTrusted ();
-let never: FixtureApproval = `Never ();
-let on_request: FixtureApproval = `OnRequest ();
+let unless_trusted: FixtureApproval = #UnlessTrusted;
+let never: FixtureApproval = #Never;
+let on_request: FixtureApproval = #OnRequest;
 let score: I32 = 0;
 
 let decision: FixtureRetryDecision = plan_sandbox_retry(
@@ -30,21 +30,33 @@ let decision: FixtureRetryDecision = plan_sandbox_retry(
   false,
   "sandbox denied",
 );
-if let `RetrySandbox plan = decision {
+if let #RetrySandbox plan = decision then
   let [sandbox_requested, needs_approval, reason] = plan;
-  if !(sandbox_requested) && !(needs_approval) && reason == "sandbox denied" {
+  if !(sandbox_requested) && !(needs_approval) && reason == "sandbox denied" then
     score = score + 1
-  }
-}
+  end;
+end;
 
-decision = plan_sandbox_retry(unless_trusted, restricted, true, true, true, false, "sandbox denied")
-if let `RetrySandbox plan = decision {
+decision = plan_sandbox_retry(
+  unless_trusted,
+  restricted,
+  true,
+  true,
+  true,
+  false,
+  "sandbox denied",
+)
+if let #RetrySandbox plan = decision then
   let [_, needs_approval, _] = plan;
-  if needs_approval { score = score + 10 }
-}
+  if needs_approval then
+    score = score + 10
+  end;
+end;
 
 decision = plan_sandbox_retry(never, restricted, true, false, false, false, "sandbox denied")
-if let `PreserveDenial _ = decision { score = score + 100 }
+if let #PreserveDenial _ = decision then
+  score = score + 100
+end;
 
 decision = plan_sandbox_retry(
   unless_trusted,
@@ -55,14 +67,24 @@ decision = plan_sandbox_retry(
   false,
   "sandbox denied",
 )
-if let `PreserveDenial _ = decision { score = score + 1000 }
+if let #PreserveDenial _ = decision then
+  score = score + 1000
+end;
 
-decision = plan_sandbox_retry(on_request, denied_reads, true, false, false, true, "network denied")
-if let `RetrySandbox plan = decision {
+decision = plan_sandbox_retry(
+  on_request,
+  denied_reads,
+  true,
+  false,
+  false,
+  true,
+  "network denied",
+)
+if let #RetrySandbox plan = decision then
   let [sandbox_requested, needs_approval, reason] = plan;
-  if sandbox_requested && needs_approval && reason == "Network access is blocked by policy" {
+  if sandbox_requested && needs_approval && reason == "Network access is blocked by policy" then
     score = score + 10000
-  }
-}
+  end;
+end;
 
 return { .score = score };

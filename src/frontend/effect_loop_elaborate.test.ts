@@ -9,30 +9,30 @@ effect Counter {
   add: (I32) => Unit
 }
 
-let run: () -> <Counter> I32 = () => {
-  for value in 0..4 {
-    if value % 2 == 0 {
+let run: () -> <Counter> I32 = () => do
+  for value in 0..4 do
+    if value % 2 == 0 then
       continue;
-    }
+    end;
 
     _ <- Counter.add(value)
-  }
+  end
 
   total <- Counter.get()
   total
-};
+end;
 
-let counter = {
+let counter = do
   let count = 0;
   handler Counter {
     get: (!resume) => !resume count,
-    add: (amount, !resume) => {
+    add: (amount, !resume) => do
       count = count + amount
       !resume(())
-    },
+    end,
     return: value => value,
   }
-};
+end;
 
 try run() with counter
 `;
@@ -60,7 +60,7 @@ Deno.test("continue in an effectful range loop becomes a recursive tail call", (
 
   assert_includes(
     elaborated,
-    "if value % 2 == 0 __duck_effect_loop_0 " +
+    "if value % 2 == 0 then __duck_effect_loop_0 " +
       "[__duck_effect_range_index_0, count] else",
   );
 });

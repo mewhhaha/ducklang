@@ -26,7 +26,7 @@ let state: FixtureState = initial_lifecycle_state();
 let process_id: FixtureI32Option = ExecEventI32Option.Some(1000);
 let no_input: FixtureTextOption = ExecEventTextOption.None();
 let command: FixtureCommand = ["/bin/zsh", "-c", "printf hello", "", 3];
-let source: FixtureSource = `UnifiedExecStartup ();
+let source: FixtureSource = #UnifiedExecStartup;
 let begin: FixtureBeginPlan = plan_exec_begin(
   state,
   "call-1",
@@ -39,22 +39,22 @@ let begin: FixtureBeginPlan = plan_exec_begin(
   no_input,
 );
 
-if let `EmitBegin emission = begin {
+if let #EmitBegin emission = begin then
   let [next, event] = emission;
   _ <- ExecEvents.begin(&event)
   state = next
   score = score + 1
-}
+end;
 
-let stream: FixtureStream = `Stdout ();
+let stream: FixtureStream = #Stdout;
 let delta: FixtureDeltaPlan = plan_output_delta(state, "call-1", stream, "hello");
 
-if let `EmitDelta emission = delta {
+if let #EmitDelta emission = delta then
   let [next, event, _] = emission;
   _ <- ExecEvents.output_delta(&event)
   state = next
   score = score + 1
-}
+end;
 
 let interaction: FixtureInteractionPlan = plan_terminal_interaction(
   "call-1",
@@ -62,10 +62,10 @@ let interaction: FixtureInteractionPlan = plan_terminal_interaction(
   process_id,
   "yes\n",
 );
-if let `EmitInteraction event = interaction {
+if let #EmitInteraction event = interaction then
   _ <- ExecEvents.interaction(&event)
   score = score + 1
-}
+end;
 
 let ended: FixtureEndPlan = plan_exec_end(
   state,
@@ -85,10 +85,10 @@ let ended: FixtureEndPlan = plan_exec_end(
   "hello",
   false,
 );
-if let `EmitEnd emission = ended {
+if let #EmitEnd emission = ended then
   let [_, event] = emission;
-  _ <- ExecEvents.end(&event)
+  _ <- ExecEvents.end (&event)
   score = score + 1
-}
+end;
 
 return { .score = score };

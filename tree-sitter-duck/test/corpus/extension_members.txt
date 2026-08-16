@@ -27,11 +27,12 @@ extend Option {
         (arrow_function
           (parameter
             (wildcard))
-          (application_expression
-            (postfix_expression
-              (identifier))
-            (parenthesized_or_product
-              (unit_pattern)))))
+          (postfix_expression
+            (call_expression
+              (postfix_expression
+                (identifier))
+              (parenthesized_or_product
+                (unit_pattern))))))
       (shape_field
         (identifier)
         (arrow_function

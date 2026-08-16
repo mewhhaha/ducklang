@@ -16,43 +16,47 @@ type AgentJobProjectionThreadNode = AgentJobActiveThreadNode
 type AgentJobProjectionThreads = AgentJobActiveThreads
 
 const agent_job_create_headers: AgentJobProjectionHeaders -> AgentJobProjectionCreateHeaders =
-  headers => {
+  headers => do
     let current = headers;
-    let reversed: AgentJobProjectionCreateHeaders = `Nil ();
+    let reversed: AgentJobProjectionCreateHeaders = #Nil;
     let done = false;
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [header, tail] = node;
         let projected_node: AgentJobProjectionCreateHeaderNode = [header, reversed];
-        reversed = `Cons projected_node
+        reversed = #Cons projected_node
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
-    let projected: AgentJobProjectionCreateHeaders = `Nil ();
+      end;
+      if done then
+        break;
+      end;
+    end;
+    let projected: AgentJobProjectionCreateHeaders = #Nil;
     done = false
-    loop {
-      if let `Cons node = reversed {
+    loop do
+      if let #Cons node = reversed then
         let [header, tail] = node;
         let projected_node: AgentJobProjectionCreateHeaderNode = [header, projected];
-        projected = `Cons projected_node
+        projected = #Cons projected_node
         reversed = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     projected
-  };
+  end;
 
-const agent_job_create_items: AgentJobProjectionItems -> AgentJobProjectionCreateItems = items => {
+const agent_job_create_items: AgentJobProjectionItems -> AgentJobProjectionCreateItems = items => do
   let current = items;
-  let reversed: AgentJobProjectionCreateItems = `Nil ();
+  let reversed: AgentJobProjectionCreateItems = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [item, tail] = node;
       let projected: AgentJobProjectionCreateItem = [
         item.item_id,
@@ -63,30 +67,34 @@ const agent_job_create_items: AgentJobProjectionItems -> AgentJobProjectionCreat
         item.prompt,
       ];
       let projected_node: AgentJobProjectionCreateItemNode = [projected, reversed];
-      reversed = `Cons projected_node
+      reversed = #Cons projected_node
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
-  let projected: AgentJobProjectionCreateItems = `Nil ();
+    end;
+    if done then
+      break;
+    end;
+  end;
+  let projected: AgentJobProjectionCreateItems = #Nil;
   done = false
-  loop {
-    if let `Cons node = reversed {
+  loop do
+    if let #Cons node = reversed then
       let [item, tail] = node;
       let projected_node: AgentJobProjectionCreateItemNode = [item, projected];
-      projected = `Cons projected_node
+      projected = #Cons projected_node
       reversed = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   projected
-};
+end;
 
-const agent_job_create_request: AgentJobProjectionJob -> AgentJobProjectionCreateRequest = job => {
+const agent_job_create_request: AgentJobProjectionJob -> AgentJobProjectionCreateRequest = job => do
   [
     .job_id = job.job_id,
     .name = job.name,
@@ -98,25 +106,27 @@ const agent_job_create_request: AgentJobProjectionJob -> AgentJobProjectionCreat
     .max_runtime_seconds = job.max_runtime_seconds,
     .items = agent_job_create_items job.items,
   ]
-};
+end;
 
-const agent_job_active_threads: AgentJobProjectionActive -> AgentJobProjectionThreads = active => {
+const agent_job_active_threads: AgentJobProjectionActive -> AgentJobProjectionThreads = active => do
   let current = active;
-  let threads: AgentJobProjectionThreads = `Nil ();
+  let threads: AgentJobProjectionThreads = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [worker, tail] = node;
       let thread_node: AgentJobProjectionThreadNode = [worker.thread_id, threads];
-      threads = `Cons thread_node
+      threads = #Cons thread_node
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   threads
-};
+end;
 
 return {
   .agent_job_active_threads,

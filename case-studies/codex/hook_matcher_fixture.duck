@@ -17,41 +17,41 @@ const texts = comptime list Text;
 const handlers = comptime list FixtureHandler;
 
 let score: I32 = 0;
-let pre_tool: FixtureEvent = `PreToolUse ();
-let user: FixtureSource = `User ();
+let pre_tool: FixtureEvent = #PreToolUse;
+let user: FixtureSource = #User;
 
-let exact = parse_hook_matcher(pre_tool, `Some "apply_patch|Write|Edit");
+let exact = parse_hook_matcher(pre_tool, #Some "apply_patch|Write|Edit");
 
-if let `Ok matcher = exact {
-  if hook_matcher_matches(matcher, "Write") {
-    if hook_matcher_matches(matcher, "Bash") {
+if let #Ok matcher = exact then
+  if hook_matcher_matches(matcher, "Write") then
+    if hook_matcher_matches(matcher, "Bash") then
       ()
-    } else {
+    else
       score = score + 1
-    }
-  }
-}
+    end;
+  end;
+end;
 
-let ignored = parse_hook_matcher(`Stop (), `Some "[");
+let ignored = parse_hook_matcher(#Stop, #Some "[");
 
-if let `Ok matcher = ignored {
-  if hook_matcher_matches(matcher, "anything") {
+if let #Ok matcher = ignored then
+  if hook_matcher_matches(matcher, "anything") then
     score = score + 32
-  }
-}
+  end;
+end;
 
-let first_matcher = parse_hook_matcher(pre_tool, `Some "^apply_patch$");
-let second_matcher = parse_hook_matcher(pre_tool, `Some "Edit|Write");
+let first_matcher = parse_hook_matcher(pre_tool, #Some "^apply_patch$");
+let second_matcher = parse_hook_matcher(pre_tool, #Some "Edit|Write");
 let available: FixtureHandlers = handlers.empty();
 
-if let `Ok first = first_matcher {
-  if let `Ok second = second_matcher {
+if let #Ok first = first_matcher then
+  if let #Ok second = second_matcher then
     let first_handler: FixtureHandler = [
       pre_tool,
       first,
       "first",
       5,
-      `None (),
+      #None,
       "/repo/hooks.json",
       user,
       0,
@@ -61,14 +61,14 @@ if let `Ok first = first_matcher {
       second,
       "second",
       600,
-      `None (),
+      #None,
       "/repo/hooks.json",
       user,
       1,
     ];
     available = handlers.prepend(first_handler, handlers.singleton(second_handler))
-  }
-}
+  end;
+end;
 
 let matcher_inputs: FixtureTexts = texts.prepend(
   "apply_patch",
@@ -76,8 +76,8 @@ let matcher_inputs: FixtureTexts = texts.prepend(
 );
 let selected = select_hook_handlers(available, pre_tool, matcher_inputs);
 
-if handlers.length(selected) == 2 {
+if handlers.length(selected) == 2 then
   score = score + 64
-}
+end;
 
 return { .score = score };

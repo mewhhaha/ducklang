@@ -6,12 +6,12 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixturePlan = CodexCliPlan
 
-let input: FixtureArgs = `Cons (["--uncommitted", `Nil ()]);
+let input: FixtureArgs = #Cons (["--uncommitted", #Nil]);
 let plan: FixturePlan = plan_review_command input;
-let score = if let `RunExec options = plan {
-  if let `ExecReview target = options.command {
-    if let `ReviewUncommitted () = target { 1 } else { 0 }
-  } else { 0 }
-} else { 0 };
+let score = if let #RunExec options = plan then
+  if let #ExecReview target = options.command then
+    if let #ReviewUncommitted = target then 1 else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

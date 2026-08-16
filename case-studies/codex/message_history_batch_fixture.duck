@@ -9,69 +9,79 @@ const {} = import "./message_history_types.duck" ();
 
 type FixtureEntries = MessageHistoryBatchEntries
 
-let first_two_entry_texts_match: [FixtureEntries, Text, Text] -> Bool = (
+let first_two_entry_texts_match: (FixtureEntries, Text, Text) -> Bool = (
   entries: FixtureEntries,
   expected_first: Text,
   expected_second: Text,
-) => {
+) => do
   let first_matches = false;
   let second_matches = false;
-  if let `Cons first_node = entries {
+  if let #Cons first_node = entries then
     let [first_entry, tail] = first_node;
-    if let `Some entry = first_entry.entry {
+    if let #Some entry = first_entry.entry then
       first_matches = entry.text == expected_first
-    } else {
+    else
       first_matches = expected_first == ""
-    }
-    if let `Cons second_node = tail {
+    end;
+    if let #Cons second_node = tail then
       let [second_entry, _] = second_node;
-      if let `Some entry = second_entry.entry {
+      if let #Some entry = second_entry.entry then
         second_matches = entry.text == expected_second
-      } else {
+      else
         second_matches = expected_second == ""
-      }
-    }
-  }
+      end;
+    end;
+  end;
   first_matches && second_matches
-};
+end;
 
 let oldest = message_history_entry("session-1", 1i64, "oldest");
 let middle = message_history_entry("session-1", 2i64, "middle");
 let newest = message_history_entry("session-1", 3i64, "newest");
-let contents = text_append [
-  text_append [
-    text_append [encode_message_history_line(&oldest), "not-json\n"],
+let contents = text_append (
+  text_append (
+    text_append (encode_message_history_line(&oldest), "not-json\n"),
     encode_message_history_line(&middle),
-  ],
+  ),
   encode_message_history_line(&newest),
-];
+);
 let score = 0;
 
 let found = lookup_message_history_entry(&contents, 2, true);
-if let `Some _ = found { score = score + 1 }
+if let #Some _ = found then
+  score = score + 1
+end;
 
 let stale = lookup_message_history_entry(&contents, 2, false);
-if let `None () = stale { score = score + 10 }
+if let #None = stale then
+  score = score + 10
+end;
 
 let first = lookup_message_history_batch_with_limits(&contents, 3, true, 2, 65536);
 let first_entries_match = first_two_entry_texts_match(first.entries, "newest", "middle");
 let first_next_older_offset = first.next_older_offset;
-if first_entries_match {
-  if let `Some offset = first_next_older_offset {
-    if offset == 1 { score = score + 100 }
-  }
-}
+if first_entries_match then
+  if let #Some offset = first_next_older_offset then
+    if offset == 1 then
+      score = score + 100
+    end;
+  end;
+end;
 
 let second = lookup_message_history_batch_with_limits(&contents, 1, true, 2, 65536);
 let second_entries_match = first_two_entry_texts_match(second.entries, "", "oldest");
 let second_next_older_offset = second.next_older_offset;
-if second_entries_match {
-  if let `None () = second_next_older_offset { score = score + 1000 }
-}
+if second_entries_match then
+  if let #None = second_next_older_offset then
+    score = score + 1000
+  end;
+end;
 
 let mismatch = lookup_message_history_batch_with_limits(&contents, 3, false, 2, 65536);
-let mismatch_entries_empty = if let `Nil () = mismatch.entries { true } else { false };
-let mismatch_offset_missing = if let `None () = mismatch.next_older_offset { true } else { false };
-if mismatch_entries_empty && mismatch_offset_missing { score = score + 10000 }
+let mismatch_entries_empty = if let #Nil = mismatch.entries then true else false end;
+let mismatch_offset_missing = if let #None = mismatch.next_older_offset then true else false end;
+if mismatch_entries_empty && mismatch_offset_missing then
+  score = score + 10000
+end;
 
 return { .score = score };

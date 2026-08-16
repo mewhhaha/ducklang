@@ -21,22 +21,22 @@ const fixture_texts = comptime list Text;
 
 let score: I32 = 0;
 let first: FixtureEvaluation = [
-  `Blocked (),
+  #Blocked,
   fixture_entries.empty(),
   block_action "first",
   fixture_texts.singleton("one"),
   fixture_texts.empty(),
-  `UpdatedInput "one",
-  `Some (`Allow ()),
+  #UpdatedInput "one",
+  #Some (#Allow),
 ];
 let second: FixtureEvaluation = [
-  `Stopped (),
+  #Stopped,
   fixture_entries.empty(),
-  stop_action(`Some "done"),
+  stop_action(#Some "done"),
   fixture_texts.singleton("two"),
   fixture_texts.empty(),
-  `UpdatedInput "two",
-  `Some (`Deny "denied"),
+  #UpdatedInput "two",
+  #Some (#Deny "denied"),
 ];
 let aggregate = empty_hook_command_aggregate();
 aggregate = aggregate_hook_command(aggregate, first)
@@ -44,20 +44,22 @@ aggregate = aggregate_hook_command(aggregate, second)
 let [aggregate_action, aggregate_contexts, _, aggregate_updated, aggregate_permission] = aggregate;
 
 let [_, reason] = aggregate_action;
-if action_is_stop aggregate_action {
-  if let `Some stop_reason = reason {
-    if stop_reason == "done" && fixture_texts.length(aggregate_contexts) == 2 {
-      if let `UpdatedInput updated = aggregate_updated {
-        if updated == "two" {
-          if let `Some decision = aggregate_permission {
-            if let `Deny denial = decision {
-              if denial == "denied" { score = score + 1 }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+if action_is_stop aggregate_action then
+  if let #Some stop_reason = reason then
+    if stop_reason == "done" && fixture_texts.length(aggregate_contexts) == 2 then
+      if let #UpdatedInput updated = aggregate_updated then
+        if updated == "two" then
+          if let #Some decision = aggregate_permission then
+            if let #Deny denial = decision then
+              if denial == "denied" then
+                score = score + 1
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

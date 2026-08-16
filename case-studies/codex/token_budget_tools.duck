@@ -10,32 +10,35 @@ type BudgetWindow = AutoCompactWindow
 type BudgetNewContextResult = NewContextWindowToolResult
 type BudgetI64Option = TokenBudgetI64Option
 
-const new_context_window_tool_output: () -> Text = () => {
+const new_context_window_tool_output: () -> Text = () => do
   "A new context window will start without summarizing conversation history."
-};
+end;
 
-const request_new_context_window_tool: BudgetWindow -> BudgetNewContextResult = window => {
+const request_new_context_window_tool: BudgetWindow -> BudgetNewContextResult = window => do
   let requested_window: BudgetWindow = request_new_context_window window;
   [.window = requested_window, .output = new_context_window_tool_output()];
-};
+end;
 
 const render_context_remaining_tool_output: &BudgetI64Option -> Text = (
-  tokens_left: &BudgetI64Option ) => {
-  if let `Some value = tokens_left {
-    text_append("You have ", text_append(format_i64 value, " tokens left in this context window."))
-  } else {
-    "You have unknown tokens left in this context window."
-  }
-};
+  tokens_left: &BudgetI64Option) => do
+    if let #Some value = tokens_left then
+      text_append(
+        "You have ",
+        text_append(format_i64 value, " tokens left in this context window."),
+      )
+    else
+      "You have unknown tokens left in this context window."
+    end;
+  end;
 
 const render_context_remaining_code_mode_output: &BudgetI64Option -> Text = (
-  tokens_left: &BudgetI64Option ) => {
-  if let `Some value = tokens_left {
-    text_append("{\"tokens_left\":", text_append(format_i64 value, "}"))
-  } else {
-    "{\"tokens_left\":null}"
-  }
-};
+  tokens_left: &BudgetI64Option) => do
+    if let #Some value = tokens_left then
+      text_append("{\"tokens_left\":", text_append(format_i64 value, "}"))
+    else
+      "{\"tokens_left\":null}"
+    end;
+  end;
 
 return {
   .new_context_window_tool_output,

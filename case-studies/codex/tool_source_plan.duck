@@ -7,478 +7,493 @@ const {} = import "./tool_source_types.duck" ();
 type SourceDefinition = [ToolName, ToolExposure, ToolHandler, ToolPayloadKind, Bool, Bool]
 type SourceDefinitionNode = [SourceDefinition, ToolSourceDefinitions]
 type ToolSourceDefinitions =
-  | `Nil Unit
-  | `Cons SourceDefinitionNode
+  | #Nil
+  | #Cons SourceDefinitionNode
 
-let rec append_tool_definitions: [ToolSourceDefinitions, ToolSourceDefinitions] ->
+let rec append_tool_definitions: (ToolSourceDefinitions, ToolSourceDefinitions) ->
   ToolSourceDefinitions = (
     first,
     second,
-  ) => {
-    if let `Cons node = first {
+  ) => do
+    if let #Cons node = first then
       let [definition, remaining] = node;
-      `Cons ([definition, append_tool_definitions(remaining, second)])
-    } else {
+      #Cons ([definition, append_tool_definitions(remaining, second)])
+    else
       second
-    }
-  };
+    end;
+  end;
 
-const single_tool_definition: SourceDefinition -> ToolSourceDefinitions = definition => {
-  `Cons ([definition, `Nil ()])
-};
+const single_tool_definition: SourceDefinition -> ToolSourceDefinitions = definition => do
+  #Cons ([definition, #Nil])
+end;
 
-const environment_available: ToolSourceEnvironment -> Bool = environment => {
-  if let `NoEnvironment () = environment { false } else { true }
-};
+const environment_available: ToolSourceEnvironment -> Bool = environment => do
+  if let #NoEnvironment = environment then false else true end;
+end;
 
-const shell_tool_definitions: [ToolSourceEnvironment, ToolSourceShell] -> ToolSourceDefinitions = (
+const shell_tool_definitions: (ToolSourceEnvironment, ToolSourceShell) -> ToolSourceDefinitions = (
   environment,
   shell,
-) => {
-  if !(environment_available environment) {
-    return `Nil ();
-  }
+) => do
+  if !(environment_available environment) then
+    return #Nil;
+  end;
 
-  if let `UnifiedExecShell () = shell {
+  if let #UnifiedExecShell = shell then
     let exec: SourceDefinition = [
       ["", "exec_command"],
-      `Direct (),
-      `UnifiedExec (),
-      `FunctionPayload (),
+      #Direct,
+      #UnifiedExec,
+      #FunctionPayload,
       true,
       false,
     ];
     let write_stdin: SourceDefinition = [
       ["", "write_stdin"],
-      `Direct (),
-      `WriteStdin (),
-      `FunctionPayload (),
+      #Direct,
+      #WriteStdin,
+      #FunctionPayload,
       true,
       false,
     ];
     let legacy: SourceDefinition = [
       ["", "shell_command"],
-      `Hidden (),
-      `Shell (),
-      `FunctionPayload (),
+      #Hidden,
+      #Shell,
+      #FunctionPayload,
       true,
       true,
     ];
-    `Cons ([exec, `Cons ([write_stdin, `Cons ([legacy, `Nil ()])])])
-  } else if let `LegacyShell () = shell {
+    #Cons ([exec, #Cons ([write_stdin, #Cons ([legacy, #Nil])])])
+  else let #LegacyShell = shell then
     let legacy: SourceDefinition = [
       ["", "shell_command"],
-      `Direct (),
-      `Shell (),
-      `FunctionPayload (),
+      #Direct,
+      #Shell,
+      #FunctionPayload,
       true,
       true,
     ];
-    `Cons ([legacy, `Nil ()])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([legacy, #Nil])
+  else
+    #Nil
+  end;
+end;
 
-const guardian_tool_definitions: ToolSourceEnvironment -> ToolSourceDefinitions = environment => {
-  if !(environment_available environment) {
-    return `Nil ();
-  }
+const guardian_tool_definitions: ToolSourceEnvironment -> ToolSourceDefinitions = environment => do
+  if !(environment_available environment) then
+    return #Nil;
+  end;
 
   let exec: SourceDefinition = [
     ["", "exec_command"],
-    `Direct (),
-    `UnifiedExec (),
-    `FunctionPayload (),
+    #Direct,
+    #UnifiedExec,
+    #FunctionPayload,
     true,
     false,
   ];
   let write_stdin: SourceDefinition = [
     ["", "write_stdin"],
-    `Direct (),
-    `WriteStdin (),
-    `FunctionPayload (),
+    #Direct,
+    #WriteStdin,
+    #FunctionPayload,
     true,
     false,
   ];
   let view_image: SourceDefinition = [
     ["", "view_image"],
-    `Direct (),
-    `ViewImage (),
-    `FunctionPayload (),
+    #Direct,
+    #ViewImage,
+    #FunctionPayload,
     true,
     false,
   ];
-  `Cons ([exec, `Cons ([write_stdin, `Cons ([view_image, `Nil ()])])])
-};
+  #Cons ([exec, #Cons ([write_stdin, #Cons ([view_image, #Nil])])])
+end;
 
-let plugin_tool_definitions: ToolSourcePluginInstall -> ToolSourceDefinitions = plugin_install => {
-  if let `ListPluginInstall () = plugin_install {
+let plugin_tool_definitions: ToolSourcePluginInstall -> ToolSourceDefinitions = plugin_install => do
+  if let #ListPluginInstall = plugin_install then
     let list: SourceDefinition = [
       ["", "list_available_plugins_to_install"],
-      `Direct (),
-      `ListAvailablePluginsToInstall (),
-      `FunctionPayload (),
+      #Direct,
+      #ListAvailablePluginsToInstall,
+      #FunctionPayload,
       false,
       false,
     ];
     let request: SourceDefinition = [
       ["", "request_plugin_install"],
-      `Direct (),
-      `RequestPluginInstall (),
-      `FunctionPayload (),
+      #Direct,
+      #RequestPluginInstall,
+      #FunctionPayload,
       false,
       false,
     ];
-    `Cons ([list, `Cons ([request, `Nil ()])])
-  } else if let `RecommendPluginInstall () = plugin_install {
+    #Cons ([list, #Cons ([request, #Nil])])
+  else let #RecommendPluginInstall = plugin_install then
     let request: SourceDefinition = [
       ["", "request_plugin_install"],
-      `Direct (),
-      `RequestPluginInstall (),
-      `FunctionPayload (),
+      #Direct,
+      #RequestPluginInstall,
+      #FunctionPayload,
       false,
       false,
     ];
     single_tool_definition request
-  } else {
-    `Nil ()
-  }
-};
+  else
+    #Nil
+  end;
+end;
 
-let utility_tool_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
+let utility_tool_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => do
   let update_plan: SourceDefinition = [
     ["", "update_plan"],
-    `Direct (),
-    `UpdatePlan (),
-    `FunctionPayload (),
+    #Direct,
+    #UpdatePlan,
+    #FunctionPayload,
     false,
     false,
   ];
   let definitions = single_tool_definition update_plan;
 
-  if facts.deferred_executor {
+  if facts.deferred_executor then
     let wait_for_environment: SourceDefinition = [
       ["", "wait_for_environment"],
-      `Direct (),
-      `WaitForEnvironment (),
-      `FunctionPayload (),
-      false,
-      false,
-    ];
-    definitions = append_tool_definitions(definitions, single_tool_definition wait_for_environment)
-  }
-
-  if facts.request_user_input {
-    let request_user_input: SourceDefinition = [
-      ["", "request_user_input"],
-      `DirectModelOnly (),
-      `RequestUserInput (),
-      `FunctionPayload (),
-      false,
-      false,
-    ];
-    definitions = append_tool_definitions(definitions, single_tool_definition request_user_input)
-  }
-
-  if environment_available facts.environment && facts.request_permissions {
-    let request_permissions: SourceDefinition = [
-      ["", "request_permissions"],
-      `Direct (),
-      `RequestPermissions (),
-      `FunctionPayload (),
-      false,
-      false,
-    ];
-    definitions = append_tool_definitions(definitions, single_tool_definition request_permissions)
-  }
-
-  if facts.token_budget {
-    let new_context: SourceDefinition = [
-      ["", "new_context_window"],
-      `DirectModelOnly (),
-      `NewContextWindow (),
-      `FunctionPayload (),
-      false,
-      false,
-    ];
-    let remaining: SourceDefinition = [
-      ["", "get_context_remaining"],
-      `Direct (),
-      `GetContextRemaining (),
-      `FunctionPayload (),
+      #Direct,
+      #WaitForEnvironment,
+      #FunctionPayload,
       false,
       false,
     ];
     definitions = append_tool_definitions(
       definitions,
-      `Cons ([new_context, `Cons ([remaining, `Nil ()])]),
+      single_tool_definition wait_for_environment,
     )
-  }
+  end;
 
-  if facts.current_time {
+  if facts.request_user_input then
+    let request_user_input: SourceDefinition = [
+      ["", "request_user_input"],
+      #DirectModelOnly,
+      #RequestUserInput,
+      #FunctionPayload,
+      false,
+      false,
+    ];
+    definitions = append_tool_definitions(
+      definitions,
+      single_tool_definition request_user_input,
+    )
+  end;
+
+  if environment_available facts.environment && facts.request_permissions then
+    let request_permissions: SourceDefinition = [
+      ["", "request_permissions"],
+      #Direct,
+      #RequestPermissions,
+      #FunctionPayload,
+      false,
+      false,
+    ];
+    definitions = append_tool_definitions(
+      definitions,
+      single_tool_definition request_permissions,
+    )
+  end;
+
+  if facts.token_budget then
+    let new_context: SourceDefinition = [
+      ["", "new_context_window"],
+      #DirectModelOnly,
+      #NewContextWindow,
+      #FunctionPayload,
+      false,
+      false,
+    ];
+    let remaining: SourceDefinition = [
+      ["", "get_context_remaining"],
+      #Direct,
+      #GetContextRemaining,
+      #FunctionPayload,
+      false,
+      false,
+    ];
+    definitions = append_tool_definitions(
+      definitions,
+      #Cons ([new_context, #Cons ([remaining, #Nil])]),
+    )
+  end;
+
+  if facts.current_time then
     let current_time: SourceDefinition = [
       ["clock", "curr_time"],
-      `Direct (),
-      `CurrentTime (),
-      `FunctionPayload (),
+      #Direct,
+      #CurrentTime,
+      #FunctionPayload,
       false,
       false,
     ];
     definitions = append_tool_definitions(definitions, single_tool_definition current_time)
-    if facts.sleep_tool {
+    if facts.sleep_tool then
       let sleep: SourceDefinition = [
         ["clock", "sleep"],
-        `Direct (),
-        `Sleep (),
-        `FunctionPayload (),
+        #Direct,
+        #Sleep,
+        #FunctionPayload,
         false,
         false,
       ];
       definitions = append_tool_definitions(definitions, single_tool_definition sleep)
-    }
-  }
+    end;
+  end;
 
-  definitions = append_tool_definitions(definitions, plugin_tool_definitions facts.plugin_install)
+  definitions = append_tool_definitions(
+    definitions,
+    plugin_tool_definitions facts.plugin_install,
+  )
 
-  if environment_available facts.environment && facts.apply_patch {
+  if environment_available facts.environment && facts.apply_patch then
     let apply_patch: SourceDefinition = [
       ["", "apply_patch"],
-      `Direct (),
-      `ApplyPatch (),
-      `CustomPayload (),
+      #Direct,
+      #ApplyPatch,
+      #CustomPayload,
       false,
       false,
     ];
     definitions = append_tool_definitions(definitions, single_tool_definition apply_patch)
-  }
+  end;
 
-  if facts.test_sync {
+  if facts.test_sync then
     let test_sync: SourceDefinition = [
       ["", "test_sync_tool"],
-      `Direct (),
-      `TestSync (),
-      `FunctionPayload (),
+      #Direct,
+      #TestSync,
+      #FunctionPayload,
       true,
       false,
     ];
     definitions = append_tool_definitions(definitions, single_tool_definition test_sync)
-  }
+  end;
 
-  if environment_available facts.environment {
+  if environment_available facts.environment then
     let view_image: SourceDefinition = [
       ["", "view_image"],
-      `Direct (),
-      `ViewImage (),
-      `FunctionPayload (),
+      #Direct,
+      #ViewImage,
+      #FunctionPayload,
       true,
       false,
     ];
     definitions = append_tool_definitions(definitions, single_tool_definition view_image)
-  }
+  end;
 
   definitions
-};
+end;
 
-const collaboration_v1_tool_definitions: Bool -> ToolSourceDefinitions = tool_search => {
-  let exposure = if tool_search { `Deferred () } else { `Direct () };
+const collaboration_v1_tool_definitions: Bool -> ToolSourceDefinitions = tool_search => do
+  let exposure = if tool_search then #Deferred else #Direct end;
   let spawn: SourceDefinition = [
     ["multi_agent_v1", "spawn_agent"],
     exposure,
-    `SpawnAgent (),
-    `FunctionPayload (),
+    #SpawnAgent,
+    #FunctionPayload,
     false,
     false,
   ];
   let send: SourceDefinition = [
     ["multi_agent_v1", "send_input"],
     exposure,
-    `SendAgentInput (),
-    `FunctionPayload (),
+    #SendAgentInput,
+    #FunctionPayload,
     false,
     false,
   ];
   let resume: SourceDefinition = [
     ["multi_agent_v1", "resume_agent"],
     exposure,
-    `ResumeAgent (),
-    `FunctionPayload (),
+    #ResumeAgent,
+    #FunctionPayload,
     false,
     false,
   ];
   let wait: SourceDefinition = [
     ["multi_agent_v1", "wait_agent"],
     exposure,
-    `WaitAgent (),
-    `FunctionPayload (),
+    #WaitAgent,
+    #FunctionPayload,
     false,
     false,
   ];
   let close: SourceDefinition = [
     ["multi_agent_v1", "close_agent"],
     exposure,
-    `CloseAgent (),
-    `FunctionPayload (),
+    #CloseAgent,
+    #FunctionPayload,
     false,
     false,
   ];
-  `Cons ([spawn, `Cons ([send, `Cons ([resume, `Cons ([wait, `Cons ([close, `Nil ()])])])])])
-};
+  #Cons ([spawn, #Cons ([send, #Cons ([resume, #Cons ([wait, #Cons ([close, #Nil])])])])])
+end;
 
-const mcp_tool_definitions: Bool -> ToolSourceDefinitions = has_servers => {
-  if !(has_servers) {
-    return `Nil ();
-  }
+const mcp_tool_definitions: Bool -> ToolSourceDefinitions = has_servers => do
+  if !(has_servers) then
+    return #Nil;
+  end;
 
   let resources: SourceDefinition = [
     ["", "list_mcp_resources"],
-    `Direct (),
-    `ListMcpResources (),
-    `FunctionPayload (),
+    #Direct,
+    #ListMcpResources,
+    #FunctionPayload,
     true,
     false,
   ];
   let templates: SourceDefinition = [
     ["", "list_mcp_resource_templates"],
-    `Direct (),
-    `ListMcpResourceTemplates (),
-    `FunctionPayload (),
+    #Direct,
+    #ListMcpResourceTemplates,
+    #FunctionPayload,
     true,
     false,
   ];
   let read: SourceDefinition = [
     ["", "read_mcp_resource"],
-    `Direct (),
-    `ReadMcpResource (),
-    `FunctionPayload (),
+    #Direct,
+    #ReadMcpResource,
+    #FunctionPayload,
     true,
     false,
   ];
-  `Cons ([resources, `Cons ([templates, `Cons ([read, `Nil ()])])])
-};
+  #Cons ([resources, #Cons ([templates, #Cons ([read, #Nil])])])
+end;
 
-const collaboration_v2_tool_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
-  let exposure = if facts.collaboration_direct_model_only { `DirectModelOnly () } else { `Direct ()
-  };
-  let namespace = if facts.namespace_tools { facts.collaboration_namespace } else { "" };
+const collaboration_v2_tool_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => do
+  let exposure = if facts.collaboration_direct_model_only then #DirectModelOnly else #Direct
+  end;
+  let namespace = if facts.namespace_tools then facts.collaboration_namespace else "" end;
   let spawn: SourceDefinition = [
     [namespace, "spawn_agent"],
     exposure,
-    `SpawnAgent (),
-    `FunctionPayload (),
+    #SpawnAgent,
+    #FunctionPayload,
     false,
     false,
   ];
   let send: SourceDefinition = [
     [namespace, "send_message"],
     exposure,
-    `SendAgentMessage (),
-    `FunctionPayload (),
+    #SendAgentMessage,
+    #FunctionPayload,
     true,
     false,
   ];
   let followup: SourceDefinition = [
     [namespace, "followup_task"],
     exposure,
-    `FollowupAgentTask (),
-    `FunctionPayload (),
+    #FollowupAgentTask,
+    #FunctionPayload,
     true,
     false,
   ];
   let wait: SourceDefinition = [
     [namespace, "wait_agent"],
     exposure,
-    `WaitAgent (),
-    `FunctionPayload (),
+    #WaitAgent,
+    #FunctionPayload,
     false,
     false,
   ];
   let interrupt: SourceDefinition = [
     [namespace, "interrupt_agent"],
     exposure,
-    `InterruptAgent (),
-    `FunctionPayload (),
+    #InterruptAgent,
+    #FunctionPayload,
     true,
     false,
   ];
   let list: SourceDefinition = [
     [namespace, "list_agents"],
     exposure,
-    `ListAgents (),
-    `FunctionPayload (),
+    #ListAgents,
+    #FunctionPayload,
     true,
     false,
   ];
-  `Cons (
+  #Cons (
     [
       spawn,
-      `Cons (
-        [send, `Cons ([followup, `Cons ([wait, `Cons ([interrupt, `Cons ([list, `Nil ()])])])])]
+      #Cons (
+        [send, #Cons ([followup, #Cons ([wait, #Cons ([interrupt, #Cons ([list, #Nil])])])])]
       ),
     ]
   )
-};
+end;
 
-const collaboration_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
-  if let `CollaborationV2 () = facts.collaboration {
+const collaboration_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => do
+  if let #CollaborationV2 = facts.collaboration then
     collaboration_v2_tool_definitions facts
-  } else if let `CollaborationV1 () = facts.collaboration {
+  else let #CollaborationV1 = facts.collaboration then
     collaboration_v1_tool_definitions facts.tool_search
-  } else {
-    `Nil ()
-  }
-};
+  else
+    #Nil
+  end;
+end;
 
-const collaboration_enabled: ToolSourceCollaboration -> Bool = collaboration => {
-  if let `CollaborationDisabled () = collaboration { false } else { true }
-};
+const collaboration_enabled: ToolSourceCollaboration -> Bool = collaboration => do
+  if let #CollaborationDisabled = collaboration then false else true end;
+end;
 
-const agent_job_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
-  if !(facts.agent_jobs) || !(collaboration_enabled facts.collaboration) {
-    return `Nil ();
-  }
+const agent_job_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => do
+  if !(facts.agent_jobs) || !(collaboration_enabled facts.collaboration) then
+    return #Nil;
+  end;
 
   let spawn: SourceDefinition = [
     ["", "spawn_agents_on_csv"],
-    `Direct (),
-    `SpawnAgentsOnCsv (),
-    `FunctionPayload (),
+    #Direct,
+    #SpawnAgentsOnCsv,
+    #FunctionPayload,
     false,
     false,
   ];
-  if !(facts.agent_job_worker) {
+  if !(facts.agent_job_worker) then
     return single_tool_definition spawn;
-  }
+  end;
 
   let report: SourceDefinition = [
     ["", "report_agent_job_result"],
-    `Direct (),
-    `ReportAgentJobResult (),
-    `FunctionPayload (),
+    #Direct,
+    #ReportAgentJobResult,
+    #FunctionPayload,
     false,
     false,
   ];
-  `Cons ([spawn, `Cons ([report, `Nil ()])])
-};
+  #Cons ([spawn, #Cons ([report, #Nil])])
+end;
 
-let tool_source_definitions: [
+let tool_source_definitions: (
   ToolSourceFacts,
   ToolSourceDefinitions,
   ToolSourceDefinitions,
   ToolSourceDefinitions,
-] -> ToolSourceDefinitions = (facts, configured_runtimes, extension_runtimes, dynamic_runtimes) => {
-  if facts.guardian_reviewer {
+) -> ToolSourceDefinitions = (facts, configured_runtimes, extension_runtimes, dynamic_runtimes) => do
+  if facts.guardian_reviewer then
     return guardian_tool_definitions facts.environment;
-  }
+  end;
 
   let definitions = shell_tool_definitions(facts.environment, facts.shell);
   definitions = append_tool_definitions(definitions, mcp_tool_definitions facts.has_mcp_servers)
   definitions = append_tool_definitions(definitions, utility_tool_definitions facts)
-  definitions = append_tool_definitions(definitions, collaboration_tool_source_definitions facts)
+  definitions = append_tool_definitions(
+    definitions,
+    collaboration_tool_source_definitions facts,
+  )
   definitions = append_tool_definitions(definitions, agent_job_tool_source_definitions facts)
   definitions = append_tool_definitions(definitions, configured_runtimes)
   definitions = append_tool_definitions(definitions, extension_runtimes)
   append_tool_definitions(definitions, dynamic_runtimes)
-};
+end;
 
 return { .tool_source_definitions };

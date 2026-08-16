@@ -9,31 +9,33 @@ type AgentJobCsvOutputCompletion = AgentJobRunCompletion
 type AgentJobCsvOutputItems = AgentJobFinalItems
 type AgentJobCsvOutputResult = AgentJobCsvExportResult
 
-let render_agent_job_csv: AgentJobCsvOutputCompletion -> AgentJobCsvOutputResult = completed => {
+let render_agent_job_csv: AgentJobCsvOutputCompletion -> AgentJobCsvOutputResult = completed => do
   let output = render_agent_job_csv_headers completed.headers;
   let current: AgentJobCsvOutputItems = completed.items;
   let failure = "";
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [item, tail] = node;
       let rendered = render_agent_job_csv_row(completed.job_id, completed.headers, item);
-      if let `CsvExported row = rendered {
-        output = csv_text_append [output, row]
+      if let #CsvExported row = rendered then
+        output = csv_text_append (output, row)
         current = tail
-      } else if let `CsvExportFailed reason = rendered {
+      else let #CsvExportFailed reason = rendered then
         failure = reason
         done = true
-      } else {
-        failure = csv_text_append ["failed to render csv row for item ", item.item_id]
+      else
+        failure = csv_text_append ("failed to render csv row for item ", item.item_id)
         done = true
-      }
-    } else {
+      end;
+    else
       done = true
-    }
-    if done { break; }
-  }
-  if failure == "" { `CsvExported output } else { `CsvExportFailed failure }
-};
+    end;
+    if done then
+      break;
+    end;
+  end;
+  if failure == "" then #CsvExported output else #CsvExportFailed failure end;
+end;
 
 return { .render_agent_job_csv };

@@ -3,8 +3,8 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type ToolSearchI32Option =
-  | `SearchLimitMissing Unit
-  | `SearchLimitPresent I32
+  | #SearchLimitMissing
+  | #SearchLimitPresent I32
 
 type ToolSearchArguments = struct {
   .query = Text,
@@ -12,8 +12,8 @@ type ToolSearchArguments = struct {
 }
 
 type ToolSearchInvocation =
-  | `SearchToolRequest ToolSearchArguments
-  | `UnsupportedToolSearchPayload Unit
+  | #SearchToolRequest ToolSearchArguments
+  | #UnsupportedToolSearchPayload
 
 type ToolSearchValidatedQuery = struct {
   .query = Text,
@@ -21,8 +21,8 @@ type ToolSearchValidatedQuery = struct {
 }
 
 type ToolSearchValidation =
-  | `SearchValidated ToolSearchValidatedQuery
-  | `SearchRejected Text
-  | `SearchFatal Text
+  | #SearchValidated ToolSearchValidatedQuery
+  | #SearchRejected Text
+  | #SearchFatal Text
 
 return {};

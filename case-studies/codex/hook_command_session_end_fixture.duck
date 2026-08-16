@@ -11,13 +11,15 @@ type FixtureEntries = HookOutputEntries
 
 const fixture_entries = comptime list FixtureEntry;
 
-let result: FixtureResult = [`None (), `Some 9, "ignored", " cleanup failed "];
-let [status, output_entries, _, _, _, _, _] = evaluate_hook_command(`SessionEnd (), result);
+let result: FixtureResult = [#None, #Some 9, "ignored", " cleanup failed "];
+let [status, output_entries, _, _, _, _, _] = evaluate_hook_command(#SessionEnd, result);
 let score: I32 = 0;
 
-if let `Failed () = status {
-  let [_, message] = fixture_entries.nth_or([`Error (), ""], 0, output_entries);
-  if message == "cleanup failed" { score = 1 }
-}
+if let #Failed = status then
+  let [_, message] = fixture_entries.nth_or([#Error, ""], 0, output_entries);
+  if message == "cleanup failed" then
+    score = 1
+  end;
+end;
 
 return { .score = score };

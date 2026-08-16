@@ -12,13 +12,15 @@ fields = json_object_prepend("chatgptAccountId", json_string "org-123", fields)
 fields = json_object_prepend("accessToken", json_string "access-token", fields)
 let decoded: FixtureResult = decode_account_auth_tokens_login fields;
 let score = 0;
-if let `AccountLoginOk login = decoded {
-  if let `AccountAuthTokensLogin values = login {
+if let #AccountLoginOk login = decoded then
+  if let #AccountAuthTokensLogin values = login then
     let [access_token, account_id, plan_type] = values;
-    if access_token == "access-token" && account_id == "org-123" {
-      if let `None () = plan_type { score = 1 }
-    }
-  }
-}
+    if access_token == "access-token" && account_id == "org-123" then
+      if let #None = plan_type then
+        score = 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

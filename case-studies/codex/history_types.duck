@@ -3,23 +3,23 @@ module () where
 const {} = import "duck:prelude/types" ();
 
 type OutputImageDetail =
-  | `Auto Unit
-  | `Low Unit
-  | `High Unit
-  | `Original Unit
+  | #Auto
+  | #Low
+  | #High
+  | #Original
 
 type OutputImageDetailOption =
-  | `None Unit
-  | `Some OutputImageDetail
+  | #None
+  | #Some OutputImageDetail
 type OutputImage = [Text, OutputImageDetailOption]
 type HistoryImage = OutputImage
 
 type HistoryContent =
-  | `InputText Text
-  | `InputImage HistoryImage
-  | `InputAudio Text
-  | `OutputText Text
-  | `Encrypted Text
+  | #InputText Text
+  | #InputImage HistoryImage
+  | #InputAudio Text
+  | #OutputText Text
+  | #Encrypted Text
 
 type HistoryContents = List HistoryContent
 type HistoryMessage = [Text, Bool, HistoryContents]
@@ -29,18 +29,18 @@ type HistoryPairedCall = [Text, Text]
 type HistoryToolSearchOutput = [Text, Text]
 
 type HistoryItem =
-  | `Message HistoryMessage
-  | `AgentMessage HistoryContents
-  | `Reasoning Text
-  | `FunctionCall HistoryCall
-  | `FunctionOutput HistoryOutput
-  | `CustomCall HistoryCall
-  | `CustomOutput HistoryOutput
-  | `LocalShellCall HistoryPairedCall
-  | `ToolSearchCall HistoryPairedCall
-  | `ToolSearchOutput HistoryToolSearchOutput
-  | `Compaction Text
-  | `Other Unit
+  | #Message HistoryMessage
+  | #AgentMessage HistoryContents
+  | #Reasoning Text
+  | #FunctionCall HistoryCall
+  | #FunctionOutput HistoryOutput
+  | #CustomCall HistoryCall
+  | #CustomOutput HistoryOutput
+  | #LocalShellCall HistoryPairedCall
+  | #ToolSearchCall HistoryPairedCall
+  | #ToolSearchOutput HistoryToolSearchOutput
+  | #Compaction Text
+  | #Other
 
 type HistoryItems = List HistoryItem
 type HistoryItemOption = Option HistoryItem

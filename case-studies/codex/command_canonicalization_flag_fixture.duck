@@ -20,6 +20,7 @@ let matches = texts.length(command) == 4 && texts.nth_or("", 0, command) == "pws
   "",
   1,
   command
-) == "-Unknown" && texts.nth_or("", 2, command) == "-Command" && texts.nth_or("", 3, command) == "Write-Host hi";
+) == "-Unknown" && texts.nth_or("", 2, command) == "-Command" && texts.nth_or("", 3, command)
+  == "Write-Host hi";
 
-return { .score = if matches { 6 } else { 0 } };
+return { .score = if matches then 6 else 0 end };

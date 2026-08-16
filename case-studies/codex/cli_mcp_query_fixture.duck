@@ -11,18 +11,22 @@ const args = comptime list Text;
 let score = 0;
 
 let listed: FixtureResult = parse_mcp_list(args.singleton("--json"));
-if let `Ok command = listed {
-  if let `McpList json = command {
-    if json { score = score + 1 }
-  }
-}
+if let #Ok command = listed then
+  if let #McpList json = command then
+    if json then
+      score = score + 1
+    end;
+  end;
+end;
 
 let get_args: FixtureArgs = args.prepend("server-a", args.singleton("--json"));
 let fetched: FixtureResult = parse_mcp_get get_args;
-if let `Ok command = fetched {
-  if let `McpGet options = command {
-    if options.name == "server-a" && options.json { score = score + 10 }
-  }
-}
+if let #Ok command = fetched then
+  if let #McpGet options = command then
+    if options.name == "server-a" && options.json then
+      score = score + 10
+    end;
+  end;
+end;
 
 return { .score = score };

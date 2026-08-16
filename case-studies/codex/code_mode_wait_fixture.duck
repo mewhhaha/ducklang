@@ -8,29 +8,33 @@ type FixtureCallPlan = CodeModeWaitCallPlan
 let score = 0;
 
 let wait_plan: FixtureCallPlan = plan_code_mode_wait_call(
-  `Function "{\"cell_id\":\"cell-1\",\"yield_time_ms\":25,\"max_tokens\":9}"
+  #Function "{\"cell_id\":\"cell-1\",\"yield_time_ms\":25,\"max_tokens\":9}"
 );
-if let `Wait execution = wait_plan {
+if let #Wait execution = wait_plan then
   let [request, max_tokens] = execution;
-  if let `U64Decimal yield_time_ms = request.yield_time_ms {
-    if request.cell_id == "cell-1" && yield_time_ms == "25" {
-      if let `WaitLimitPresent value = max_tokens {
-        if let `U64Decimal max_tokens_text = value {
-          if max_tokens_text == "9" { score = score + 1 }
-        }
-      }
-    }
-  }
-}
+  if let #U64Decimal yield_time_ms = request.yield_time_ms then
+    if request.cell_id == "cell-1" && yield_time_ms == "25" then
+      if let #WaitLimitPresent value = max_tokens then
+        if let #U64Decimal max_tokens_text = value then
+          if max_tokens_text == "9" then
+            score = score + 1
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let terminate_plan: FixtureCallPlan = plan_code_mode_wait_call(
-  `Function "{\"cell_id\":\"cell-2\",\"terminate\":true}"
+  #Function "{\"cell_id\":\"cell-2\",\"terminate\":true}"
 );
-if let `Terminate termination = terminate_plan {
+if let #Terminate termination = terminate_plan then
   let [cell_id, max_tokens] = termination;
-  if cell_id == "cell-2" {
-    if let `WaitLimitMissing () = max_tokens { score = score + 10 }
-  }
-}
+  if cell_id == "cell-2" then
+    if let #WaitLimitMissing = max_tokens then
+      score = score + 10
+    end;
+  end;
+end;
 
 return { .score = score };

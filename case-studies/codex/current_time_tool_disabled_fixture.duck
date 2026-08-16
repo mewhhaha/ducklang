@@ -7,6 +7,8 @@ type FixtureDefinitions = ToolDefinitions
 
 let definitions: FixtureDefinitions = current_time_tool_definitions(false, true);
 let score = 0;
-if let `Nil () = definitions { score = 1 }
+if let #Nil = definitions then
+  score = 1
+end;
 
 return { .score = score };

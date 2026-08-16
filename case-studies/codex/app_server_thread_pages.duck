@@ -11,37 +11,37 @@ type ThreadPagesItemsListParams = AppServerThreadItemsListParams
 type ThreadPagesItemsListPlanResult = AppServerThreadItemsListPlanResult
 type ThreadPagesListSupport = AppServerPaginatedListSupport
 
-const plan_thread_turns_list: [ThreadPagesTurnsListParams, ThreadPagesHistoryMode] ->
+const plan_thread_turns_list: (ThreadPagesTurnsListParams, ThreadPagesHistoryMode) ->
   ThreadPagesTurnsListPlanResult = (
     params: ThreadPagesTurnsListParams,
     history_mode: ThreadPagesHistoryMode,
-  ) => {
+  ) => do
     let [_, _, _, _, items_view] = params;
 
-    if let `PaginatedHistory () = history_mode {
-      if let `Full () = items_view {
-        `Err "thread/turns/list itemsView full is not supported for paginated threads; use thread/items/list"
-      } else {
-        let plan: ThreadPagesTurnsListPlan = [params, `PaginatedTurnsStore ()];
-        `Ok plan
-      }
-    } else {
-      let plan: ThreadPagesTurnsListPlan = [params, `LegacyTurnsReplay ()];
-      `Ok plan
-    }
-  };
+    if let #PaginatedHistory = history_mode then
+      if let #Full = items_view then
+        #Err "thread/turns/list itemsView full is not supported for paginated threads; use thread/items/list"
+      else
+        let plan: ThreadPagesTurnsListPlan = [params, #PaginatedTurnsStore];
+        #Ok plan
+      end;
+    else
+      let plan: ThreadPagesTurnsListPlan = [params, #LegacyTurnsReplay];
+      #Ok plan
+    end;
+  end;
 
-const plan_thread_items_list: [ThreadPagesItemsListParams, ThreadPagesListSupport] ->
+const plan_thread_items_list: (ThreadPagesItemsListParams, ThreadPagesListSupport) ->
   ThreadPagesItemsListPlanResult = (
     params: ThreadPagesItemsListParams,
     support: ThreadPagesListSupport,
-  ) => {
-    if let `PaginatedListsSupported () = support {
-      `Ok params
-    } else {
-      `Err "thread/items/list is not supported yet"
-    }
-  };
+  ) => do
+    if let #PaginatedListsSupported = support then
+      #Ok params
+    else
+      #Err "thread/items/list is not supported yet"
+    end;
+  end;
 
 return {
   .plan_thread_turns_list,

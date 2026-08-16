@@ -12,27 +12,33 @@ let parsed: FixtureContextParse = parse_context_output(
 );
 let score = 0;
 
-if let `ContextOk output = parsed {
+if let #ContextOk output = parsed then
   let [universal, additional_context] = output;
   let [continue_processing, stop_reason, _, system_message] = universal;
 
-  if continue_processing {
+  if continue_processing then
     ()
-  } else {
+  else
     score = score * 10 + 1
-  }
+  end;
 
-  if let `Some reason = stop_reason {
-    if reason == "pause" { score = score * 10 + 1 }
-  }
+  if let #Some reason = stop_reason then
+    if reason == "pause" then
+      score = score * 10 + 1
+    end;
+  end;
 
-  if let `Some context = additional_context {
-    if context == "remember" { score = score * 10 + 1 }
-  }
+  if let #Some context = additional_context then
+    if context == "remember" then
+      score = score * 10 + 1
+    end;
+  end;
 
-  if let `Some message = system_message {
-    if message == "warn" { score = score * 10 + 1 }
-  }
-}
+  if let #Some message = system_message then
+    if message == "warn" then
+      score = score * 10 + 1
+    end;
+  end;
+end;
 
 return { .score = score };

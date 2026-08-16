@@ -8,15 +8,15 @@ type FixtureSegment = ProposedPlanSegment
 
 let vertical_tab = decode_utf8(generate_bytes(1, _ => 11));
 let form_feed = decode_utf8(generate_bytes(1, _ => 12));
-let padded_open = text_append [
+let padded_open = text_append (
   vertical_tab,
-  text_append ["<proposed_plan>", text_append [form_feed, "\n"]],
-];
-let padded_close = text_append [
+  text_append ("<proposed_plan>", text_append (form_feed, "\n")),
+);
+let padded_close = text_append (
   vertical_tab,
-  text_append ["</proposed_plan>", text_append [form_feed, "\n"]],
-];
-let source = text_append [padded_open, text_append ["step\n", padded_close]];
+  text_append ("</proposed_plan>", text_append (form_feed, "\n")),
+);
+let source = text_append (padded_open, text_append ("step\n", padded_close));
 let pushed = push_proposed_plan_chunk(new_proposed_plan_parser(), source);
 let [parser, visible_text, segments] = pushed;
 let finished = finish_proposed_plan parser;
@@ -24,33 +24,38 @@ let [_, tail, finished_segments] = finished;
 let current = segments;
 let rendered = "";
 
-loop {
-  if let `Cons node = current {
+loop do
+  if let #Cons node = current then
     let typed_node: ListNode FixtureSegment = node;
     let [segment, remaining] = typed_node;
 
-    match segment {
-      | `Normal text => { rendered = text_append [
-        rendered,
-        text_append ["N(", text_append [text, ")"]],
-      ] }
-      | `ProposedPlanStart () => { rendered = text_append [rendered, "S"] }
-      | `ProposedPlanDelta text => { rendered = text_append [
-        rendered,
-        text_append ["D(", text_append [text, ")"]],
-      ] }
-      | `ProposedPlanEnd () => { rendered = text_append [rendered, "E"] }
-    }
+    case segment of
+      #Normal text => do
+        rendered = text_append (
+          rendered,
+          text_append ("N(", text_append (text, ")")),
+        ) end,
+      #ProposedPlanStart => do
+        rendered = text_append (rendered, "S")
+      end,
+      #ProposedPlanDelta text => do
+        rendered = text_append (
+          rendered,
+          text_append ("D(", text_append (text, ")")),
+        ) end,
+      #ProposedPlanEnd => do
+        rendered = text_append (rendered, "E")
+      end;
 
     current = remaining
-  } else {
+  else
     break;
-  }
-}
+  end;
+end;
 
-let no_finished_segments = if let `Nil () = finished_segments { true } else { false };
+let no_finished_segments = if let #Nil = finished_segments then true else false end;
 let score =
-  if visible_text == "" && tail == "" && rendered == "SD(step\n)E" && no_finished_segments { 1
-  } else { 0 };
+  if visible_text == "" && tail == "" && rendered == "SD(step\n)E" && no_finished_segments then 1
+  else 0 end;
 
 return { .score = score };

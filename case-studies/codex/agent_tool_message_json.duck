@@ -7,81 +7,91 @@ const {} = import "./agent_tool_types.duck" ();
 
 type AgentMessageJsonTextOption = AgentTextOption
 
-const message_decode_failure: Text -> AgentToolMessageDecodeResult = reason => {
-  `AgentMessageDecodeFailed (
+const message_decode_failure: Text -> AgentToolMessageDecodeResult = reason => do
+  #AgentMessageDecodeFailed (
     text_append("failed to parse collaboration message arguments: ", reason)
   )
-};
+end;
 
-const parse_agent_message_args: Text -> AgentToolMessageDecodeResult = document => {
+const parse_agent_message_args: Text -> AgentToolMessageDecodeResult = document => do
   let parsed = parse_json_document document;
-  if let `Err error = parsed {
+  if let #Err error = parsed then
     let [position, message] = error;
     return message_decode_failure(
       text_append(message, text_append(" at byte ", format_i32 position))
     );
-  }
-  if let `Ok value_and_position = parsed {
+  end;
+  if let #Ok value_and_position = parsed then
     let [value, _] = value_and_position;
-    if let `Object object = value {
-      let target: AgentMessageJsonTextOption = `None ();
-      let message: AgentMessageJsonTextOption = `None ();
+    if let #Object object = value then
+      let target: AgentMessageJsonTextOption = #None;
+      let message: AgentMessageJsonTextOption = #None;
       let seen_target = false;
       let seen_message = false;
       let failure = "";
       let current = object;
       let done = false;
-      loop {
-        if failure != "" { break; }
-        if let `Cons node = current {
+      loop do
+        if failure != "" then
+          break;
+        end;
+        if let #Cons node = current then
           let [member, tail] = node;
           let [key, field] = member;
-          if key == "target" {
-            if seen_target {
+          if key == "target" then
+            if seen_target then
               failure = "target must not be repeated"
-            } else if let `String text = field {
-              target = `Some text
+            else let #String text = field then
+              target = #Some text
               seen_target = true
-            } else {
+            else
               failure = "target must be a string"
-            }
-          } else if key == "message" {
-            if seen_message {
+            end;
+          else key == "message" then
+            if seen_message then
               failure = "message must not be repeated"
-            } else if let `String text = field {
-              message = `Some text
+            else let #String text = field then
+              message = #Some text
               seen_message = true
-            } else {
+            else
               failure = "message must be a string"
-            }
-          } else {
+            end;
+          else
             failure = text_append("unknown collaboration message field: ", key)
-          }
+          end;
           current = tail
-        } else {
+        else
           done = true
-        }
-        if done { break; }
-      }
+        end;
+        if done then
+          break;
+        end;
+      end;
 
-      if failure != "" { return message_decode_failure failure; }
-      if let `None () = target { return message_decode_failure "target is required"; }
-      if let `None () = message { return message_decode_failure "message is required"; }
-      if let `Some decoded_target = target {
-        if let `Some decoded_message = message {
-          `AgentMessageDecoded [.target = decoded_target, .message = decoded_message]
-        } else {
+      if failure != "" then
+        return message_decode_failure failure;
+      end;
+      if let #None = target then
+        return message_decode_failure "target is required";
+      end;
+      if let #None = message then
+        return message_decode_failure "message is required";
+      end;
+      if let #Some decoded_target = target then
+        if let #Some decoded_message = message then
+          #AgentMessageDecoded [.target = decoded_target, .message = decoded_message]
+        else
           message_decode_failure "message decoding produced no value"
-        }
-      } else {
+        end;
+      else
         message_decode_failure "target decoding produced no value"
-      }
-    } else {
+      end;
+    else
       message_decode_failure "arguments must be an object"
-    }
-  } else {
+    end;
+  else
     message_decode_failure "JSON parsing produced no result"
-  }
-};
+  end;
+end;
 
 return { .parse_agent_message_args };

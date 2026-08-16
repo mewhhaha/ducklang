@@ -16,51 +16,58 @@ type FixtureJson = AppServerJson
 type FixtureTexts = AppServerTexts
 
 const texts = comptime list Text;
-const json_string_is = (value: FixtureJson, expected: Text) => if let `String text = value { text == expected } else { false };
-let no_text: FixtureTextOption = `None ();
-let no_json: FixtureJsonOption = `None ();
+const json_string_is =
+  (value: FixtureJson, expected: Text) => if let #String text = value then text
+      == expected else false end;
+let no_text: FixtureTextOption = #None;
+let no_json: FixtureJsonOption = #None;
 let roots: FixtureTexts = texts.prepend("/old", texts.prepend("/extra", texts.singleton("/new")));
 let params: FixtureParams = [
   "thread-1",
-  `Some "/new",
-  `Some (json_string "never"),
+  #Some "/new",
+  #Some (json_string "never"),
   no_json,
   no_json,
   no_text,
-  `Some "new-model",
-  `Clear (),
-  `Some "high",
+  #Some "new-model",
+  #Clear,
+  #Some "high",
   no_text,
   no_json,
   no_text,
   true,
   json_object(json_object_empty()),
 ];
-let not_requested: FixtureResolution = `PermissionSelectionNotRequested ();
+let not_requested: FixtureResolution = #PermissionSelectionNotRequested;
 let input: FixturePlanInput = ["/old", roots, not_requested, params];
 let planned: FixturePlanResult = plan_thread_settings_update input;
 let score = 0;
 
-if let `ThreadSettingsUpdatePlanned plan = planned {
+if let #ThreadSettingsUpdatePlanned plan = planned then
   let overrides = plan.overrides;
   let roots_valid = false;
-  if let `Cons first_node = plan.workspace_roots {
+  if let #Cons first_node = plan.workspace_roots then
     let [first, after_first] = first_node;
-    if let `Cons second_node = after_first {
+    if let #Cons second_node = after_first then
       let [second, done] = second_node;
-      if let `Nil () = done { roots_valid = first == "/new" && second == "/extra" }
-    }
-  }
-  let cwd_valid = if let `Some cwd = overrides.cwd { cwd == "/new" } else { false };
-  let model_valid = if let `Some model = overrides.model { model == "new-model" } else { false };
-  let approval_valid = if let `Some approval = overrides.approval_policy { json_string_is(
+      if let #Nil = done then
+        roots_valid = first == "/new" && second == "/extra"
+      end;
+    end;
+  end;
+  let cwd_valid = if let #Some cwd = overrides.cwd then cwd == "/new" else false end;
+  let model_valid = if let #Some model = overrides.model then model == "new-model" else false end;
+  let approval_valid = if let #Some approval = overrides.approval_policy then json_string_is(
     approval,
     "never",
-  ) } else { false };
-  let tier_valid = if let `Clear () = overrides.service_tier { true } else { false };
-  let effort_valid = if let `Some effort = overrides.effort { effort == "high" } else { false };
-  if plan.thread_id == "thread-1" && cwd_valid && model_valid && approval_valid && roots_valid && tier_valid && effort_valid { score = score + 1 }
-}
+  ) else false end;
+  let tier_valid = if let #Clear = overrides.service_tier then true else false end;
+  let effort_valid = if let #Some effort = overrides.effort then effort == "high" else false end;
+  if plan.thread_id == "thread-1" && cwd_valid && model_valid && approval_valid && roots_valid
+    && tier_valid && effort_valid then
+      score = score + 1
+    end;
+end;
 
 let no_change: FixtureParams = [
   "thread-1",
@@ -70,7 +77,7 @@ let no_change: FixtureParams = [
   no_json,
   no_text,
   no_text,
-  `Keep (),
+  #Keep,
   no_text,
   no_text,
   no_json,
@@ -80,24 +87,26 @@ let no_change: FixtureParams = [
 ];
 let no_change_input: FixturePlanInput = ["/old", roots, not_requested, no_change];
 let unchanged: FixturePlanResult = plan_thread_settings_update no_change_input;
-if let `NoThreadSettingsChanges () = unchanged { score = score + 10 }
+if let #NoThreadSettingsChanges = unchanged then
+  score = score + 10
+end;
 
 let permission: FixturePermission = [
   json_string "unless-trusted",
   json_string "user",
   json_string "workspace-write",
-  `Some (json_string "workspace"),
+  #Some (json_string "workspace"),
 ];
-let resolved: FixtureResolution = `PermissionSelectionResolved permission;
+let resolved: FixtureResolution = #PermissionSelectionResolved permission;
 let permission_params: FixtureParams = [
   "thread-1",
   no_text,
-  `Some (json_string "on-request"),
+  #Some (json_string "on-request"),
   no_json,
   no_json,
-  `Some ":workspace",
+  #Some ":workspace",
   no_text,
-  `Keep (),
+  #Keep,
   no_text,
   no_text,
   no_json,
@@ -107,25 +116,29 @@ let permission_params: FixtureParams = [
 ];
 let permission_input: FixturePlanInput = ["/old", roots, resolved, permission_params];
 let selected: FixturePlanResult = plan_thread_settings_update permission_input;
-if let `ThreadSettingsUpdatePlanned plan = selected {
-  let profile_valid = if let `Some profile = plan.overrides.active_permission_profile {
+if let #ThreadSettingsUpdatePlanned plan = selected then
+  let profile_valid = if let #Some profile = plan.overrides.active_permission_profile then
     json_string_is(
       profile,
       "workspace",
-    ) } else { false };
-  let approval_valid = if let `Some approval = plan.overrides.approval_policy { json_string_is(
+    ) else false end;
+  let approval_valid = if let #Some approval = plan.overrides.approval_policy then json_string_is(
     approval,
     "on-request",
-  ) } else { false };
-  let reviewer_valid = if let `Some reviewer = plan.overrides.approvals_reviewer { json_string_is(
-    reviewer,
-    "user",
-  ) } else { false };
-  let sandbox_valid = if let `Some sandbox = plan.overrides.sandbox_policy { json_string_is(
+  ) else false end;
+  let reviewer_valid =
+    if let #Some reviewer = plan.overrides.approvals_reviewer then json_string_is(
+      reviewer,
+      "user",
+    ) else false end;
+  let sandbox_valid = if let #Some sandbox = plan.overrides.sandbox_policy then json_string_is(
     sandbox,
     "workspace-write",
-  ) } else { false };
-  if approval_valid && reviewer_valid && sandbox_valid && profile_valid && plan.overrides.permission_selected { score = score + 100 }
-}
+  ) else false end;
+  if approval_valid && reviewer_valid && sandbox_valid && profile_valid
+    && plan.overrides.permission_selected then
+      score = score + 100
+    end;
+end;
 
 return { .score = score };

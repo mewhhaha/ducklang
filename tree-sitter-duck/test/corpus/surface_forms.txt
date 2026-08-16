@@ -38,7 +38,9 @@ let consumed = consume !linear;
 Prefix negation in values and conditions
 ==================
 let negated = !(ready);
-if !(ready || done) { () }
+if !(ready || done) then
+  ()
+end;
 
 ---
 
@@ -55,59 +57,148 @@ if !(ready || done) { () }
       (condition_expression
         (condition_unary_expression
           (condition_expression
-            (condition_parenthesized_expression
-              (condition_expression
-                (condition_binary_expression
-                  (condition_expression
-                    (identifier))
-                  (operator_symbol)
-                  (condition_expression
-                    (identifier))))))))
-      (block
+            (condition_postfix_expression
+              (condition_parenthesized_expression
+                (condition_expression
+                  (condition_binary_expression
+                    (condition_expression
+                      (condition_postfix_expression
+                        (identifier)))
+                    (operator_symbol)
+                    (condition_expression
+                      (condition_postfix_expression
+                        (identifier))))))))))
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (unit_pattern)))))))
 
 ==================
-Compile-time value match patterns
+Target-directed conversion
 ==================
 
-let result = match key {
-  | 'q' | #(ctrl_c) => 1
-  | _ => 0
-};
+let exact: [1, 2] = from (1, 2);
+let byte: U8 = from 1;
+
+---
+
+(source_file
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (type_union
+        (type_intersection
+          (type_difference
+            (type_product
+              (positional_type_product
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (type_literal
+                          (number))))))
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (type_literal
+                          (number))))))))))))
+    value: (application_expression
+      function: (postfix_expression
+        (identifier))
+      argument: (postfix_expression
+        (positional_product
+          (postfix_expression
+            (number))
+          (postfix_expression
+            (number))))))
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (type_union
+        (type_intersection
+          (type_difference
+            (identifier)))))
+    value: (application_expression
+      function: (postfix_expression
+        (identifier))
+      argument: (postfix_expression
+        (number)))))
+
+==================
+Case function
+==================
+
+let branch = case => of
+  (#Empty, tree) => tree,
+  (tree, #Empty) => tree,
+  _ => #Empty;
 
 ---
 
 (source_file
   (binding_statement
     (identifier)
-    (match_expression
+    (case_function_expression
+      (case_arm
+        (positional_product_pattern
+          (union_pattern
+            (constructor_identifier))
+          (identifier))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (positional_product_pattern
+          (identifier)
+          (union_pattern
+            (constructor_identifier)))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (union_case
+            (constructor_identifier)))))))
+
+==================
+Compile-time value case patterns
+==================
+
+let result = case key of
+  'q' | #(ctrl_c) => 1,
+  _ => 0;
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (case_expression
       (condition_expression
-        (identifier))
-      (match_case_block
-        (match_case
-          (alternative_pattern
-            (character)
-            (const_value_pattern
-              (postfix_expression
-                (identifier))))
-          (postfix_expression
-            (number)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (number)))))))
+        (condition_postfix_expression
+          (identifier)))
+      (case_arm
+        (alternative_pattern
+          (character)
+          (const_value_pattern
+            (postfix_expression
+              (identifier))))
+        (postfix_expression
+          (number)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (number))))))
 
 ==================
 Bracket value after a binding
 ==================
-let pair = () => {
+let pair = () => do
   let right = [
     .value = 1,
   ];
   [right];
-};
+end;
 
 ---
 
@@ -136,11 +227,11 @@ let pair = () => {
 Condition forms and type tests
 ==================
 let type_match = value is I32;
-if predicate value && record.ready && values[0] == 1 && value is I32 {
+if predicate value && record.ready && values[0] == 1 && value is I32 then
   42
-} else {
+else
   0
-}
+end;
 
 ---
 
@@ -169,40 +260,47 @@ if predicate value && record.ready && values[0] == 1 && value is I32 {
                         (condition_binary_expression
                           (condition_expression
                             (condition_application_expression
-                              (identifier)
-                              (identifier)))
+                              (condition_postfix_expression
+                                (identifier))
+                              (condition_postfix_expression
+                                (identifier))))
                           (operator_symbol)
                           (condition_expression
-                            (condition_field_expression
-                              (condition_expression
-                                (identifier))
-                              (identifier)))))
+                            (condition_postfix_expression
+                              (condition_field_expression
+                                (condition_postfix_expression
+                                  (identifier))
+                                (identifier))))))
                       (operator_symbol)
                       (condition_expression
-                        (condition_index_expression
-                          (condition_expression
-                            (identifier))
-                          (postfix_expression
-                            (number))))))
+                        (condition_postfix_expression
+                          (condition_index_expression
+                            (condition_postfix_expression
+                              (identifier))
+                            (postfix_expression
+                              (number)))))))
                   (operator_symbol)
                   (condition_expression
-                    (number))))
+                    (condition_postfix_expression
+                      (number)))))
               (operator_symbol)
               (condition_expression
-                (identifier))))
+                (condition_postfix_expression
+                  (identifier)))))
           (type_reference
             (type_union
               (type_intersection
                 (type_difference
                   (identifier)))))))
-      (block
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      (block
-        (expression_statement
-          (postfix_expression
-            (number)))))))
+      (else_clause
+        (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (number))))))))
 
 ==================
 Positional, shape, and type-check patterns
@@ -246,7 +344,7 @@ let struct { .name = Text, .. } = Player;
 ==================
 Scratch regions and aggregate rebuilding
 ==================
-let temporary = scratch { value };
+let temporary = scratch do value end;
 values[index] = temporary
 
 ---
@@ -271,7 +369,7 @@ values[index] = temporary
 Union case values
 ==================
 
-let value = `Some 42;
+let value = #Some 42;
 
 ---
 
@@ -327,13 +425,14 @@ let named = [.x = x, .y = y];
         (identifier))))
   (binding_statement
     (identifier)
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (parenthesized_or_product
-        (parenthesized_expression
-          (postfix_expression
-            (identifier))))))
+    (postfix_expression
+      (call_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (identifier)))))))
   (binding_statement
     (identifier)
     (postfix_expression
@@ -356,7 +455,7 @@ let named = [.x = x, .y = y];
             (identifier)))))))
 
 ==================
-Arrays, imports, casts, updates, and matches
+Arrays, imports, casts, updates, and cases
 ==================
 let values = [x, y];
 let rebuilt = [x, ...rec(index + 1, length)];
@@ -367,15 +466,13 @@ let cast = x as Text;
 let updated = x <& { .field = y };
 let reverse_updated = { .field = y } &> x;
 let [first, ...rest] = values;
-let result = match target {
-| `Ok value if ready => value
-| _ => 0
-};
-let selected = match value {
-| 1 | 2 => 3
-| "hello ${name} why" => name
-| _ => ""
-};
+let result = case target of
+#Ok value if ready => value,
+_ => 0;
+let selected = case value of
+1 | 2 => 3,
+"hello ${name} why" => name,
+_ => "";
 type Values = [I32; 3]
 
 ---
@@ -397,15 +494,16 @@ type Values = [I32; 3]
           (identifier))
         (array_spread
           (recursive_call_expression
-            (positional_product
-              (binary_expression
+            (parenthesized_or_product
+              (positional_product
+                (binary_expression
+                  (postfix_expression
+                    (identifier))
+                  (operator_symbol)
+                  (postfix_expression
+                    (number)))
                 (postfix_expression
-                  (identifier))
-                (operator_symbol)
-                (postfix_expression
-                  (number)))
-              (postfix_expression
-                (identifier))))))))
+                  (identifier)))))))))
   (binding_statement
     (identifier)
     (postfix_expression
@@ -470,42 +568,43 @@ type Values = [I32; 3]
       (identifier)))
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_expression
-        (identifier))
-      (match_case_block
-        (match_case
-          (union_pattern
-            (constructor_identifier)
-            (identifier))
-          (condition_expression
-            (identifier))
-          (postfix_expression
+        (condition_postfix_expression
+          (identifier)))
+      (case_arm
+        (union_pattern
+          (constructor_identifier)
+          (identifier))
+        (condition_expression
+          (condition_postfix_expression
             (identifier)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (number))))))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (number)))))
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_expression
-        (identifier))
-      (match_case_block
-        (match_case
-          (alternative_pattern
-            (number)
-            (number))
-          (postfix_expression
-            (number)))
-        (match_case
-          (string)
-          (postfix_expression
-            (identifier)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (string))))))
+        (condition_postfix_expression
+          (identifier)))
+      (case_arm
+        (alternative_pattern
+          (number)
+          (number))
+        (postfix_expression
+          (number)))
+      (case_arm
+        (string)
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (string)))))
   (type_declaration_statement
     (identifier)
     (type_reference
@@ -524,13 +623,15 @@ type Values = [I32; 3]
 Const recursive fold with unary condition call
 ==================
 
-const fold = rec (values, index) => {
-  if index == @len(values) {
+const fold = rec (values, index) => do
+  if index == @len(values) then
     index
-  } else {
+  else
     rec(values, index + 1)
-  }
-};
+  end;
+end;
+const again = rec value => rec(value);
+const forever = rec () => rec();
 
 ---
 
@@ -550,32 +651,52 @@ const fold = rec (values, index) => {
               (condition_expression
                 (condition_binary_expression
                   (condition_expression
-                    (identifier))
+                    (condition_postfix_expression
+                      (identifier)))
                   (operator_symbol)
                   (condition_expression
-                    (condition_call_expression
-                      (condition_expression
-                        (intrinsic_identifier))
-                      (parenthesized_or_product
-                        (parenthesized_expression
-                          (postfix_expression
-                            (identifier))))))))
-              (block
+                    (condition_postfix_expression
+                      (condition_call_expression
+                        (condition_postfix_expression
+                          (intrinsic_identifier))
+                        (condition_call_arguments
+                          (condition_expression
+                            (condition_postfix_expression
+                              (identifier)))))))))
+              (conditional_branch
                 (expression_statement
                   (postfix_expression
                     (identifier))))
-              (block
-                (expression_statement
-                  (recursive_call_expression
-                    (positional_product
-                      (postfix_expression
-                        (identifier))
-                      (binary_expression
-                        (postfix_expression
-                          (identifier))
-                        (operator_symbol)
-                        (postfix_expression
-                          (number))))))))))))))
+              (else_clause
+                (conditional_branch
+                  (expression_statement
+                    (recursive_call_expression
+                      (parenthesized_or_product
+                        (positional_product
+                          (postfix_expression
+                            (identifier))
+                          (binary_expression
+                            (postfix_expression
+                              (identifier))
+                            (operator_symbol)
+                            (postfix_expression
+                              (number)))))))))))))))
+  (binding_statement
+    (identifier)
+    (recursive_function
+      (identifier)
+      (recursive_call_expression
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (identifier)))))))
+  (binding_statement
+    (identifier)
+    (recursive_function
+      (parameter_list)
+      (recursive_call_expression
+        (parenthesized_or_product
+          (unit_pattern))))))
 
 ==================
 Const variadic parameter
@@ -597,31 +718,31 @@ const collect = (const ...values) => values;
 ==================
 Value-pack rest pattern
 ==================
-let first = match (2, 99) {
-| (value, ...remaining) => value
-| _ => 0
-};
+let first = case (2, 99) of
+(value, ...remaining) => value,
+_ => 0;
 
 ---
 
 (source_file
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_positional_product
         (condition_expression
-          (number))
+          (condition_postfix_expression
+            (number)))
         (condition_expression
-          (number)))
-      (match_case_block
-        (match_case
-          (positional_product_pattern
-            (identifier)
-            (product_rest_pattern
-              (identifier)))
-          (postfix_expression
+          (condition_postfix_expression
+            (number))))
+      (case_arm
+        (positional_product_pattern
+          (identifier)
+          (product_rest_pattern
             (identifier)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (number)))))))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (number))))))

@@ -7,11 +7,11 @@ declare effect Input {
 declare Init { input: Input }
 
 flag <- Input.flag()
-let operation = if flag {
+let operation = if flag then
   (value: I64) => value + 1i64
-} else {
+else
   (value: I64) => value * 2i64
-};
+end;
 
 let result: I64 = operation 21i64;
 return { .result = result };

@@ -1,9 +1,9 @@
 let total = 36;
 
-for outer in 0..2 {
-  for inner in 0..3 {
+for outer in 0..2 do
+  for inner in 0..3 do
     total = total + 1
-  }
-}
+  end
+end
 
 total

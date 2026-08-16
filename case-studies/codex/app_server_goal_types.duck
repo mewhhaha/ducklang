@@ -18,17 +18,17 @@ type AppServerThreadGoalUpdatePlan = struct {
 }
 
 type AppServerThreadGoalSetPlan =
-  | `CreateThreadGoal AppServerThreadGoalCreatePlan
-  | `UpdateThreadGoal AppServerThreadGoalUpdatePlan
+  | #CreateThreadGoal AppServerThreadGoalCreatePlan
+  | #UpdateThreadGoal AppServerThreadGoalUpdatePlan
 
 type AppServerThreadGoalSetPlanResult =
-  | `GoalSetPlanned AppServerThreadGoalSetPlan
-  | `GoalSetInvalid Text
-  | `GoalSetMissing Text
+  | #GoalSetPlanned AppServerThreadGoalSetPlan
+  | #GoalSetInvalid Text
+  | #GoalSetMissing Text
 
 type AppServerThreadGoalAvailability =
-  | `ThreadGoalsAvailable Unit
-  | `ThreadGoalsDisabled Unit
-  | `EphemeralThreadGoalsUnsupported Text
+  | #ThreadGoalsAvailable
+  | #ThreadGoalsDisabled
+  | #EphemeralThreadGoalsUnsupported Text
 
 return {};

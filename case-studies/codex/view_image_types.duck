@@ -3,16 +3,16 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type ViewImageTextOption =
-  | `ImageEnvironmentMissing Unit
-  | `ImageEnvironmentPresent Text
+  | #ImageEnvironmentMissing
+  | #ImageEnvironmentPresent Text
 
 type ViewImageDetail =
-  | `High Unit
-  | `Original Unit
+  | #High
+  | #Original
 
 type ViewImageDetailOption =
-  | `ImageDetailMissing Unit
-  | `ImageDetailPresent ViewImageDetail
+  | #ImageDetailMissing
+  | #ImageDetailPresent ViewImageDetail
 
 type ViewImageArgs = struct {
   .path = Text,
@@ -21,12 +21,12 @@ type ViewImageArgs = struct {
 }
 
 type ViewImagePayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type ViewImageParseResult =
-  | `Parsed ViewImageArgs
-  | `ParseFailed Text
+  | #Parsed ViewImageArgs
+  | #ParseFailed Text
 
 type ViewImageEnvironment = struct {
   .environment_id = Text,
@@ -36,12 +36,12 @@ type ViewImageEnvironment = struct {
 
 type ViewImageEnvironmentNode = [ViewImageEnvironment, ViewImageEnvironments]
 type ViewImageEnvironments =
-  | `Nil Unit
-  | `Cons ViewImageEnvironmentNode
+  | #Nil
+  | #Cons ViewImageEnvironmentNode
 
 type ViewImageEnvironmentSelection =
-  | `Selected ViewImageEnvironment
-  | `SelectionFailed Text
+  | #Selected ViewImageEnvironment
+  | #SelectionFailed Text
 
 type ViewImagePreparedCall = struct {
   .call_id = Text,
@@ -51,9 +51,9 @@ type ViewImagePreparedCall = struct {
 }
 
 type ViewImageCallPlan =
-  | `ReadImage ViewImagePreparedCall
-  | `RejectRequest Text
-  | `Fatal Text
+  | #ReadImage ViewImagePreparedCall
+  | #RejectRequest Text
+  | #Fatal Text
 
 type ViewImageHostRequest = struct {
   .environment_id = Text,
@@ -61,10 +61,10 @@ type ViewImageHostRequest = struct {
 }
 
 type ViewImageHostResponse =
-  | `Loaded Text
-  | `LocateFailed Text
-  | `NotFile Unit
-  | `ReadFailed Text
+  | #Loaded Text
+  | #LocateFailed Text
+  | #NotFile
+  | #ReadFailed Text
 
 type ViewImageViewEvent = struct {
   .call_id = Text,
@@ -77,7 +77,7 @@ type ViewImageOutput = struct {
 }
 
 type ViewImageExecutionResult =
-  | `Completed ViewImageOutput
-  | `Rejected Text
+  | #Completed ViewImageOutput
+  | #Rejected Text
 
 return {};

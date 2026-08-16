@@ -3,12 +3,12 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type CurrentTimeSource =
-  | `System Unit
-  | `External Unit
+  | #System
+  | #External
 
 type CurrentTimeDeliveryMode =
-  | `AnyInference Unit
-  | `AfterUserOrToolOutput Unit
+  | #AnyInference
+  | #AfterUserOrToolOutput
 
 type CurrentTimeConfig = struct {
   .reminder_interval_seconds = I64,
@@ -18,16 +18,16 @@ type CurrentTimeConfig = struct {
 }
 
 type CurrentTimeProviderResolution =
-  | `SystemProvider Unit
-  | `ExternalProvider Unit
-  | `MissingExternalProvider Text
+  | #SystemProvider
+  | #ExternalProvider
+  | #MissingExternalProvider Text
 
 type CurrentTimeRecordedItem =
-  | `UserTurnBoundary Unit
-  | `FunctionCallOutput Unit
-  | `CustomToolCallOutput Unit
-  | `ToolSearchOutput Unit
-  | `Other Unit
+  | #UserTurnBoundary
+  | #FunctionCallOutput
+  | #CustomToolCallOutput
+  | #ToolSearchOutput
+  | #Other
 
 type CurrentTimeReminderState = struct {
   .last_delivery_time = Option I64,
@@ -41,8 +41,8 @@ type CurrentTimeReminderDecision = struct {
 }
 
 type CurrentTimeSleepRequest =
-  | `ValidSleep I64
-  | `InvalidSleep Text
+  | #ValidSleep I64
+  | #InvalidSleep Text
 
 type CurrentTimeSleepHostResult = struct {
   .interrupted = Bool,

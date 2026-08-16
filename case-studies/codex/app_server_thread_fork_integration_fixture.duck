@@ -16,17 +16,19 @@ fields = json_object_prepend("lastTurnId", json_string "turn-2", fields)
 fields = json_object_prepend("path", json_string "/rollouts/thread-1.jsonl", fields)
 fields = json_object_prepend("threadId", json_string "thread-1", fields)
 let decoded: FixtureDecodeResult = decode_thread_fork(json_object fields);
-let score = if let `MethodOk method = decoded {
-  if let `ThreadFork params = method {
+let score = if let #MethodOk method = decoded then
+  if let #ThreadFork params = method then
     let planned: FixturePlanResult = plan_decoded_thread_fork params;
-    if let `Ok plan = planned {
-      let persistence_valid = if let `PersistentThread () = plan.persistence { true } else { false };
-      let turns_valid = if let `TurnsIncluded () = plan.turns { true } else { false };
-      let continuation_valid = if let `GoalContinuationImmediate () = plan.goal_continuation { true
-      } else { false };
-      if persistence_valid && turns_valid && continuation_valid { 1 } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+    if let #Ok plan = planned then
+      let persistence_valid =
+        if let #PersistentThread = plan.persistence then true else false end;
+      let turns_valid = if let #TurnsIncluded = plan.turns then true else false end;
+      let continuation_valid =
+        if let #GoalContinuationImmediate = plan.goal_continuation then true
+        else false end;
+      if persistence_valid && turns_valid && continuation_valid then 1 else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

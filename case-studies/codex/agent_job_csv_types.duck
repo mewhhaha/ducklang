@@ -4,13 +4,13 @@ const { .struct } = import "duck:prelude/types" ();
 
 type AgentJobTextNode = [Text, AgentJobTexts]
 type AgentJobTexts =
-  | `Nil Unit
-  | `Cons AgentJobTextNode
+  | #Nil
+  | #Cons AgentJobTextNode
 
 type AgentJobCsvRowNode = [AgentJobTexts, AgentJobCsvRows]
 type AgentJobCsvRows =
-  | `Nil Unit
-  | `Cons AgentJobCsvRowNode
+  | #Nil
+  | #Cons AgentJobCsvRowNode
 
 type AgentJobCsvDocument = struct {
   .headers = AgentJobTexts,
@@ -18,7 +18,7 @@ type AgentJobCsvDocument = struct {
 }
 
 type AgentJobCsvParseResult =
-  | `CsvParsed AgentJobCsvDocument
-  | `CsvParseFailed Text
+  | #CsvParsed AgentJobCsvDocument
+  | #CsvParseFailed Text
 
 return {};

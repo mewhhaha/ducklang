@@ -12,11 +12,13 @@ const args = comptime list Text;
 let score = 0;
 
 let mcp: FixtureResult = parse_mcp_server_options(args.singleton("--strict-config"));
-if let `Ok command = mcp {
-  if let `StartMcpServer options = command {
-    if options.strict_config { score = score + 1 }
-  }
-}
+if let #Ok command = mcp then
+  if let #StartMcpServer options = command then
+    if options.strict_config then
+      score = score + 1
+    end;
+  end;
+end;
 
 let exec_input: FixtureArgs = args.prepend(
   "--remote",
@@ -38,32 +40,35 @@ let exec_input: FixtureArgs = args.prepend(
   ),
 );
 let exec: FixtureResult = parse_exec_server_options exec_input;
-if let `Ok command = exec {
-  if let `StartExecServer options = command {
-    if let `Some remote = options.remote {
-      if let `Some environment_id = options.environment_id {
-        if let `Some name = options.name {
-          if remote == "https://example.com" && environment_id == "env-7" && name == "runner" && options.use_agent_identity_auth && options.strict_config {
-            score = score + 10
-          }
-        }
-      }
-    }
-  }
-}
+if let #Ok command = exec then
+  if let #StartExecServer options = command then
+    if let #Some remote = options.remote then
+      if let #Some environment_id = options.environment_id then
+        if let #Some name = options.name then
+          if remote == "https://example.com" && environment_id == "env-7" && name == "runner"
+            && options.use_agent_identity_auth && options.strict_config then
+              score = score + 10
+            end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_exec_server_options(
   args.prepend("--remote", args.singleton("https://example.com"))
 );
-if let `Err _ = invalid {
+if let #Err _ = invalid then
   score = score + 100
-}
+end;
 
 let relay: FixtureResult = parse_stdio_to_uds_options(args.singleton("/tmp/codex.sock"));
-if let `Ok command = relay {
-  if let `RelayStdioToUds socket_path = command {
-    if socket_path == "/tmp/codex.sock" { score = score + 1000 }
-  }
-}
+if let #Ok command = relay then
+  if let #RelayStdioToUds socket_path = command then
+    if socket_path == "/tmp/codex.sock" then
+      score = score + 1000
+    end;
+  end;
+end;
 
 return { .score = score };

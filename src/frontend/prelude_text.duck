@@ -34,44 +34,46 @@ const {
 
 const text_copy: &Text -> Text = (value: &Text) => @append(value, "");
 
-const text_trim_end_ascii_whitespace = (text: Text) => {
-  let end = text_length text;
+const text_trim_end_ascii_whitespace = (text: Text) => do
+  let trim_end = text_length text;
 
-  loop {
-    if end <= 0 { break; }
-    let byte = text_get [text, end - 1];
-    if byte == 9 || byte == 10 || byte == 11 || byte == 12 || byte == 13 || byte == 32 {
-      end = end - 1
-    } else {
+  loop do
+    if trim_end <= 0 then
       break;
-    }
-  }
+    end;
+    let byte = text_get (text, trim_end - 1);
+    if byte == 9 || byte == 10 || byte == 11 || byte == 12 || byte == 13 || byte == 32 then
+      trim_end = trim_end - 1
+    else
+      break;
+    end;
+  end;
 
-  text_slice [text, 0, end]
-};
+  text_slice (text, 0, trim_end)
+end;
 
-const text_join = (values: List Text, separator: Text) => {
+const text_join = (values: List Text, separator: Text) => do
   let current = values;
   let joined: Text = "";
   let first = true;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      if first {
+      if first then
         joined = value
         first = false
-      } else {
-        joined = text_append [joined, text_append [separator, value]]
-      }
+      else
+        joined = text_append (joined, text_append (separator, value))
+      end;
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   joined
-};
+end;
 
 return {
   .text_append,

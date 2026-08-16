@@ -7,8 +7,8 @@ type FixtureGoal = AppServerThreadGoal
 let goal: FixtureGoal = [
   "thread-1",
   "Ship Codex",
-  `GoalBudgetLimited (),
-  `Some 1000i64,
+  #GoalBudgetLimited,
+  #Some 1000i64,
   800i64,
   60i64,
   10i64,
@@ -16,21 +16,35 @@ let goal: FixtureGoal = [
 ];
 let response = materialize_thread_goal_set_response goal;
 let score = 0;
-if let `Object fields = response {
-  if let `Found value = json_object_get("goal", fields) {
-    if let `Object goal_fields = value {
+if let #Object fields = response then
+  if let #Found value = json_object_get("goal", fields) then
+    if let #Object goal_fields = value then
       let status_valid = false;
       let status_lookup = json_object_get("status", goal_fields);
-      if let `Found status_json = status_lookup { if let `String status = status_json { status_valid = status == "budgetLimited" } }
+      if let #Found status_json = status_lookup then
+        if let #String status = status_json then
+          status_valid = status == "budgetLimited"
+        end;
+      end;
       let budget_valid = false;
       let budget_lookup = json_object_get("tokenBudget", goal_fields);
-      if let `Found budget_json = budget_lookup { if let `Number budget = budget_json { budget_valid = budget == "1000" } }
+      if let #Found budget_json = budget_lookup then
+        if let #Number budget = budget_json then
+          budget_valid = budget == "1000"
+        end;
+      end;
       let time_valid = false;
       let time_lookup = json_object_get("timeUsedSeconds", goal_fields);
-      if let `Found time_json = time_lookup { if let `Number time = time_json { time_valid = time == "60" } }
-      if status_valid && budget_valid && time_valid { score = score + 1 }
-    }
-  }
-}
+      if let #Found time_json = time_lookup then
+        if let #Number time = time_json then
+          time_valid = time == "60"
+        end;
+      end;
+      if status_valid && budget_valid && time_valid then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

@@ -12,12 +12,12 @@ type AppServerRequestId = AppServerJson
 type AppServerClientInfo = [Text, AppServerTextOption, Text]
 type AppServerCapabilities = [Bool, Bool, Bool, AppServerTexts]
 type AppServerTextArrayResult =
-  | `TextArrayOk AppServerTexts
-  | `TextArrayError Text
+  | #TextArrayOk AppServerTexts
+  | #TextArrayError Text
 
 type AppServerCapabilitiesResult =
-  | `CapabilitiesOk AppServerCapabilities
-  | `CapabilitiesError Text
+  | #CapabilitiesOk AppServerCapabilities
+  | #CapabilitiesError Text
 
 type AppServerInitializedSession = [AppServerClientInfo, AppServerCapabilities]
 
@@ -27,25 +27,25 @@ type AppServerBoolOption = Option Bool
 type AppServerJsonOption = Option AppServerJson
 
 type AppServerThreadSortKey =
-  | `CreatedAt Unit
-  | `UpdatedAt Unit
-  | `RecencyAt Unit
+  | #CreatedAt
+  | #UpdatedAt
+  | #RecencyAt
 
 type AppServerSortDirection =
-  | `Ascending Unit
-  | `Descending Unit
+  | #Ascending
+  | #Descending
 
 type AppServerThreadSourceKind =
-  | `Cli Unit
-  | `VsCode Unit
-  | `Exec Unit
-  | `AppServer Unit
-  | `SubAgent Unit
-  | `SubAgentReview Unit
-  | `SubAgentCompact Unit
-  | `SubAgentThreadSpawn Unit
-  | `SubAgentOther Unit
-  | `Unknown Unit
+  | #Cli
+  | #VsCode
+  | #Exec
+  | #AppServer
+  | #SubAgent
+  | #SubAgentReview
+  | #SubAgentCompact
+  | #SubAgentThreadSpawn
+  | #SubAgentOther
+  | #Unknown
 
 type AppServerThreadSourceKinds = List AppServerThreadSourceKind
 type AppServerThreadListParams = [
@@ -60,43 +60,43 @@ type AppServerThreadListParams = [
   Bool,
   AppServerTextOption,
   AppServerTextOption,
-  AppServerTextOption ]
+  AppServerTextOption]
 type AppServerThreadReadParams = [Text, Bool]
 
 type AppServerTurnItemsView =
-  | `NotLoaded Unit
-  | `Summary Unit
-  | `Full Unit
+  | #NotLoaded
+  | #Summary
+  | #Full
 
 type AppServerThreadTurnsListParams = [
   Text,
   AppServerTextOption,
   I32,
   AppServerSortDirection,
-  AppServerTurnItemsView ]
+  AppServerTurnItemsView]
 type AppServerThreadItemsListParams = [
   Text,
   AppServerTextOption,
   AppServerTextOption,
   I32,
-  AppServerSortDirection ]
+  AppServerSortDirection]
 type AppServerThreadSetNameParams = [Text, Text]
 type AppServerThreadControlKind =
-  | `SetThreadName Unit
-  | `IncrementThreadElicitation Unit
-  | `DecrementThreadElicitation Unit
+  | #SetThreadName
+  | #IncrementThreadElicitation
+  | #DecrementThreadElicitation
 type AppServerThreadControlMethod =
-  | `ThreadSetName AppServerThreadSetNameParams
-  | `ThreadIncrementElicitation Text
-  | `ThreadDecrementElicitation Text
+  | #ThreadSetName AppServerThreadSetNameParams
+  | #ThreadIncrementElicitation Text
+  | #ThreadDecrementElicitation Text
 
 type AppServerThreadGoalStatus =
-  | `GoalActive Unit
-  | `GoalPaused Unit
-  | `GoalBlocked Unit
-  | `GoalUsageLimited Unit
-  | `GoalBudgetLimited Unit
-  | `GoalComplete Unit
+  | #GoalActive
+  | #GoalPaused
+  | #GoalBlocked
+  | #GoalUsageLimited
+  | #GoalBudgetLimited
+  | #GoalComplete
 type AppServerThreadGoalStatusOption = Option AppServerThreadGoalStatus
 type AppServerThreadGoal = struct {
   .thread_id = Text,
@@ -116,45 +116,45 @@ type AppServerThreadGoalSetParams = struct {
   .token_budget = FieldPatch I64,
 }
 type AppServerThreadGoalMethod =
-  | `ThreadGoalSet AppServerThreadGoalSetParams
-  | `ThreadGoalGet Text
-  | `ThreadGoalClear Text
+  | #ThreadGoalSet AppServerThreadGoalSetParams
+  | #ThreadGoalGet Text
+  | #ThreadGoalClear Text
 
 type AppServerThreadHistoryMode =
-  | `LegacyHistory Unit
-  | `PaginatedHistory Unit
+  | #LegacyHistory
+  | #PaginatedHistory
 
 type AppServerThreadHistoryModeOption = Option AppServerThreadHistoryMode
 
 type AppServerThreadStartSource =
-  | `StartupSource Unit
-  | `ClearSource Unit
+  | #StartupSource
+  | #ClearSource
 
 type AppServerThreadStartSourceOption = Option AppServerThreadStartSource
 
 type AppServerAllowProviderFallback =
-  | `ProviderFallbackAllowed Unit
-  | `ProviderFallbackDisallowed Unit
+  | #ProviderFallbackAllowed
+  | #ProviderFallbackDisallowed
 
 type AppServerExperimentalRawEvents =
-  | `RawEventsEnabled Unit
-  | `RawEventsDisabled Unit
+  | #RawEventsEnabled
+  | #RawEventsDisabled
 
 type AppServerExcludeTurns =
-  | `TurnsExcluded Unit
-  | `TurnsIncluded Unit
+  | #TurnsExcluded
+  | #TurnsIncluded
 
 type AppServerThreadPersistence =
-  | `EphemeralThread Unit
-  | `PersistentThread Unit
+  | #EphemeralThread
+  | #PersistentThread
 
 type AppServerPaginatedListSupport =
-  | `PaginatedListsSupported Unit
-  | `PaginatedListsUnsupported Unit
+  | #PaginatedListsSupported
+  | #PaginatedListsUnsupported
 
 type AppServerGoalContinuation =
-  | `GoalContinuationDeferred Unit
-  | `GoalContinuationImmediate Unit
+  | #GoalContinuationDeferred
+  | #GoalContinuationImmediate
 
 type AppServerThreadStartParams = struct {
   .model = AppServerTextOption,
@@ -195,17 +195,17 @@ type AppServerThreadForkParams = struct {
 }
 
 type AppServerThreadLoadState =
-  | `ThreadLoaded Unit
-  | `ThreadNotLoaded Unit
+  | #ThreadLoaded
+  | #ThreadNotLoaded
 
 type AppServerThreadSubscription =
-  | `ThreadSubscribed Unit
-  | `ThreadNotSubscribed Unit
+  | #ThreadSubscribed
+  | #ThreadNotSubscribed
 
 type AppServerThreadUnsubscribeStatus =
-  | `UnsubscribeNotLoaded Unit
-  | `UnsubscribeNotSubscribed Unit
-  | `Unsubscribed Unit
+  | #UnsubscribeNotLoaded
+  | #UnsubscribeNotSubscribed
+  | #Unsubscribed
 
 type AppServerThreadMetadataGitInfoPatch = struct {
   .sha = AppServerTextPatch,
@@ -236,13 +236,13 @@ type AppServerImageInput = [AppServerTextOption, Text]
 type AppServerReferenceInput = [Text, Text]
 
 type AppServerUserInput =
-  | `TextInput AppServerTextInput
-  | `ImageInput AppServerImageInput
-  | `LocalImageInput AppServerImageInput
-  | `AudioInput Text
-  | `LocalAudioInput Text
-  | `SkillInput AppServerReferenceInput
-  | `MentionInput AppServerReferenceInput
+  | #TextInput AppServerTextInput
+  | #ImageInput AppServerImageInput
+  | #LocalImageInput AppServerImageInput
+  | #AudioInput Text
+  | #LocalAudioInput Text
+  | #SkillInput AppServerReferenceInput
+  | #MentionInput AppServerReferenceInput
 
 type AppServerUserInputs = List AppServerUserInput
 type AppServerTurnStartParams = [Text, AppServerTextOption, AppServerUserInputs, AppServerJson]
@@ -251,39 +251,39 @@ type AppServerTurnSteerParams = [
   Text,
   AppServerTextOption,
   AppServerUserInputs,
-  AppServerJson ]
+  AppServerJson]
 type AppServerTurnInterruptParams = [Text, Text]
 
 type AppServerUnknownMethod = [Text, AppServerJson]
 type AppServerMethod =
-  | `ThreadList AppServerThreadListParams
-  | `ThreadRead AppServerThreadReadParams
-  | `ThreadStart AppServerThreadStartParams
-  | `ThreadResume AppServerThreadResumeParams
-  | `ThreadFork AppServerThreadForkParams
-  | `ThreadArchive Text
-  | `ThreadUnarchive Text
-  | `ThreadDelete Text
-  | `ThreadUnsubscribe Text
-  | `ThreadCompactStart Text
-  | `ThreadMetadataUpdate AppServerThreadMetadataUpdateParams
-  | `ThreadSettingsUpdate AppServerThreadSettingsUpdateParams
-  | `ThreadTurnsList AppServerThreadTurnsListParams
-  | `ThreadItemsList AppServerThreadItemsListParams
-  | `ThreadControl AppServerThreadControlMethod
-  | `ThreadGoal AppServerThreadGoalMethod
-  | `TurnStart AppServerTurnStartParams
-  | `TurnSteer AppServerTurnSteerParams
-  | `TurnInterrupt AppServerTurnInterruptParams
-  | `UnknownMethod AppServerUnknownMethod
+  | #ThreadList AppServerThreadListParams
+  | #ThreadRead AppServerThreadReadParams
+  | #ThreadStart AppServerThreadStartParams
+  | #ThreadResume AppServerThreadResumeParams
+  | #ThreadFork AppServerThreadForkParams
+  | #ThreadArchive Text
+  | #ThreadUnarchive Text
+  | #ThreadDelete Text
+  | #ThreadUnsubscribe Text
+  | #ThreadCompactStart Text
+  | #ThreadMetadataUpdate AppServerThreadMetadataUpdateParams
+  | #ThreadSettingsUpdate AppServerThreadSettingsUpdateParams
+  | #ThreadTurnsList AppServerThreadTurnsListParams
+  | #ThreadItemsList AppServerThreadItemsListParams
+  | #ThreadControl AppServerThreadControlMethod
+  | #ThreadGoal AppServerThreadGoalMethod
+  | #TurnStart AppServerTurnStartParams
+  | #TurnSteer AppServerTurnSteerParams
+  | #TurnInterrupt AppServerTurnInterruptParams
+  | #UnknownMethod AppServerUnknownMethod
 
 type AppServerMethodDecodeResult =
-  | `MethodOk AppServerMethod
-  | `MethodError Text
+  | #MethodOk AppServerMethod
+  | #MethodError Text
 
 type AppServerSession =
-  | `Uninitialized Unit
-  | `Initialized AppServerInitializedSession
+  | #Uninitialized
+  | #Initialized AppServerInitializedSession
 
 type AppServerRequest = [AppServerRequestId, Text, AppServerJson]
 type AppServerNotification = [Text, AppServerJson]
@@ -291,14 +291,14 @@ type AppServerResponse = [AppServerRequestId, AppServerJson]
 type AppServerPeerError = [AppServerRequestId, Text, Text, AppServerJson]
 
 type AppServerMessage =
-  | `Request AppServerRequest
-  | `Notification AppServerNotification
-  | `Response AppServerResponse
-  | `PeerError AppServerPeerError
+  | #Request AppServerRequest
+  | #Notification AppServerNotification
+  | #Response AppServerResponse
+  | #PeerError AppServerPeerError
 
 type AppServerDecodeResult =
-  | `Decoded AppServerMessage
-  | `DecodeError Text
+  | #Decoded AppServerMessage
+  | #DecodeError Text
 
 type AppServerIdentity = [Text, Text, Text, Text]
 type AppServerSend = [AppServerSession, Text]
@@ -308,26 +308,31 @@ type AppServerObserve = [AppServerSession, AppServerMessage]
 type AppServerDrop = [AppServerSession, Text]
 
 type AppServerPlan =
-  | `Send AppServerSend
-  | `Route AppServerRoute
-  | `Dispatch AppServerDispatch
-  | `Observe AppServerObserve
-  | `Drop AppServerDrop
+  | #Send AppServerSend
+  | #Route AppServerRoute
+  | #Dispatch AppServerDispatch
+  | #Observe AppServerObserve
+  | #Drop AppServerDrop
 
 type AppServerInitializeResult =
-  | `InitializeOk AppServerInitializedSession
-  | `InitializeError Text
+  | #InitializeOk AppServerInitializedSession
+  | #InitializeError Text
 
-const allow_provider_fallback = (value: AppServerAllowProviderFallback) => if let `ProviderFallbackAllowed () = value { true } else { false };
+const allow_provider_fallback =
+  (value: AppServerAllowProviderFallback) => if let #ProviderFallbackAllowed = value then true else false end;
 
-const experimental_raw_events_enabled = (value: AppServerExperimentalRawEvents) => if let `RawEventsEnabled () = value { true } else { false };
+const experimental_raw_events_enabled =
+  (value: AppServerExperimentalRawEvents) => if let #RawEventsEnabled = value then true else false end;
 
-const turns_are_excluded = (value: AppServerExcludeTurns) => if let `TurnsExcluded () = value { true
-} else { false };
+const turns_are_excluded =
+  (value: AppServerExcludeTurns) => if let #TurnsExcluded = value then true
+  else false end;
 
-const thread_is_ephemeral = (value: AppServerThreadPersistence) => if let `EphemeralThread () = value { true } else { false };
+const thread_is_ephemeral =
+  (value: AppServerThreadPersistence) => if let #EphemeralThread = value then true else false end;
 
-const goal_continuation_is_deferred = (value: AppServerGoalContinuation) => if let `GoalContinuationDeferred () = value { true } else { false };
+const goal_continuation_is_deferred =
+  (value: AppServerGoalContinuation) => if let #GoalContinuationDeferred = value then true else false end;
 
 return {
   .allow_provider_fallback,

@@ -4,7 +4,8 @@ import { source_facts } from "./source_facts.ts";
 
 Deno.test("source analysis applies exact inferred call constraints to facts", () => {
   const analysis = Source.analyze(`
-let choose = (value: [.x = I32]) => value;
+type X = struct { .x = I32 }
+let choose = (value: X) => value;
 choose [.y = 1]
 `);
   const facts = source_facts(analysis.source);
@@ -19,9 +20,9 @@ choose [.y = 1]
       return { code: diagnostic.code, message: diagnostic.message };
     }),
     [{
-      code: "DUCK2310",
+      code: "DUCK2307",
       message:
-        "call argument 1: cannot unify [.x = I32] with [.y = I32]: record labels differ at index 0",
+        "Call to choose argument 1 for parameter value expects X, got struct",
     }],
   );
   assert_equals(facts.editor_type_of.get(call)?.name, "unknown");

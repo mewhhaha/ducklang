@@ -1,0 +1,595 @@
+==================
+Refinement signature
+==================
+
+type keep = (value: {refined: I32 | refined = refined}) -> (result: {answer: I32 | answer = value})
+let keep = value => value;
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_refinement_type
+                (lowercase_identifier)
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (identifier)))))
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_refinement_type
+              (lowercase_identifier)
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (identifier)))))
+
+==================
+Direct proof declaration
+==================
+
+type keep = (value: I32, evidence: Proof value = value) -> Proof value = value
+let keep = (actual, proof) => by proof;
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (identifier)))))))
+
+==================
+Constructor membership proof
+==================
+
+type use_some = (value: Maybe, evidence: Proof value is #Some) -> I32
+let use_some = (value, evidence) => 1;
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (constructor_membership_type
+                              (constructor_identifier))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (type_reference
+              (type_union
+                (type_intersection
+                  (type_difference
+                    (identifier))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (number)))))
+
+==================
+Propositional proof terms
+==================
+
+type merge = (choice: Proof True or True) -> Proof True
+let merge = choice => by or_cases(choice, left => left, right => right,);
+
+type implication = () -> Proof True implies True
+let implication = () => by evidence => evidence;
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier))))))
+                      (prefix_or_keyword)
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (prefix_proof_term
+              (identifier))
+            (identifier)
+            (prefix_proof_term
+              (identifier))
+            (identifier)
+            (prefix_proof_term
+              (identifier)))))))
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))
+                  (prefix_implies_keyword)
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier))))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (identifier)
+            (prefix_proof_term
+              (identifier))))))))
+
+==================
+Equality transformation proof terms
+==================
+
+let mapped = equality => by congr(value => value, equality);
+let substituted = (equality, evidence) => by transport(equality, value => predicate(value), evidence);
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (identifier)
+            (prefix_proposition_term
+              (prefix_proposition_postfix_term
+                (identifier)))
+            (prefix_proof_term
+              (identifier)))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (prefix_proof_term
+              (identifier))
+            (identifier)
+            (prefix_proposition
+              (prefix_implication_proposition
+                (prefix_disjunction_proposition
+                  (prefix_conjunction_proposition
+                    (prefix_negation_proposition
+                      (prefix_atomic_proposition
+                        (prefix_proposition_term
+                          (prefix_proposition_postfix_term
+                            (prefix_proposition_call_term
+                              (prefix_proposition_postfix_term
+                                (identifier))
+                              (prefix_proposition_call_arguments
+                                (prefix_proposition_term
+                                  (prefix_proposition_postfix_term
+                                    (identifier)))))))))))))
+            (prefix_proof_term
+              (identifier))))))))
+
+==================
+Unsafe proof assumptions
+==================
+
+type admitted = () -> Proof False
+unsafe let admitted = () => by unsafe { assume False };
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list)
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (prefix_unsafe_proof_statement
+    (binding_statement
+      (identifier)
+      (arrow_function
+        (parameter_list)
+        (postfix_expression
+          (prefix_by_proof_expression
+            (prefix_proof_term
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier))))))))))))))))
+
+==================
+Quantified proof terms
+==================
+
+type specialize = (universal: Proof forall (value: I32). value = value, value: I32) -> Proof value = value
+let specialize = (universal, value) => by forall_apply(universal, value,);
+
+type witness = (value: I32) -> Proof exists (found: I32). found = value
+let witness = value => by exists_intro(value, refl,);
+
+type unpack = (package: Proof exists (value: I32). True) -> Proof True
+let unpack = package => by exists_elim(package, witness, evidence => evidence,);
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_quantified_proposition
+                    (prefix_forall_keyword)
+                    (prefix_proposition_binder
+                      (identifier)
+                      (type_reference
+                        (type_union
+                          (type_intersection
+                            (type_difference
+                              (identifier))))))
+                    (prefix_proposition
+                      (prefix_implication_proposition
+                        (prefix_disjunction_proposition
+                          (prefix_conjunction_proposition
+                            (prefix_negation_proposition
+                              (prefix_atomic_proposition
+                                (prefix_proposition_term
+                                  (prefix_proposition_postfix_term
+                                    (identifier)))
+                                (prefix_proposition_term
+                                  (prefix_proposition_postfix_term
+                                    (identifier))))))))))))))
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (prefix_proof_term
+              (identifier))
+            (prefix_proposition_term
+              (prefix_proposition_postfix_term
+                (identifier))))))))
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_quantified_proposition
+                  (prefix_exists_keyword)
+                  (prefix_proposition_binder
+                    (identifier)
+                    (type_reference
+                      (type_union
+                        (type_intersection
+                          (type_difference
+                            (identifier))))))
+                  (prefix_proposition
+                    (prefix_implication_proposition
+                      (prefix_disjunction_proposition
+                        (prefix_conjunction_proposition
+                          (prefix_negation_proposition
+                            (prefix_atomic_proposition
+                              (prefix_proposition_term
+                                (prefix_proposition_postfix_term
+                                  (identifier)))
+                              (prefix_proposition_term
+                                (prefix_proposition_postfix_term
+                                  (identifier)))))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (prefix_proposition_term
+              (prefix_proposition_postfix_term
+                (identifier)))
+            (prefix_proof_term))))))
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_proof_type
+                (prefix_proof_keyword)
+                (prefix_proposition
+                  (prefix_quantified_proposition
+                    (prefix_exists_keyword)
+                    (prefix_proposition_binder
+                      (identifier)
+                      (type_reference
+                        (type_union
+                          (type_intersection
+                            (type_difference
+                              (identifier))))))
+                    (prefix_proposition
+                      (prefix_implication_proposition
+                        (prefix_disjunction_proposition
+                          (prefix_conjunction_proposition
+                            (prefix_negation_proposition
+                              (prefix_atomic_proposition
+                                (prefix_proposition_term
+                                  (prefix_proposition_postfix_term
+                                    (identifier)))))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_proof_type
+              (prefix_proof_keyword)
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (prefix_by_proof_expression
+          (prefix_proof_term
+            (prefix_proof_term
+              (identifier))
+            (identifier)
+            (identifier)
+            (prefix_proof_term
+              (identifier))))))))

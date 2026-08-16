@@ -7,12 +7,16 @@ const { .render_current_time_tool_output, .render_sleep_tool_output } =
 
 let score = 0;
 current_time <- CurrentTimeHost.current_time()
-if render_current_time_tool_output current_time == "It is 2026-06-17 17:34:15 UTC." { score = score
-  + 1 }
+if render_current_time_tool_output current_time == "It is 2026-06-17 17:34:15 UTC." then
+  score = score + 1
+end;
 
-if let `ValidSleep duration_ms = plan_sleep_request 1000i64 {
+if let #ValidSleep duration_ms = plan_sleep_request 1000i64 then
   sleep_result <- CurrentTimeHost.sleep(duration_ms)
-  if render_sleep_tool_output sleep_result == "Wall time: 1.0000 seconds\nSleep interrupted by new input." { score = score + 10 }
-}
+  if render_sleep_tool_output sleep_result
+    == "Wall time: 1.0000 seconds\nSleep interrupted by new input." then
+      score = score + 10
+    end;
+end;
 
 return { .score = score };

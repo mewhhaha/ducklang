@@ -43,7 +43,7 @@ Deno.test("message decoder handles back-to-back frames", () => {
 
 Deno.test("parse diagnostics report positions", () => {
   const diagnostics = parse_diagnostics("let value = (1 + 2\nvalue\n;");
-  assert_equals(diagnostics.length, 1);
+  assert_equals(diagnostics.length, 2);
   const diagnostic = diagnostics[0];
   assert_equals(diagnostic?.severity, 1);
   assert_equals(diagnostic?.range.start.line !== undefined, true);
@@ -56,8 +56,8 @@ Deno.test("parse diagnostics are empty for valid programs", () => {
 Deno.test("document symbols cover top-level introductions", () => {
   const text = [
     "type Option t =",
-    "  | `Some t",
-    "  | `None Unit",
+    "  | #Some t",
+    "  | #None",
     "",
     "const factor = 2;",
     "let scale = value => value * factor;",
@@ -86,7 +86,7 @@ Deno.test("document symbols cover top-level introductions", () => {
 
 Deno.test("document symbols nest declaration members through broken syntax", () => {
   const prefix = "effect Counter {\n  get: () => I32\n}\n" +
-    "type Result = | `Ok Int | `Error Text\n";
+    "type Result = | #Ok Int | #Error Text\n";
   const valid = parse_source_with_diagnostics(prefix + "let value = 1;\n");
   const broken = parse_source_with_diagnostics(prefix + "let = broken\n");
   const valid_symbols = document_symbols(
@@ -730,7 +730,7 @@ Deno.test("dependency edits invalidate and republish open importers", () => {
       textDocument: {
         uri: dependency_uri,
         version: 1,
-        text: "module () where\nreturn 1;\n",
+        text: "module () where\nreturn { .value = 1 };\n",
       },
     },
   });
@@ -1145,7 +1145,7 @@ Deno.test("server returns semantic hover and signature help", () => {
   const state = create_state();
   handle_message(state, { id: 1, method: "initialize" });
   const uri = "file:///hover.duck";
-  const hover_text = "const make_adder = n => { x => x + n };\n" +
+  const hover_text = "const make_adder = n => do x => x + n end;\n" +
     "const add_three = comptime make_adder(3);\n" +
     "add_three(39)\n";
   handle_message(state, {

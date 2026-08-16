@@ -7,41 +7,41 @@ type CompactionTagsReason = CompactionReason
 type CompactionTagsImplementation = CompactionImplementation
 type CompactionTagsPhase = CompactionPhase
 
-const compaction_trigger_tag: CompactionTagsTrigger -> Text = trigger => {
-  if let `Manual () = trigger { "manual" } else { "auto" }
-};
+const compaction_trigger_tag: CompactionTagsTrigger -> Text = trigger => do
+  if let #Manual = trigger then "manual" else "auto" end;
+end;
 
-const compaction_reason_tag: CompactionTagsReason -> Text = reason => {
-  if let `UserRequested () = reason {
+const compaction_reason_tag: CompactionTagsReason -> Text = reason => do
+  if let #UserRequested = reason then
     "user_requested"
-  } else if let `ContextLimit () = reason {
+  else let #ContextLimit = reason then
     "context_limit"
-  } else if let `ModelDownshift () = reason {
+  else let #ModelDownshift = reason then
     "model_downshift"
-  } else {
+  else
     "comp_hash_changed"
-  }
-};
+  end;
+end;
 
-const compaction_implementation_tag: CompactionTagsImplementation -> Text = implementation => {
-  if let `Responses () = implementation {
+const compaction_implementation_tag: CompactionTagsImplementation -> Text = implementation => do
+  if let #Responses = implementation then
     "responses"
-  } else if let `ResponsesCompactionV2 () = implementation {
+  else let #ResponsesCompactionV2 = implementation then
     "responses_compaction_v2"
-  } else {
+  else
     "responses_compact"
-  }
-};
+  end;
+end;
 
-const compaction_phase_tag: CompactionTagsPhase -> Text = phase => {
-  if let `StandaloneTurn () = phase {
+const compaction_phase_tag: CompactionTagsPhase -> Text = phase => do
+  if let #StandaloneTurn = phase then
     "standalone_turn"
-  } else if let `PreTurn () = phase {
+  else let #PreTurn = phase then
     "pre_turn"
-  } else {
+  else
     "mid_turn"
-  }
-};
+  end;
+end;
 
 return {
   .compaction_trigger_tag,

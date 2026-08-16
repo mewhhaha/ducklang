@@ -7,52 +7,54 @@ const { .materialize_thread_read } = app_server_threads_module();
 
 type FixtureThread = RolloutThreadSummary
 
-const field_is_missing = (fields, key: Text) => {
+const field_is_missing = (fields, key: Text) => do
   let lookup = json_object_get(key, fields);
-  if let `Missing () = lookup { true } else { false }
-};
+  if let #Missing = lookup then true else false end;
+end;
 
 let thread: FixtureThread = [
   "/home/sessions/2025/01/03/rollout-thread-1.jsonl",
   "thread-1",
   "session-1",
-  `None (),
-  `None (),
+  #None,
+  #None,
   "Alpha task",
   "/repo",
-  `Cli (),
+  #Cli,
   "openai",
   "0.1.0",
-  `None (),
+  #None,
   "legacy",
-  `None (),
-  `None (),
+  #None,
+  #None,
   "2025-01-03T09:00:00Z",
   "2025-01-04T10:00:00+01:00",
-  `None (),
+  #None,
 ];
 let read_value = materialize_thread_read(thread, json_array_empty(), false);
 let read_thread_fields = json_object_empty();
 let score = 0;
 
-if let `Object fields = read_value {
+if let #Object fields = read_value then
   let thread_lookup = json_object_get("thread", fields);
-  if let `Found read_thread = thread_lookup {
-    if let `Object fields = read_thread { read_thread_fields = fields }
-  }
-}
+  if let #Found read_thread = thread_lookup then
+    if let #Object fields = read_thread then
+      read_thread_fields = fields
+    end;
+  end;
+end;
 
 let id_lookup = json_object_get("id", read_thread_fields);
-if let `Found id = id_lookup {
-  if let `String value = id {
+if let #Found id = id_lookup then
+  if let #String value = id then
     if value == "thread-1" && field_is_missing(read_thread_fields,
       "historyMode") && field_is_missing(
         read_thread_fields,
         "canAcceptDirectInput",
-      ) {
+      ) then
         score = 1
-      }
-  }
-}
+      end;
+  end;
+end;
 
 return { .score = score };

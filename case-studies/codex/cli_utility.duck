@@ -16,31 +16,31 @@ type ResponsesProxyFactsResult = Result Text ResponsesProxyFacts
 
 const texts = comptime list Text;
 
-let rec scan_doctor_from: [UtilityArgs, DoctorOptions] -> UtilityCommandResult = (
+let rec scan_doctor_from: (UtilityArgs, DoctorOptions) -> UtilityCommandResult = (
   args: UtilityArgs,
   options: DoctorOptions,
-) => {
-  if let `Cons node = args {
+) => do
+  if let #Cons node = args then
     let [argument, tail] = node;
-    if argument == "--json" {
+    if argument == "--json" then
       scan_doctor_from(tail, options <& { .json = true })
-    } else if argument == "--summary" {
+    else argument == "--summary" then
       scan_doctor_from(tail, options <& { .summary = true })
-    } else if argument == "--all" {
+    else argument == "--all" then
       scan_doctor_from(tail, options <& { .all = true })
-    } else if argument == "--no-color" {
+    else argument == "--no-color" then
       scan_doctor_from(tail, options <& { .no_color = true })
-    } else if argument == "--ascii" {
+    else argument == "--ascii" then
       scan_doctor_from(tail, options <& { .ascii = true })
-    } else {
-      `Err (text_append("unknown doctor option: ", argument))
-    }
-  } else {
-    `Ok (`RunDoctor options)
-  }
-};
+    else
+      #Err (text_append("unknown doctor option: ", argument))
+    end;
+  else
+    #Ok (#RunDoctor options)
+  end;
+end;
 
-let parse_doctor_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => {
+let parse_doctor_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => do
   let initial: DoctorOptions = [
     .json = false,
     .summary = false,
@@ -49,16 +49,16 @@ let parse_doctor_options: UtilityArgs -> UtilityCommandResult = (args: UtilityAr
     .ascii = false,
   ];
   scan_doctor_from(args, initial)
-};
+end;
 
-let rec scan_apply_task_from: [UtilityArgs, ApplyTaskFacts] -> ApplyTaskFactsResult = (
+let rec scan_apply_task_from: (UtilityArgs, ApplyTaskFacts) -> ApplyTaskFactsResult = (
   args: UtilityArgs,
   facts: ApplyTaskFacts,
-) => {
-  if let `Cons node = args {
+) => do
+  if let #Cons node = args then
     let [argument, tail] = node;
-    if argument == "--config" || argument == "-c" {
-      if let `Cons value_node = tail {
+    if argument == "--config" || argument == "-c" then
+      if let #Cons value_node = tail then
         let [value, remaining] = value_node;
         scan_apply_task_from(
           remaining,
@@ -67,107 +67,107 @@ let rec scan_apply_task_from: [UtilityArgs, ApplyTaskFacts] -> ApplyTaskFactsRes
             facts.config_overrides_reversed,
           ) },
         )
-      } else {
-        `Err (text_append("missing value for ", argument))
-      }
-    } else if text_starts_with(argument, "-") {
-      `Err (text_append("unknown apply option: ", argument))
-    } else if let `None () = facts.task_id {
-      scan_apply_task_from(tail, facts <& { .task_id = `Some argument })
-    } else {
-      `Err "apply accepts exactly one task id"
-    }
-  } else {
-    `Ok facts
-  }
-};
+      else
+        #Err (text_append("missing value for ", argument))
+      end;
+    else text_starts_with(argument, "-") then
+      #Err (text_append("unknown apply option: ", argument))
+    else let #None = facts.task_id then
+      scan_apply_task_from(tail, facts <& { .task_id = #Some argument })
+    else
+      #Err "apply accepts exactly one task id"
+    end;
+  else
+    #Ok facts
+  end;
+end;
 
-let parse_apply_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => {
-  let initial: ApplyTaskFacts = [.task_id = `None (), .config_overrides_reversed = texts.empty()];
+let parse_apply_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => do
+  let initial: ApplyTaskFacts = [.task_id = #None, .config_overrides_reversed = texts.empty()];
   let scanned: ApplyTaskFactsResult = scan_apply_task_from(args, initial);
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
-    if let `Some task_id = facts.task_id {
+  if let #Err message = scanned then
+    #Err message
+  else let #Ok facts = scanned then
+    if let #Some task_id = facts.task_id then
       let options: ApplyTaskOptions = [
         .task_id = task_id,
         .config_overrides = texts.reverse(facts.config_overrides_reversed),
       ];
-      `Ok (`ApplyTask options)
-    } else {
-      `Err "apply requires a task id"
-    }
-  } else {
-    `Err "apply scanner returned an unknown result"
-  }
-};
+      #Ok (#ApplyTask options)
+    else
+      #Err "apply requires a task id"
+    end;
+  else
+    #Err "apply scanner returned an unknown result"
+  end;
+end;
 
-let rec scan_responses_proxy_from: [UtilityArgs, ResponsesProxyFacts] -> ResponsesProxyFactsResult =
+let rec scan_responses_proxy_from: (UtilityArgs, ResponsesProxyFacts) -> ResponsesProxyFactsResult =
   (
     args: UtilityArgs,
     facts: ResponsesProxyFacts,
-  ) => {
-    if let `Cons node = args {
+  ) => do
+    if let #Cons node = args then
       let [argument, tail] = node;
-      if argument == "--port" {
-        if let `Cons value_node = tail {
+      if argument == "--port" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
           let parsed = parse_u32_decimal value;
-          if let `Ok port = parsed {
-            if port <= 65535i64 {
-              scan_responses_proxy_from(remaining, facts <& { .port = `Some port })
-            } else {
-              `Err "--port must be between 0 and 65535"
-            }
-          } else {
-            `Err "--port must be an integer between 0 and 65535"
-          }
-        } else {
-          `Err "missing value for --port"
-        }
-      } else if argument == "--server-info" {
-        if let `Cons value_node = tail {
+          if let #Ok port = parsed then
+            if port <= 65535i64 then
+              scan_responses_proxy_from(remaining, facts <& { .port = #Some port })
+            else
+              #Err "--port must be between 0 and 65535"
+            end;
+          else
+            #Err "--port must be an integer between 0 and 65535"
+          end;
+        else
+          #Err "missing value for --port"
+        end;
+      else argument == "--server-info" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
-          scan_responses_proxy_from(remaining, facts <& { .server_info = `Some value })
-        } else {
-          `Err "missing value for --server-info"
-        }
-      } else if argument == "--http-shutdown" {
+          scan_responses_proxy_from(remaining, facts <& { .server_info = #Some value })
+        else
+          #Err "missing value for --server-info"
+        end;
+      else argument == "--http-shutdown" then
         scan_responses_proxy_from(tail, facts <& { .http_shutdown = true })
-      } else if argument == "--upstream-url" {
-        if let `Cons value_node = tail {
+      else argument == "--upstream-url" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
           scan_responses_proxy_from(remaining, facts <& { .upstream_url = value })
-        } else {
-          `Err "missing value for --upstream-url"
-        }
-      } else if argument == "--dump-dir" {
-        if let `Cons value_node = tail {
+        else
+          #Err "missing value for --upstream-url"
+        end;
+      else argument == "--dump-dir" then
+        if let #Cons value_node = tail then
           let [value, remaining] = value_node;
-          scan_responses_proxy_from(remaining, facts <& { .dump_dir = `Some value })
-        } else {
-          `Err "missing value for --dump-dir"
-        }
-      } else {
-        `Err (text_append("unknown responses-api-proxy option: ", argument))
-      }
-    } else {
-      `Ok facts
-    }
-  };
+          scan_responses_proxy_from(remaining, facts <& { .dump_dir = #Some value })
+        else
+          #Err "missing value for --dump-dir"
+        end;
+      else
+        #Err (text_append("unknown responses-api-proxy option: ", argument))
+      end;
+    else
+      #Ok facts
+    end;
+  end;
 
-let parse_responses_proxy_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => {
+let parse_responses_proxy_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => do
   let initial: ResponsesProxyFacts = [
-    .port = `None (),
-    .server_info = `None (),
+    .port = #None,
+    .server_info = #None,
     .http_shutdown = false,
     .upstream_url = "https://api.openai.com/v1/responses",
-    .dump_dir = `None (),
+    .dump_dir = #None,
   ];
   let scanned: ResponsesProxyFactsResult = scan_responses_proxy_from(args, initial);
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
+  if let #Err message = scanned then
+    #Err message
+  else let #Ok facts = scanned then
     let options: ResponsesProxyOptions = [
       .port = facts.port,
       .server_info = facts.server_info,
@@ -175,11 +175,11 @@ let parse_responses_proxy_options: UtilityArgs -> UtilityCommandResult = (args: 
       .upstream_url = facts.upstream_url,
       .dump_dir = facts.dump_dir,
     ];
-    `Ok (`RunResponsesProxy options)
-  } else {
-    `Err "responses-api-proxy scanner returned an unknown result"
-  }
-};
+    #Ok (#RunResponsesProxy options)
+  else
+    #Err "responses-api-proxy scanner returned an unknown result"
+  end;
+end;
 
 return {
   .parse_apply_options,

@@ -92,6 +92,10 @@ export type Prim =
   | "f32x4.extract_lane"
   | "f32x4.replace_lane";
 
+export type PrimitiveTrapCondition =
+  | "nonzero_divisor"
+  | "signed_division_overflow";
+
 export type NumericBuiltinName =
   | "@bit_and"
   | "@bit_or"
@@ -120,6 +124,25 @@ export type F32x4BuiltinName =
   | "@f32x4_replace_lane";
 
 export function Prim() {}
+
+export function primitive_trap_conditions(
+  prim: string,
+): readonly PrimitiveTrapCondition[] {
+  switch (prim) {
+    case "i32.div_s":
+    case "i64.div_s":
+      return ["nonzero_divisor", "signed_division_overflow"];
+    case "i32.div_u":
+    case "i64.div_u":
+    case "i32.rem_s":
+    case "i64.rem_s":
+    case "i32.rem_u":
+    case "i64.rem_u":
+      return ["nonzero_divisor"];
+    default:
+      return [];
+  }
+}
 
 export function numeric_builtin_prim(name: string): Prim | undefined {
   switch (name) {

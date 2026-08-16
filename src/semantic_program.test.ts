@@ -1,0 +1,10264 @@
+import { assert_equals, assert_throws } from "./assert.ts";
+import {
+  analyze_duck_source,
+  lower_duck_source,
+  summary_call_proof_keys_match,
+  type SummaryCallKernelBinding,
+  verify_return_identity_checked_certificate,
+  verify_summary_call_checked_certificate,
+} from "./semantic_program.ts";
+import { parse_duck_source } from "./frontend/baba_parser.ts";
+import { checked_value, diagnostics_of } from "./frontend/checked.ts";
+import { check_certificate, check_proof } from "./frontend/proof_kernel.ts";
+import {
+  KernelEnvironment,
+  snapshot_kernel_context,
+  type_sort,
+} from "./frontend/kernel_terms.ts";
+
+Deno.test("semantic program stages preserve Baba input and stable symbols", () => {
+  const parsed = parse_duck_source("let value = 1;\n");
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.symbols.has("value"), true);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  const inspected = lowered.map((program) => {
+    assert_equals(program.core.tag, "program");
+    return null;
+  });
+  assert_equals(diagnostics_of(inspected), []);
+});
+
+Deno.test("successful analysis exposes stable typed control flow", () => {
+  const source = "let result = if true then 1 else 2 end;\nresult\n";
+  const first = analyze_duck_source(parse_duck_source(source));
+  const second = analyze_duck_source(parse_duck_source(source));
+  assert_equals(first.diagnostics, []);
+  const control_flow = first.control_flow;
+  if (control_flow === undefined) {
+    throw new Error("Expected successful analysis to expose control flow.");
+  }
+  assert_equals(second.control_flow, control_flow);
+  assert_equals(control_flow.blocks.length, 4);
+  const joined = control_flow.blocks[3];
+  assert_equals(joined?.nodes[0]?.operation.tag, "phi");
+  const result = first.symbols.get("result")?.[0];
+  if (result === undefined) throw new Error("Expected result identity.");
+  assert_equals(joined?.nodes[1]?.outputs, [result]);
+  assert_equals(
+    control_flow.values.find((value) => value.value === result)?.type,
+    { tag: "scalar", name: "I32" },
+  );
+  assert_equals(
+    control_flow.blocks.flatMap((block) => block.nodes).every((node) =>
+      node.span.start >= 0 && node.span.end <= source.length
+    ),
+    true,
+  );
+  assert_equals(
+    checked_value(lower_duck_source(first))?.core,
+    checked_value(lower_duck_source(second))?.core,
+  );
+});
+
+Deno.test("named callable control flow uses the binding identity", () => {
+  const source = "let identity = (value: I32) => value;\nidentity\n";
+  const first = analyze_duck_source(parse_duck_source(source));
+  const second = analyze_duck_source(parse_duck_source(source));
+  assert_equals(first.diagnostics, []);
+  const identity = first.symbols.get("identity")?.[0];
+  const parameter = first.symbols.get("value")?.[0];
+  if (identity === undefined || parameter === undefined) {
+    throw new Error("Expected identity and parameter semantic identities.");
+  }
+  const callable = first.callable_control_flow.get(identity);
+  if (callable === undefined) {
+    throw new Error("Expected identity callable control flow.");
+  }
+  assert_equals(callable.callable, identity);
+  assert_equals(callable.parameters, [parameter]);
+  assert_equals(callable.captures, []);
+  assert_equals(callable.recursive_self, undefined);
+  assert_equals(callable.recursive_group, []);
+  assert_equals(Object.isFrozen(callable), true);
+  assert_equals(Object.isFrozen(callable.parameters), true);
+  assert_equals(Object.isFrozen(callable.captures), true);
+  assert_equals(Object.isFrozen(callable.recursive_group), true);
+  assert_equals(callable.control_flow.parameters, [parameter]);
+  assert_equals(callable.control_flow.blocks[0]?.terminator, {
+    tag: "return",
+    value: parameter,
+  });
+  assert_equals(
+    first.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
+      node.operation.tag === "construct" &&
+      node.operation.constructor === "lam" &&
+      node.outputs[0] === identity
+    ),
+    true,
+  );
+  assert_equals(
+    [...second.callable_control_flow],
+    [...first.callable_control_flow],
+  );
+});
+
+Deno.test("callable control flow flattens transient argument packs", () => {
+  const source = "type select = (left: I32, right: I32) -> I32\n" +
+    "let select = (left, right) => right;\n" +
+    "type invoke = (left: I32, right: I32) -> I32\n" +
+    "let invoke = (left, right) => select (left, right);\n" +
+    "invoke (1, 2)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const select = analysis.symbols.get("select")?.[0];
+  const invoke = analysis.symbols.get("invoke")?.[0];
+  if (select === undefined || invoke === undefined) {
+    throw new Error("Expected callable semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(invoke);
+  if (callable === undefined) {
+    throw new Error("Expected invoke callable control flow.");
+  }
+  const [left, right] = callable.parameters;
+  if (left === undefined || right === undefined) {
+    throw new Error("Expected invoke parameter semantic identities.");
+  }
+  const call = callable.control_flow.blocks.flatMap((block) => block.nodes)
+    .find((node) => node.operation.tag === "call");
+  assert_equals(call?.inputs, [select, left, right]);
+});
+
+Deno.test("computational existential relations survive signed calls and open", () => {
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "let package = make(7i32);\n" +
+    "open package as (witness, payload);\n" +
+    "let result = same(witness, payload);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const package_value = analysis.symbols.get("package")?.[0];
+  if (package_value === undefined) {
+    throw new Error("Expected computational package identity.");
+  }
+  assert_equals(
+    analysis.computational_packages.get(package_value)?.relation,
+    "$duck:some:payload = $duck:some:witness",
+  );
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  const program = checked_value(lowered);
+  if (program === undefined) {
+    throw new Error("Expected computational existential program to lower.");
+  }
+  const core = JSON.stringify(program.core);
+  assert_equals(core.includes("some"), false);
+  assert_equals(core.includes('"tag":"pack"'), false);
+  assert_equals(core.includes("refinement"), false);
+  assert_equals(core.includes('"index"'), true);
+});
+
+Deno.test("signed computational package calls can be opened directly", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "open make(7i32) as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("explicitly typed computational packages need no callable signature", () => {
+  const source = "let package = pack 1i32, 1i32 as " +
+    "some (witness: I32). { payload: I32 | payload = witness };\n" +
+    "open package as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages accept uniform product witnesses", () => {
+  const source = "let package = pack [1i32, 2i32], 0i32 as " +
+    "some (witness: [I32, I32]). I32;\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages preserve refined product layouts", () => {
+  const source = "let package = pack 0i32, [1i32, 2i32] as " +
+    "some (witness: I32). { payload: [I32, I32] | True };\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages resolve transparent product aliases", () => {
+  const source = "type Pair = [I32, I32];\n" +
+    "let package = pack 0i32, [1i32, 2i32] as " +
+    "some (witness: I32). Pair;\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packages prove relations between product values", () => {
+  const package_type = "some (witness: [I32, I32]). " +
+    "{ payload: [I32, I32] | payload = witness }";
+  const source = "let package = pack [1i32, 2i32], [1i32, 2i32] as " +
+    package_type + ";\n" +
+    "open package as (witness, payload);\n" +
+    "payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("malformed package witness shapes remain diagnostics", () => {
+  const source = 'let package = pack ("hello", 1i32), 0i32 as ' +
+    "some (witness: freeze (Text, I32)). I32;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("consuming a computational package transfers linear components", () => {
+  const source = "let !package = pack 1i32, 1i32 as " +
+    "some (witness: I32). { payload: I32 | payload = witness };\n" +
+    "open !package as (witness, payload);\n" +
+    "!witness + !payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packs reject ownership-transferring components", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (left: I32, right: I32) -> " + package_type +
+    "\n" +
+    "let make = (!left, !right) => " +
+    "pack !left, !right as " + package_type + ";\n" +
+    "let !package = make(1i32, 2i32);\n" +
+    "open !package as (witness, payload);\n" +
+    "!witness + !payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("signed package results cannot duplicate transferred owners", () => {
+  const package_type = "some (witness: Text). I32";
+  const source = "type make = (text: Text) -> " + package_type + "\n" +
+    "let make = !text => pack !text, 0i32 as " + package_type + ";\n" +
+    'let package = make("hello");\n' +
+    "open package as (first, left);\n" +
+    "open package as (second, right);\n" +
+    "(first, second, left + right)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2609" &&
+      diagnostic.message.includes("ownership-transferring")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("linear aliases cannot retain package relations", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  for (
+    const alias_binding of [
+      "let !alias = !value",
+      "let alias = !value",
+      "let alias = value; alias := !value",
+    ]
+  ) {
+    const source = "type same = (left: I32, right: I32) -> I32\n" +
+      "requires left = right\n" +
+      "let same = (left, right) => left;\n" +
+      "type make = (value: I32) -> " + package_type + "\n" +
+      "let make = !value => do\n" +
+      "  " + alias_binding + ";\n" +
+      "  pack alias, alias as " + package_type + "\n" +
+      "end;\n" +
+      "let package = make(1i32);\n" +
+      "open package as (witness, payload);\n" +
+      "same(witness, payload)\n";
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    const package_value = analysis.symbols.get("package")?.[0];
+    if (package_value === undefined) {
+      throw new Error("Expected aliased package identity.");
+    }
+    assert_equals(analysis.computational_packages.has(package_value), false);
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes("left = right")
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("a consumed computational package cannot be opened twice", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  for (const second_open of ["!package", "package"]) {
+    const source = "let !package = pack 1i32, 1i32 as " + package_type +
+      ";\n" +
+      "open !package as (witness, payload);\n" +
+      "open " + second_open + " as (again, other);\n" +
+      "!witness + !payload + !again + !other\n";
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.map((diagnostic) => diagnostic.code),
+      ["DUCK2201"],
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("a consumed computational package cannot be reused as a value", () => {
+  const source = "let !package = pack 1i32, 1i32 as " +
+    "some (witness: I32). I32;\n" +
+    "open !package as (witness, payload);\n" +
+    "(!witness, !payload, package)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2201"],
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("computational packs use local aliases as exact evidence", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => do\n" +
+    "  let alias = value;\n" +
+    "  pack alias, alias as " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational packs use branch-established evidence", () => {
+  const source = "type make = (left: I32, right: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = (left, right) => " +
+    "if left == right then\n" +
+    "  pack left, right as " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "else\n" +
+    "  pack left, left as " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("compact conditional packs retain distinct source identities", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type make = (left: I32, right: I32) -> " + package_type +
+    "\n" +
+    "let make = (left, right) => if left == right then " +
+    "pack left, right as " + package_type + " else " +
+    "pack left, right as " + package_type + " end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2604"],
+  );
+  assert_equals(
+    analysis.diagnostics[0]?.span.start,
+    source.lastIndexOf("pack"),
+  );
+});
+
+Deno.test("computational results reject ordinary early returns", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type make = (flag: Bool, left: I32, right: I32) -> " + package_type +
+    "\n" +
+    "let make = (flag, left, right) => do\n" +
+    "  if flag then\n" +
+    "    return (left, right);\n" +
+    "  end\n" +
+    "  pack left, left as " + package_type + "\n" +
+    "end;\n" +
+    "open make(true, 1i32, 2i32) as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609", "DUCK2609", "DUCK2604"],
+  );
+  assert_equals(
+    analysis.diagnostics[0]?.span.start,
+    source.indexOf("(left, right)", source.indexOf("return")),
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("computational results accept packages on every return", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type make = (flag: Bool, left: I32, right: I32) -> " +
+    package_type + "\n" +
+    "let make = (flag, left, right) => do\n" +
+    "  if flag then\n" +
+    "    return pack left, left as " + package_type + ";\n" +
+    "  end\n" +
+    "  pack right, right as " + package_type + "\n" +
+    "end;\n" +
+    "open make(true, 1i32, 2i32) as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("diverging paths do not need a computational package result", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (diverge: Bool) -> " + package_type + "\n" +
+    "let make = diverge => if diverge then\n" +
+    "  loop do continue; end\n" +
+    "else\n" +
+    "  pack 21i32, 21i32 as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("returned conditionals ignore diverging package paths", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (diverge: Bool) -> " + package_type + "\n" +
+    "let make = diverge => do\n" +
+    "  return if diverge then\n" +
+    "    loop do continue; end\n" +
+    "  else\n" +
+    "    pack 21i32, 21i32 as " + package_type + "\n" +
+    "  end;\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("package aliases ignore diverging conditional paths", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (diverge: Bool) -> " + package_type + "\n" +
+    "let make = diverge => do\n" +
+    "  let package = if diverge then\n" +
+    "    loop do continue; end\n" +
+    "  else\n" +
+    "    pack 21i32, 21i32 as " + package_type + "\n" +
+    "  end;\n" +
+    "  package\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("trapping paths do not need a computational package result", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (fail: Bool) -> " + package_type + "\n" +
+    "let make = fail => if fail then\n" +
+    '  @panic("no package")\n' +
+    "else\n" +
+    "  pack 21i32, 21i32 as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("Never calls do not need a computational package result", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = 'let abort = ignored => @panic("stop");\n' +
+    "type make = (fail: Bool) -> " + package_type + "\n" +
+    "let make = fail => if fail then\n" +
+    "  abort(0i32)\n" +
+    "else\n" +
+    "  pack 21i32, 21i32 as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("ordinary returning callables cannot forge package families", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let ordinary: (I32, I32) -> Never = " +
+    "(left, right) => do return (left, right); end;\n" +
+    "type make = (plain: Bool, left: I32, right: I32) -> " +
+    package_type + "\n" +
+    "let make = (plain, left, right) => if plain then\n" +
+    "  ordinary(left, right)\n" +
+    "else\n" +
+    "  pack left, left as " + package_type + "\n" +
+    "end;\n" +
+    "open make(true, 1i32, 2i32) as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("unreachable fallthrough does not become a package return", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = () -> " + package_type + "\n" +
+    "let make = () => do\n" +
+    "  return pack 21i32, 21i32 as " + package_type + ";\n" +
+    "  (2i32, 3i32)\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("unreachable explicit returns do not change package families", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = () -> " + package_type + "\n" +
+    "let make = () => do\n" +
+    "  return pack 21i32, 21i32 as " + package_type + ";\n" +
+    "  return (2i32, 3i32);\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("nested handler returns do not become callable package returns", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "effect Marker { mark: () => Unit }\n" +
+    "type make = (left: I32, right: I32) -> " + package_type + "\n" +
+    "let make = (left, right) => do\n" +
+    "  let unused = handler Marker {\n" +
+    "    mark: (!resume) => !resume(()),\n" +
+    "    return: value => do return (left, right); end,\n" +
+    "  };\n" +
+    "  pack left, left as " + package_type + "\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("loop exits preserve computational package families", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type make = (value: I32) -> " + package_type + "\n" +
+    "let make = value => loop do\n" +
+    "  break pack value, value as " + package_type + ";\n" +
+    "end;\n" +
+    "open make(21i32) as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("every computational loop exit must preserve its package family", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = (plain: Bool) -> " + package_type + "\n" +
+    "let make = plain => loop do\n" +
+    "  if plain then break (1i32, 1i32); end\n" +
+    "  break pack 2i32, 2i32 as " + package_type + ";\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609"],
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("nested loop exits do not change the outer package family", () => {
+  const package_type = "some (witness: I32). I32";
+  const source = "type make = () -> " + package_type + "\n" +
+    "let make = () => loop do\n" +
+    "  let ignored = loop do break 1i32; end;\n" +
+    "  break pack ignored, ignored as " + package_type + ";\n" +
+    "end;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("ordinary products cannot be opened as computational existentials", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let pair = (1i32, 1i32);\n" +
+      "open pair as (witness, payload);\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609"],
+  );
+});
+
+Deno.test("signed computational package parameters preserve their relation", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "read(make(21i32))\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational package brands survive aliases and branch joins", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (hidden: I32). { element: I32 | element = hidden };\n" +
+    "let alias = make;\n" +
+    "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "let package = if true then alias(20i32) else make(22i32) end;\n" +
+    "read(package)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("computational package brands follow assignment ValueIds", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "let package = pack 1i32, 1i32 as " + package_type +
+    ";\n" +
+    "package := pack 2i32, 2i32 as " + package_type + ";\n" +
+    "open package as (witness, payload);\n" +
+    "witness + payload\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const package_values = analysis.symbols.get("package");
+  if (package_values === undefined) {
+    throw new Error("Expected reassigned package identities.");
+  }
+  assert_equals(package_values.length, 2);
+  for (const value of package_values) {
+    assert_equals(analysis.computational_packages.has(value), true);
+  }
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("package reassignment invalidates a different family", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type choose = (flag: Bool) -> I32\n" +
+    "let choose = flag => do\n" +
+    "  let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "  if flag then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  end\n" +
+    "  open package as (witness, payload);\n" +
+    "  same(witness, payload)\n" +
+    "end;\n" +
+    "choose(true)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("left = right")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("nested callable assignments do not invalidate outer packages", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "let mutate = ignored => do\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  0i32\n" +
+    "end;\n" +
+    "open package as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("called closure assignments do not replace caller packages", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "let mutate = ignored => do\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  0i32\n" +
+    "end;\n" +
+    "mutate(0i32);\n" +
+    "open package as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("nested closures capture the package family at their join", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type outer = (flag: Bool) -> I32\n" +
+    "let outer = flag => do\n" +
+    "  let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "  if flag then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  end\n" +
+    "  let read = ignored => do\n" +
+    "    open package as (witness, payload);\n" +
+    "    same(witness, payload)\n" +
+    "  end;\n" +
+    "  read(0i32)\n" +
+    "end;\n" +
+    "outer(true)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" || diagnostic.code === "DUCK2609"
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("sibling branches do not share package assignments", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type choose = (flag: Bool) -> I32\n" +
+    "let choose = flag => do\n" +
+    "  let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "  if flag then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "    0i32\n" +
+    "  else\n" +
+    "    open package as (witness, payload);\n" +
+    "    same(witness, payload)\n" +
+    "  end\n" +
+    "end;\n" +
+    "choose(false)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("loop backedges invalidate nested package captures", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  let read = ignored => do\n" +
+    "    open package as (witness, payload);\n" +
+    "    same(witness, payload)\n" +
+    "  end;\n" +
+    "  read(index);\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" || diagnostic.code === "DUCK2609"
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("loop backedges invalidate package arguments", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type read = (package: " + equal_package + ") -> I32\n" +
+    "let read = package => 0i32;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  read(package);\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("loop backedges connect sibling branch package families", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type read = (package: " + equal_package + ") -> I32\n" +
+    "let read = package => 0i32;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  if index == 0i32 then\n" +
+    "    package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "  else\n" +
+    "    read(package)\n" +
+    "  end\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("loop-carried package projections remain checked diagnostics", () => {
+  const equal_package =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const true_package = "some (witness: I32). { payload: I32 | True }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 1i32 as " + equal_package + ";\n" +
+    "for index in 0i32..2i32 do\n" +
+    "  open package as (witness, payload);\n" +
+    "  same(witness, payload);\n" +
+    "  package := pack 2i32, 3i32 as " + true_package + ";\n" +
+    "end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("ordinary products cannot satisfy computational package parameters", () => {
+  const source = "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  witness + payload\n" +
+    "end;\n" +
+    "let pair = [21i32, 21i32];\n" +
+    "read(pair)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.code),
+    ["DUCK2609"],
+  );
+});
+
+Deno.test("computational package families distinguish equal-width integers", () => {
+  const source = "type make = (value: I32) -> some (witness: I32). I32\n" +
+    "let make = value => " +
+    "pack value, value as some (witness: I32). I32;\n" +
+    "type read = (package: some (witness: U32). U32) -> U32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  payload\n" +
+    "end;\n" +
+    "read(make(21i32))\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+});
+
+Deno.test("computational package families preserve proposition grouping", () => {
+  const source = "type make = (value: I32) -> " +
+    "some (witness: I32). " +
+    "{ payload: I32 | True or (False and False) }\n" +
+    "let make = value => pack value, value as " +
+    "some (witness: I32). " +
+    "{ payload: I32 | True or (False and False) };\n" +
+    "type read = (package: some (witness: I32). " +
+    "{ payload: I32 | (True or False) and False }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  payload\n" +
+    "end;\n" +
+    "read(make(1i32))\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2609"),
+    true,
+  );
+});
+
+Deno.test("computational package callables cannot bypass direct checks", () => {
+  const source = "type read = " +
+    "(package: some (witness: I32). " +
+    "{ payload: I32 | payload = witness }) -> I32\n" +
+    "let read = package => do\n" +
+    "  open package as (witness, payload);\n" +
+    "  payload\n" +
+    "end;\n" +
+    "let escaped = [read];\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("computational packs reject unproved payload refinements", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type make = (value: I32) -> " +
+      "some (witness: I32). { payload: I32 | payload = witness }\n" +
+      "let make = value => " +
+      "pack value, 8i32 as " +
+      "some (witness: I32). { payload: I32 | payload = witness };\n",
+  ));
+  assert_equals(analysis.diagnostics[0]?.code, "DUCK2604");
+  assert_equals(
+    analysis.diagnostics[0]?.message.includes("8i32 = value"),
+    true,
+  );
+});
+
+Deno.test("failed pack proofs introduce no package relation", () => {
+  const package_type =
+    "some (witness: I32). { payload: I32 | payload = witness }";
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "let package = pack 1i32, 2i32 as " + package_type + ";\n" +
+    "open package as (witness, payload);\n" +
+    "same(witness, payload)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  const package_value = analysis.symbols.get("package")?.[0];
+  if (package_value === undefined) {
+    throw new Error("Expected invalid package identity.");
+  }
+  assert_equals(analysis.computational_packages.has(package_value), false);
+  assert_equals(
+    analysis.diagnostics.filter((diagnostic) => diagnostic.code === "DUCK2604")
+      .length,
+    2,
+  );
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2609" &&
+      diagnostic.message.includes("Cannot open package")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("rebinding an opened witness does not transfer its relation", () => {
+  const source = "type same = (left: I32, right: I32) -> I32\n" +
+    "requires left = right\n" +
+    "let same = (left, right) => left;\n" +
+    "type make = (value: I32) -> " +
+    "some (witness: I32). { payload: I32 | payload = witness }\n" +
+    "let make = value => " +
+    "pack value, value as " +
+    "some (witness: I32). { payload: I32 | payload = witness };\n" +
+    "let package = make(7i32);\n" +
+    "open package as (witness, payload);\n" +
+    "witness := witness + 1i32;\n" +
+    "let result = same(witness, payload);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.at(-1)?.code, "DUCK2604");
+  assert_equals(
+    analysis.diagnostics.at(-1)?.message.includes("left = right"),
+    true,
+  );
+});
+
+Deno.test("computational existentials reject witness-dependent runtime layouts", () => {
+  const source =
+    "type make = (value: I32) -> some (witness: I32). [I32; witness]\n" +
+    "let make = value => " +
+    "pack value, [value] as some (witness: I32). [I32; witness];\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.every((diagnostic) => diagnostic.code === "DUCK2610"),
+    true,
+  );
+  assert_equals(analysis.diagnostics.length, 2);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("nested callable control flow records lexical captures", () => {
+  const source = "let outer = (base: I32) => do\n" +
+    "  let inner = (value: I32) => base + value;\n" +
+    "  inner\n" +
+    "end;\n" +
+    "outer\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const outer = analysis.symbols.get("outer")?.[0];
+  const inner = analysis.symbols.get("inner")?.[0];
+  const base = analysis.symbols.get("base")?.[0];
+  const value = analysis.symbols.get("value")?.[0];
+  if (
+    outer === undefined || inner === undefined || base === undefined ||
+    value === undefined
+  ) {
+    throw new Error("Expected nested callable semantic identities.");
+  }
+  const outer_flow = analysis.callable_control_flow.get(outer);
+  const inner_flow = analysis.callable_control_flow.get(inner);
+  if (outer_flow === undefined || inner_flow === undefined) {
+    throw new Error("Expected both nested callable graphs.");
+  }
+  assert_equals(outer_flow.parameters, [base]);
+  assert_equals(outer_flow.captures, []);
+  assert_equals(outer_flow.recursive_group, []);
+  assert_equals(inner_flow.parameters, [value]);
+  assert_equals(inner_flow.captures, [base]);
+  assert_equals(inner_flow.recursive_group, []);
+  assert_equals(inner_flow.control_flow.parameters, [value, base]);
+  assert_equals(
+    outer_flow.control_flow.blocks.flatMap((block) => block.nodes).some(
+      (node) =>
+        node.operation.tag === "construct" &&
+        node.operation.constructor === "lam" &&
+        node.inputs[0] === base &&
+        node.outputs[0] === inner,
+    ),
+    true,
+  );
+});
+
+Deno.test("recursive callable control flow separates self from captures", () => {
+  const source =
+    "let rec countdown = (value: I32) => if value == 0 then 0 else countdown(value - 1) end;\n" +
+    "countdown\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const countdown = analysis.symbols.get("countdown")?.[0];
+  const value = analysis.symbols.get("value")?.[0];
+  if (countdown === undefined || value === undefined) {
+    throw new Error("Expected recursive callable semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(countdown);
+  if (callable === undefined) {
+    throw new Error("Expected recursive callable control flow.");
+  }
+  assert_equals(callable.parameters, [value]);
+  assert_equals(callable.captures, []);
+  assert_equals(callable.recursive_self, countdown);
+  assert_equals(callable.recursive_group, [countdown]);
+  assert_equals(callable.control_flow.parameters, [value, countdown]);
+  assert_equals(
+    analysis.control_flow?.blocks.flatMap((block) => block.nodes).find((node) =>
+      node.outputs[0] === countdown
+    )?.inputs,
+    [],
+  );
+});
+
+Deno.test("callable captures use the live parent SSA generation", () => {
+  const source = "let total = 0;\n" +
+    "if true then total = 1; end\n" +
+    "let get = () => total;\n" +
+    "get\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const get = analysis.symbols.get("get")?.[0];
+  if (get === undefined) {
+    throw new Error("Expected get semantic identity.");
+  }
+  const parent_phi = analysis.control_flow?.blocks.flatMap((block) =>
+    block.nodes
+  ).find((node) => node.operation.tag === "phi");
+  const current_total = parent_phi?.outputs[0];
+  if (current_total === undefined) {
+    throw new Error("Expected the parent assignment phi.");
+  }
+  const callable = analysis.callable_control_flow.get(get);
+  if (callable === undefined) {
+    throw new Error("Expected get callable control flow.");
+  }
+  assert_equals(callable.captures, [current_total]);
+  assert_equals(callable.control_flow.parameters, [current_total]);
+  assert_equals(callable.control_flow.blocks[0]?.terminator, {
+    tag: "return",
+    value: current_total,
+  });
+});
+
+Deno.test("write-only callable assignments capture their predecessor", () => {
+  const source = "let total = 0;\n" +
+    "let set = () => do\n" +
+    "  total = 1;\n" +
+    "  total\n" +
+    "end;\n" +
+    "set\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const total = analysis.symbols.get("total")?.[0];
+  const set = analysis.symbols.get("set")?.[0];
+  if (total === undefined || set === undefined) {
+    throw new Error("Expected total and set semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(set);
+  if (callable === undefined) {
+    throw new Error("Expected set callable control flow.");
+  }
+  const assignment = callable.control_flow.blocks.flatMap((block) =>
+    block.nodes
+  ).find((node) =>
+    node.operation.tag === "primitive" &&
+    node.operation.name === "assign:same"
+  );
+  assert_equals(callable.captures, [total]);
+  assert_equals(callable.control_flow.parameters, [total]);
+  assert_equals(assignment?.inputs[0], total);
+  assert_equals(
+    callable.control_flow.blocks[0]?.terminator,
+    { tag: "return", value: assignment?.outputs[0] },
+  );
+});
+
+Deno.test("callable branch assignments return the joined capture", () => {
+  const source = "let total = 0;\n" +
+    "let update = (flag: Bool) => do\n" +
+    "  if flag then\n" +
+    "    total = total + 1;\n" +
+    "  end\n" +
+    "  total\n" +
+    "end;\n" +
+    "update\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const total = analysis.symbols.get("total")?.[0];
+  const update = analysis.symbols.get("update")?.[0];
+  if (total === undefined || update === undefined) {
+    throw new Error("Expected total and update semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(update);
+  if (callable === undefined) {
+    throw new Error("Expected update callable control flow.");
+  }
+  const nodes = callable.control_flow.blocks.flatMap((block) => block.nodes);
+  const assignment = nodes.find((node) =>
+    node.operation.tag === "primitive" &&
+    node.operation.name === "assign:same"
+  );
+  const joined = nodes.find((node) => node.operation.tag === "phi");
+  if (assignment === undefined || joined === undefined) {
+    throw new Error("Expected assignment and join nodes in update.");
+  }
+  assert_equals(callable.captures, [total]);
+  assert_equals(joined.inputs, [total, assignment.outputs[0]]);
+  assert_equals(
+    callable.control_flow.blocks.at(-1)?.terminator,
+    { tag: "return", value: joined.outputs[0] },
+  );
+});
+
+Deno.test("callable loops carry captured assignments through the header", () => {
+  const source = "let total = 0;\n" +
+    "let update = (stop: I32) => do\n" +
+    "  for value in 0..stop do\n" +
+    "    total = total + value;\n" +
+    "  end\n" +
+    "  total\n" +
+    "end;\n" +
+    "update\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const total = analysis.symbols.get("total")?.[0];
+  const update = analysis.symbols.get("update")?.[0];
+  if (total === undefined || update === undefined) {
+    throw new Error("Expected total and update semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(update);
+  if (callable === undefined) {
+    throw new Error("Expected update callable control flow.");
+  }
+  const nodes = callable.control_flow.blocks.flatMap((block) => block.nodes);
+  const assignment = nodes.find((node) =>
+    node.operation.tag === "primitive" &&
+    node.operation.name === "assign:same"
+  );
+  if (assignment === undefined) {
+    throw new Error("Expected a loop assignment for total.");
+  }
+  const carried = nodes.find((node) =>
+    node.operation.tag === "phi" &&
+    node.inputs.includes(total) &&
+    node.inputs.includes(assignment.outputs[0])
+  );
+  if (carried === undefined) {
+    throw new Error("Expected the loop header to carry total.");
+  }
+  assert_equals(callable.captures, [total]);
+  assert_equals(
+    callable.control_flow.blocks.at(-1)?.terminator,
+    { tag: "return", value: carried.outputs[0] },
+  );
+});
+
+Deno.test("unavailable captured callables make root flow unavailable", () => {
+  for (
+    const source of [
+      "let base: I32 = 7;\n" +
+      "let pair = (left, right) => if base == 7 then right else left end;\n" +
+      "pair\n",
+      "let base: I32 = 7;\n" +
+      "let choose = (flag: I32) => do\n" +
+      "  if flag then\n" +
+      "    1;\n" +
+      "  end\n" +
+      "  base\n" +
+      "end;\n" +
+      "choose\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.control_flow, undefined);
+    assert_equals(analysis.callable_control_flow.size, 0);
+  }
+});
+
+Deno.test("mutual callable control flow predeclares recursive peers", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    Deno.readTextFileSync("examples/functions/11_mutual_recursion.duck"),
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const even = analysis.symbols.get("even")?.[0];
+  const odd = analysis.symbols.get("odd")?.[0];
+  if (even === undefined || odd === undefined) {
+    throw new Error("Expected mutual callable semantic identities.");
+  }
+  const even_flow = analysis.callable_control_flow.get(even);
+  const odd_flow = analysis.callable_control_flow.get(odd);
+  if (even_flow === undefined || odd_flow === undefined) {
+    throw new Error("Expected both mutual callable graphs.");
+  }
+  assert_equals(even_flow.recursive_group, [even, odd]);
+  assert_equals(odd_flow.recursive_group, [even, odd]);
+  assert_equals(even_flow.captures, []);
+  assert_equals(odd_flow.captures, []);
+  assert_equals(even_flow.control_flow.parameters.includes(odd), true);
+  assert_equals(odd_flow.control_flow.parameters.includes(even), true);
+});
+
+Deno.test("inferred callable parameters retain their semantic graph", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let pair = (left, right) => right;\npair\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.control_flow !== undefined, true);
+  const pair = analysis.symbols.get("pair")?.[0];
+  if (pair === undefined) throw new Error("Expected pair callable identity.");
+  const callable = analysis.callable_control_flow.get(pair);
+  if (callable === undefined) throw new Error("Expected pair callable graph.");
+  assert_equals(callable.parameters.length, 2);
+  assert_equals(callable.control_flow.blocks[0]?.terminator, {
+    tag: "return",
+    value: callable.parameters[1],
+  });
+});
+
+Deno.test("callable graph omissions preserve valid elaboration examples", () => {
+  for (
+    const path of [
+      "examples/basics/07_early_return.duck",
+      "examples/compile_time/20_variadic_value_packs.duck",
+      "examples/compile_time/24_comptime_stack_module.duck",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      Deno.readTextFileSync(path),
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+  }
+});
+
+Deno.test("semantic indexes cover lexical generations with canonical types", () => {
+  const source = "let x: I32 = 1;\n" +
+    "let f = (value: Bool) => do\n" +
+    "  let x = 2;\n" +
+    "  x = x + 1;\n" +
+    "  value\n" +
+    "end;\n" +
+    "x = x + 1;\n";
+  const first = analyze_duck_source(parse_duck_source(source));
+  const second = analyze_duck_source(parse_duck_source(source));
+  assert_equals(first.diagnostics, []);
+  const xs = first.symbols.get("x");
+  if (xs === undefined) {
+    throw new Error("Expected every x binding generation");
+  }
+  assert_equals(xs.length, 4);
+  assert_equals(new Set(xs).size, 4);
+  assert_equals(xs.map((value) => first.types.get(value)), [
+    { tag: "scalar", name: "I32" },
+    { tag: "scalar", name: "I32" },
+    { tag: "scalar", name: "I32" },
+    { tag: "scalar", name: "I32" },
+  ]);
+  assert_equals(xs.map((value) => first.origins.get(value)?.start), [
+    source.indexOf("x"),
+    source.indexOf("x", source.indexOf("let f")),
+    source.indexOf(
+      "x =",
+      source.indexOf("let x", source.indexOf("let f")) + "let x".length,
+    ),
+    source.lastIndexOf("x ="),
+  ]);
+  assert_equals(second.symbols.get("x"), xs);
+  const parameter = first.symbols.get("value")?.[0];
+  if (parameter === undefined) {
+    throw new Error("Expected lambda parameter identity");
+  }
+  assert_equals(first.types.get(parameter), {
+    tag: "scalar",
+    name: "Bool",
+  });
+  const callable = first.symbols.get("f")?.[0];
+  if (callable === undefined) {
+    throw new Error("Expected function binding identity");
+  }
+  const callable_type = first.types.get(callable);
+  assert_equals(callable_type, {
+    tag: "function",
+    params: [{ tag: "scalar", name: "Bool" }],
+    effects: [],
+    result: { tag: "scalar", name: "Bool" },
+  });
+  assert_equals(Object.isFrozen(callable_type), true);
+  if (callable_type?.tag !== "function") {
+    throw new Error("Expected canonical function representation");
+  }
+  assert_equals(Object.isFrozen(callable_type.params), true);
+});
+
+Deno.test("semantic indexes remain partial across Baba recovery", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let = broken;\nlet kept: Bool = true;\n",
+  ));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals([...analysis.symbols.keys()], ["kept"]);
+  const kept = analysis.symbols.get("kept")?.[0];
+  if (kept === undefined) {
+    throw new Error("Expected recovered kept binding");
+  }
+  assert_equals(analysis.types.get(kept), {
+    tag: "scalar",
+    name: "Bool",
+  });
+  assert_equals(analysis.control_flow, undefined);
+});
+
+Deno.test("semantic indexes omit bindings without inferred representations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let broken = 1 + true;\n",
+  ));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  const broken = analysis.symbols.get("broken")?.[0];
+  if (broken === undefined) {
+    throw new Error("Expected the invalid binding identity.");
+  }
+  assert_equals(analysis.types.has(broken), false);
+  assert_equals(analysis.control_flow, undefined);
+});
+
+Deno.test("semantic control flow records matches loops and ownership", () => {
+  const matched = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "let current: Maybe = #Some 42;\n" +
+      "case current of #Some value => value, #None => 0;\n",
+  ));
+  const match_operations = matched.control_flow?.blocks.flatMap((block) =>
+    block.nodes.map((node) => node.operation)
+  );
+  assert_equals(
+    match_operations?.filter((operation) =>
+      operation.tag === "type_test" &&
+      (operation.type === "#Some" || operation.type === "#None")
+    ).length,
+    2,
+  );
+
+  const looped = analyze_duck_source(parse_duck_source(
+    "let total = 0;\n" +
+      "for value in 0..3 do\n" +
+      "  total = total + value;\n" +
+      "end\n" +
+      "total\n",
+  ));
+  const loop_phi = looped.control_flow?.blocks.flatMap((block) => block.nodes)
+    .find((node) => node.operation.tag === "phi");
+  if (loop_phi?.operation.tag !== "phi") {
+    throw new Error("Expected a loop phi.");
+  }
+  assert_equals(loop_phi.operation.incoming.length, 2);
+
+  const linear = analyze_duck_source(parse_duck_source(
+    "let !token = 1;\n!token\n",
+  ));
+  assert_equals(
+    linear.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
+      node.operation.tag === "ownership_transition" &&
+      node.operation.transition === "consume"
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic control flow carries assignment identities across joins", () => {
+  const branched = analyze_duck_source(parse_duck_source(
+    "let value = 0;\n" +
+      "if true then value = value + 1; end\n" +
+      "value\n",
+  ));
+  assert_equals(branched.diagnostics, []);
+  const branch_flow = branched.control_flow;
+  if (branch_flow === undefined) {
+    throw new Error("Expected branch control flow.");
+  }
+  const branch_return = branch_flow.blocks.find((block) =>
+    block.terminator.tag === "return"
+  );
+  if (branch_return?.terminator.tag !== "return") {
+    throw new Error("Expected branch return.");
+  }
+  const branch_phi = branch_return.nodes.find((node) =>
+    node.operation.tag === "phi"
+  );
+  assert_equals(branch_return.terminator.value, branch_phi?.outputs[0]);
+  if (branch_phi?.operation.tag !== "phi") {
+    throw new Error("Expected branch assignment phi.");
+  }
+  assert_equals(branch_phi.operation.incoming.length, 2);
+
+  const looped = analyze_duck_source(parse_duck_source(
+    "let total = 0;\n" +
+      "for value in 0..3 do\n" +
+      "  total = total + value;\n" +
+      "end\n" +
+      "total\n",
+  ));
+  assert_equals(looped.diagnostics, []);
+  const loop_flow = looped.control_flow;
+  if (loop_flow === undefined) {
+    throw new Error("Expected loop control flow.");
+  }
+  const assignment = looped.symbols.get("total")?.[1];
+  if (assignment === undefined) {
+    throw new Error("Expected loop assignment identity.");
+  }
+  const carried = loop_flow.blocks.flatMap((block) => block.nodes).find(
+    (node) =>
+      node.operation.tag === "phi" &&
+      node.operation.incoming.some((input) => input.value === assignment),
+  );
+  if (carried?.operation.tag !== "phi") {
+    throw new Error("Expected loop-carried assignment phi.");
+  }
+  assert_equals(carried.operation.incoming.length, 2);
+  const loop_return = loop_flow.blocks.find((block) =>
+    block.terminator.tag === "return"
+  );
+  if (loop_return?.terminator.tag !== "return") {
+    throw new Error("Expected loop return.");
+  }
+  assert_equals(loop_return.terminator.value, carried.outputs[0]);
+});
+
+Deno.test("guard failure keeps pattern bindings out of later match arms", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "let current: Maybe = #Some 42;\n" +
+      "case current of\n" +
+      "  #Some value if false => 0,\n" +
+      "  _ => loop do break 1; end;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.control_flow !== undefined, true);
+});
+
+Deno.test("semantic control flow covers existing semantic symbol boundaries", () => {
+  const incomplete_paths = [
+    "examples/basics/08_dynamic_condition.duck",
+    "examples/ownership_modules/multi_file/score_module.duck",
+  ];
+  for (const path of incomplete_paths) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      Deno.readTextFileSync(path),
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.control_flow, undefined);
+  }
+  const refutable = analyze_duck_source(parse_duck_source(
+    Deno.readTextFileSync(
+      "examples/loops/11_refutable_collection_pattern.duck",
+    ),
+  ));
+  assert_equals(refutable.diagnostics, []);
+  assert_equals(refutable.control_flow !== undefined, true);
+});
+
+Deno.test("finite type sets pass through control flow without changing Core", () => {
+  const source = "type Marker = #answer :| #other\n" +
+    "let marker: Marker = #answer;\n" +
+    "if marker is #answer then 1 else 0 end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    analysis.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
+      node.operation.tag === "type_test" && node.operation.type === "#answer"
+    ),
+    true,
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  assert_equals(program?.core.statements[2]?.tag, "expr");
+  const expression = program?.core.statements[2];
+  if (expression?.tag !== "expr") {
+    throw new Error("Expected the finite type-set expression in Core.");
+  }
+  assert_equals(expression.expr.tag, "if_let");
+});
+
+Deno.test("Baba reaches unchanged semantic Core without the handwritten parser", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let value = 1;\n" +
+      "value + 2\n",
+  ));
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core, {
+    tag: "program",
+    statements: [
+      {
+        tag: "bind",
+        kind: "let",
+        name: "value",
+        is_linear: false,
+        annotation: undefined,
+        value: { tag: "num", type: "i32", value: 1 },
+      },
+      {
+        tag: "expr",
+        expr: {
+          tag: "prim",
+          prim: "i32.add",
+          args: [
+            { tag: "var", name: "value" },
+            { tag: "num", type: "i32", value: 2 },
+          ],
+          integer: undefined,
+        },
+      },
+    ],
+  });
+});
+
+Deno.test("Baba indexed assignments reach semantic Core", () => {
+  const source = "let pair = [20, 0];\n" +
+    "pair[1] = 22;\n" +
+    "pair\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  assert_equals(
+    analysis.control_flow?.blocks.flatMap((block) => block.nodes).find(
+      (node) => node.operation.tag === "index",
+    )?.operation,
+    { tag: "index", length: 2, mode: "write" },
+  );
+  const pair = analysis.symbols.get("pair");
+  if (pair === undefined) {
+    throw new Error("Expected indexed aggregate identities");
+  }
+  assert_equals(pair.length, 2);
+  assert_equals(pair[0] === pair[1], false);
+  assert_equals(pair.map((value) => analysis.origins.get(value)?.start), [
+    source.indexOf("pair"),
+    source.indexOf("pair", source.indexOf("\n") + 1),
+  ]);
+  assert_equals(pair.map((value) => analysis.types.get(value)), [
+    {
+      tag: "product",
+      fields: [
+        { label: "0", type: { tag: "scalar", name: "I32" } },
+        { label: "1", type: { tag: "scalar", name: "I32" } },
+      ],
+    },
+    {
+      tag: "product",
+      fields: [
+        { label: "0", type: { tag: "scalar", name: "I32" } },
+        { label: "1", type: { tag: "scalar", name: "I32" } },
+      ],
+    },
+  ]);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core.statements[1], {
+    tag: "index_assign",
+    name: "pair",
+    index: { tag: "num", type: "i32", value: 1 },
+    value: { tag: "num", type: "i32", value: 22 },
+  });
+});
+
+Deno.test("semantic indexes do not publish generated placeholder names", () => {
+  const source = "let f = add(_, _);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals([...analysis.symbols.keys()], ["f"]);
+  assert_equals(
+    [...analysis.origins.values()].every((origin) =>
+      source.slice(origin.start, origin.end) === "f"
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic indexes do not publish unresolved assignment targets", () => {
+  for (const source of ["missing = 1;\n", "missing[0] = 1;\n"]) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.symbols.has("missing"), false);
+  }
+});
+
+Deno.test("Baba compile-time array spreads reach semantic Core", () => {
+  for (
+    const [spread, expected] of [
+      ["[3, ...[1, 2]]", [3, 1, 2]],
+      ["[...[1, 2], 3]", [1, 2, 3]],
+      ["[...[1, 2]]", [1, 2]],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "const values = comptime " + spread + ";\n" +
+        "values\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    const binding = checked_value(lowered)?.core.statements[0];
+    if (binding?.tag !== "bind" || binding.value.tag !== "struct_value") {
+      throw new Error("Expected an expanded array-spread Core binding.");
+    }
+    assert_equals(
+      binding.value.fields.map((field) => {
+        if (field.value.tag !== "num") {
+          throw new Error("Expected a numeric array-spread field.");
+        }
+        return field.value.value;
+      }),
+      expected,
+    );
+  }
+});
+
+Deno.test("Baba attributes expand before semantic Core construction", () => {
+  const source = "const increment = (const target) => " +
+    "#Replace (target + 1);\n" +
+    "@[increment]\n" +
+    "const answer = 41;\n" +
+    "answer\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core, {
+    tag: "program",
+    statements: [
+      {
+        tag: "bind",
+        kind: "const",
+        name: "answer",
+        is_linear: false,
+        annotation: undefined,
+        value: { tag: "num", type: "i32", value: 42 },
+      },
+      {
+        tag: "expr",
+        expr: { tag: "var", name: "answer" },
+      },
+    ],
+  });
+});
+
+Deno.test("array spread failures remain checked source diagnostics", () => {
+  for (
+    const [source, expected_operand] of [
+      [
+        "let tail = [1, 2];\n[3, ...tail]\n",
+        "tail",
+      ],
+      [
+        "let tail = [1, 2];\n[...tail, 3]\n",
+        "tail",
+      ],
+      [
+        "let tail = [1, 2];\n[...tail]\n",
+        "tail",
+      ],
+      [
+        "const values = comptime [3, ...1];\nvalues\n",
+        "1",
+      ],
+      [
+        "const values = comptime [...1, 3];\nvalues\n",
+        "1",
+      ],
+      [
+        "const values = comptime [...1];\nvalues\n",
+        "1",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    const diagnostics = diagnostics_of(lowered);
+    assert_equals(diagnostics.length, 1);
+    const spread_start = source.indexOf("...");
+    assert_equals(diagnostics[0], {
+      code: "DUCK2308",
+      severity: "error",
+      message: "Array spread must resolve to a fixed product at compile time",
+      span: {
+        start: spread_start + 3,
+        end: spread_start + 3 + expected_operand.length,
+      },
+    });
+    assert_equals(checked_value(lowered), undefined);
+  }
+});
+
+Deno.test("array spread diagnostics preserve rewritten spans and accumulate", () => {
+  const source = "let tail = [8, 9];\n" +
+    "[0, ...[1, ...tail]];\n" +
+    "const unused = comptime [...4];\n" +
+    "const values = comptime [0, ...(1 + 2)];\n" +
+    "values\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  const message =
+    "Array spread must resolve to a fixed product at compile time";
+  const nested_operand = "[1, ...tail]";
+  const nested_start = source.indexOf(nested_operand);
+  const tail_start = source.indexOf("tail", nested_start);
+  const unused_start = source.indexOf("4", source.indexOf("const unused"));
+  const binary_operand = "1 + 2";
+  const binary_start = source.indexOf(binary_operand);
+  assert_equals(diagnostics_of(lowered), [
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: {
+        start: nested_start,
+        end: nested_start + nested_operand.length,
+      },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: tail_start, end: tail_start + "tail".length },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: unused_start, end: unused_start + 1 },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: {
+        start: binary_start,
+        end: binary_start + binary_operand.length,
+      },
+    },
+  ]);
+  assert_equals(checked_value(lowered), undefined);
+});
+
+Deno.test("array spread rewrites retain distinct call-site spans", () => {
+  const source = "const scalar = () => 1;\n" +
+    "const first = comptime [0, ...scalar()];\n" +
+    "const second = comptime [...scalar(), 2];\n" +
+    "[first, second]\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  const first_start = source.indexOf("scalar()");
+  const second_start = source.indexOf("scalar()", first_start + 1);
+  const message =
+    "Array spread must resolve to a fixed product at compile time";
+  assert_equals(diagnostics_of(lowered), [
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: first_start, end: first_start + "scalar()".length },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: second_start, end: second_start + "scalar()".length },
+    },
+  ]);
+  assert_equals(checked_value(lowered), undefined);
+});
+
+Deno.test("array spread diagnostics deduplicate shared definition spans", () => {
+  const source = "const tail = 1;\n" +
+    "const bad = () => [1, ...tail];\n" +
+    "const first = comptime [0, ...bad()];\n" +
+    "const second = comptime [...bad(), 2];\n" +
+    "[first, second]\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  const definition_start = source.indexOf("tail", source.indexOf("const bad"));
+  const first_start = source.indexOf("bad()", source.indexOf("const first"));
+  const second_start = source.indexOf("bad()", source.indexOf("const second"));
+  const message =
+    "Array spread must resolve to a fixed product at compile time";
+  assert_equals(diagnostics_of(lowered), [
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: {
+        start: definition_start,
+        end: definition_start + "tail".length,
+      },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: first_start, end: first_start + "bad()".length },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: second_start, end: second_start + "bad()".length },
+    },
+  ]);
+  assert_equals(checked_value(lowered), undefined);
+});
+
+Deno.test("semantic program lowering preserves source diagnostics", () => {
+  const parsed = parse_duck_source("let value = ;\n");
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(analysis.diagnostics.length, 1);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered).length > 0, true);
+});
+
+Deno.test("semantic analysis orders recovery and lowering diagnostics", () => {
+  const source = "const BadName = 1024u8;\n" +
+    "@[broken(]\n" +
+    "const good = 1;\n" +
+    "const next = 2;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.span.start),
+    [6, 16, 32],
+  );
+});
+
+Deno.test("bundled default effect handlers reach semantic Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    'const {} = import "duck:prelude/effects/defaults" ();\n' +
+      "0\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core.tag, "program");
+});
+
+Deno.test("invalid handler clauses remain checked diagnostics", () => {
+  const source = "effect State { bad_name: () => Unit }\n" +
+    "const run = handler State {\n" +
+    "  badName: (!resume) => !resume(()),\n" +
+    "  return: value => value,\n" +
+    "};\n" +
+    "0\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.length, 1);
+  assert_equals(
+    analysis.diagnostics[0]?.message,
+    "Handler clause must use snake_case: badName",
+  );
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), analysis.diagnostics);
+  assert_equals(checked_value(lowered), undefined);
+});
+
+Deno.test("Baba parse results cannot be mutated after branding", () => {
+  const parsed = parse_duck_source("let value = ;\n");
+  let rejected = false;
+  try {
+    parsed.cst.text = "let forged = 1;\n";
+  } catch (_error) {
+    rejected = true;
+  }
+  assert_equals(rejected, true);
+
+  rejected = false;
+  const recovery = parsed.recovery_intervals[0];
+  if (recovery === undefined) {
+    throw new Error("Baba parser did not return its recovery interval");
+  }
+  try {
+    recovery.skipped.end = parsed.cst.text.length;
+  } catch (_error) {
+    rejected = true;
+  }
+  assert_equals(rejected, true);
+
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.parsed.recovery_intervals,
+    parsed.recovery_intervals,
+  );
+  const analysis_recovery = analysis.parsed.recovery_intervals[0];
+  if (analysis_recovery === undefined) {
+    throw new Error("Semantic analysis lost the Baba recovery interval");
+  }
+  if (analysis_recovery.diagnostic !== analysis.parsed.diagnostics[0]) {
+    throw new Error("Semantic analysis detached the recovery diagnostic");
+  }
+  assert_equals(Object.isFrozen(analysis_recovery), true);
+  assert_equals(Object.isFrozen(analysis_recovery.skipped), true);
+});
+
+Deno.test("semantic analysis reports prefix-signature association diagnostics", () => {
+  const parsed = parse_duck_source("type value = (x: I32) -> I32\n");
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2601"),
+    true,
+  );
+});
+
+Deno.test("semantic analysis extracts and masks source prefix signatures", () => {
+  const parsed = parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "identity 1\n",
+  );
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.symbols.has("identity"), true);
+});
+
+Deno.test("prefix signatures predeclare uncalled callable types", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  const identity = analysis.symbols.get("identity")?.[0];
+  if (identity === undefined) {
+    throw new Error("Expected the predeclared callable identity.");
+  }
+  assert_equals(analysis.types.get(identity), {
+    tag: "function",
+    params: [{ tag: "scalar", name: "I32" }],
+    effects: [],
+    result: { tag: "scalar", name: "I32" },
+  });
+});
+
+Deno.test("named callables reject competing inline annotations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "let identity: I32 -> I32 = value => value;\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("cannot combine")
+    ),
+    true,
+  );
+});
+
+Deno.test("polymorphic prefix signatures retain quantified representations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = forall (a: Type). (value: a) -> (result: a)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  const identity = analysis.symbols.get("identity")?.[0];
+  if (identity === undefined) {
+    throw new Error("Expected the polymorphic callable identity.");
+  }
+  assert_equals(analysis.types.get(identity), {
+    tag: "forall",
+    quantified_variables: [0],
+    body: {
+      tag: "function",
+      params: [{ tag: "variable", id: 0, hint: "unknown" }],
+      effects: [],
+      result: { tag: "variable", id: 0, hint: "unknown" },
+    },
+  });
+});
+
+Deno.test("checked contracts erase before semantic Core construction", () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\n" +
+    "identity 42\n";
+  const contracted = analyze_duck_source(
+    parse_duck_source(contracted_source),
+  );
+  const plain = analyze_duck_source(parse_duck_source(plain_source));
+  assert_equals(contracted.diagnostics, []);
+  assert_equals(plain.diagnostics, []);
+  assert_equals(contracted.proofs.size, 1);
+  const checked_certificate = [...contracted.proofs.values()][0];
+  if (checked_certificate === undefined) {
+    throw new Error("Expected a checked contract certificate.");
+  }
+  const certificate = checked_certificate.certificate;
+  assert_equals(certificate.safety, { tag: "safe" });
+  assert_equals(certificate.proposition, {
+    tag: "implies",
+    premise: {
+      tag: "equal",
+      type: { tag: "constant", name: "I32" },
+      left: { tag: "var", index: 1 },
+      right: { tag: "var", index: 0 },
+    },
+    conclusion: {
+      tag: "equal",
+      type: { tag: "constant", name: "I32" },
+      left: { tag: "var", index: 1 },
+      right: { tag: "var", index: 0 },
+    },
+  });
+  assert_equals(
+    checked_certificate.semantic_certificate?.tag,
+    "return_identity",
+  );
+  if (checked_certificate.semantic_certificate?.tag !== "return_identity") {
+    throw new Error("Expected a semantic return identity certificate.");
+  }
+  assert_equals(
+    checked_certificate.semantic_certificate.requirement.parameter_ordinal,
+    0,
+  );
+  assert_equals(
+    checked_certificate.semantic_certificate.requirement.callable,
+    contracted.symbols.get("identity")?.[0],
+  );
+  assert_equals(
+    check_certificate(certificate, certificate.proposition, {
+      environment: checked_certificate.environment,
+      term_context: checked_certificate.term_context,
+      require_safe: true,
+    }),
+    certificate,
+  );
+  const semantic_certificate = checked_certificate.semantic_certificate;
+  const callable = contracted.callable_control_flow.get(
+    semantic_certificate.requirement.callable,
+  );
+  if (callable === undefined) {
+    throw new Error("Expected contracted identity control flow.");
+  }
+  const unrelated_goal = {
+    tag: "implies" as const,
+    premise: { tag: "true" as const },
+    conclusion: { tag: "true" as const },
+  };
+  const unrelated = {
+    ...checked_certificate,
+    certificate: check_proof(
+      {
+        tag: "implies_intro",
+        premise: { tag: "true" },
+        body: { tag: "assumption", index: 0 },
+      },
+      unrelated_goal,
+      {
+        allow_unsafe: false,
+        environment: checked_certificate.environment,
+        term_context: checked_certificate.term_context,
+      },
+    ),
+  };
+  assert_equals(
+    verify_return_identity_checked_certificate(
+      unrelated,
+      callable,
+      semantic_certificate.contract_span,
+      semantic_certificate.definition_span,
+      semantic_certificate.requirement,
+      {
+        parameter_ordinal: 0,
+        parameter_representations: [{ tag: "scalar", name: "I32" }],
+        parameter_types: ["I32"],
+        result_representation: { tag: "scalar", name: "I32" },
+        result_type: "I32",
+        orientation: "result_equals_parameter",
+      },
+    ),
+    false,
+  );
+  const text_environment = KernelEnvironment.from(
+    new Map([["Text", type_sort(0)]]),
+  );
+  const text_context = snapshot_kernel_context([
+    { tag: "constant", name: "Text" },
+    { tag: "constant", name: "Text" },
+  ]);
+  const text_equality = {
+    tag: "equal" as const,
+    type: { tag: "constant" as const, name: "Text" },
+    left: { tag: "var" as const, index: 1 },
+    right: { tag: "var" as const, index: 0 },
+  };
+  const text_goal = {
+    tag: "implies" as const,
+    premise: text_equality,
+    conclusion: text_equality,
+  };
+  const mismatched_type = {
+    certificate: check_proof(
+      {
+        tag: "implies_intro" as const,
+        premise: text_equality,
+        body: { tag: "assumption" as const, index: 0 },
+      },
+      text_goal,
+      {
+        allow_unsafe: false,
+        environment: text_environment,
+        term_context: text_context,
+      },
+    ),
+    environment: text_environment,
+    term_context: text_context,
+    semantic_certificate,
+  };
+  assert_equals(
+    verify_return_identity_checked_certificate(
+      mismatched_type,
+      callable,
+      semantic_certificate.contract_span,
+      semantic_certificate.definition_span,
+      semantic_certificate.requirement,
+      {
+        parameter_ordinal: 0,
+        parameter_representations: [{ tag: "scalar", name: "I32" }],
+        parameter_types: ["Text"],
+        result_representation: { tag: "scalar", name: "I32" },
+        result_type: "Text",
+        orientation: "result_equals_parameter",
+      },
+    ),
+    false,
+  );
+
+  const contracted_program = checked_value(lower_duck_source(contracted));
+  const plain_program = checked_value(lower_duck_source(plain));
+  if (contracted_program === undefined || plain_program === undefined) {
+    throw new Error("Expected both identity programs to lower.");
+  }
+  assert_equals(contracted_program.core, plain_program.core);
+  assert_equals(
+    JSON.stringify(contracted_program.core).includes("proposition"),
+    false,
+  );
+  assert_equals(
+    JSON.stringify(contracted_program.core).includes("proof"),
+    false,
+  );
+});
+
+Deno.test("unconditional identity contracts publish certified function summaries", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures value = result\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const identity = analysis.symbols.get("identity")?.[0];
+  if (identity === undefined) {
+    throw new Error("Expected identity callable value.");
+  }
+  const callable = analysis.callable_control_flow.get(identity);
+  const summary = analysis.function_summaries.get(identity);
+  if (callable === undefined || summary === undefined) {
+    throw new Error("Expected identity function summary.");
+  }
+  assert_equals(
+    Object.isFrozen(Object.getPrototypeOf(analysis.function_summaries)),
+    true,
+  );
+  assert_equals(Object.isFrozen(summary), true);
+  assert_equals(Object.isFrozen(summary.evidence), true);
+  assert_equals(Object.isFrozen(summary.evidence.requirement), true);
+  assert_equals([...analysis.function_summaries.keys()], [identity]);
+  assert_equals(summary.requires, { tag: "true" });
+  assert_equals(summary.ensures, {
+    tag: "equal",
+    type: { tag: "constant", name: "I32" },
+    left: { tag: "var", index: 1 },
+    right: { tag: "var", index: 0 },
+  });
+  assert_equals(summary.ensures_when_true, { tag: "true" });
+  assert_equals(summary.ensures_when_false, { tag: "true" });
+  assert_equals(summary.total, false);
+  assert_equals(summary.safety, { tag: "safe" });
+  assert_equals(summary.evidence.tag, "return_identity");
+  if (summary.evidence.tag !== "return_identity") {
+    throw new Error("Expected return identity summary evidence.");
+  }
+  assert_equals(
+    summary.evidence.binding.orientation,
+    "parameter_equals_result",
+  );
+  assert_equals(callable.callable, identity);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+function certified_summary_call_fixture() {
+  const target_text = "consume(identity value, value)";
+  const source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+    "let consume = (left, right, evidence) => left;\n" +
+    `let forward = value => ${target_text};\n` +
+    "forward 42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  if (analysis.diagnostics.length !== 0) {
+    throw new Error("Expected a checked summary-call fixture.");
+  }
+  const identity = analysis.symbols.get("identity")?.[0];
+  const forward = analysis.symbols.get("forward")?.[0];
+  if (identity === undefined || forward === undefined) {
+    throw new Error("Expected identity and forward callable values.");
+  }
+  const summary = analysis.function_summaries.get(identity);
+  const summary_callable = analysis.callable_control_flow.get(identity);
+  const forward_callable = analysis.callable_control_flow.get(forward);
+  if (
+    summary === undefined || summary_callable === undefined ||
+    forward_callable === undefined
+  ) {
+    throw new Error("Expected summary-call control flow and summary.");
+  }
+  const call_entry = [...analysis.proofs].find((entry) =>
+    entry[1].semantic_certificate?.tag === "monomorphic_call_instantiation"
+  );
+  if (call_entry === undefined) {
+    throw new Error("Expected a checked summary-call proof.");
+  }
+  const [call_key, call_proof] = call_entry;
+  const semantic_certificate = call_proof.semantic_certificate;
+  const checked_proposition = call_proof.certificate.proposition;
+  if (
+    semantic_certificate?.tag !== "monomorphic_call_instantiation" ||
+    checked_proposition.tag !== "implies" ||
+    checked_proposition.premise.tag !== "equal" ||
+    checked_proposition.premise.left.tag !== "var" ||
+    checked_proposition.premise.right.tag !== "var"
+  ) {
+    throw new Error("Expected a checked equality implication.");
+  }
+  const summary_proof = analysis.proofs.get(summary.evidence.proof_key);
+  if (summary_proof === undefined) {
+    throw new Error("Expected the identity summary proof.");
+  }
+  const target_start = source.indexOf(target_text);
+  if (target_start < 0) throw new Error("Expected the target call span.");
+  const binding: SummaryCallKernelBinding = {
+    source_call_span: semantic_certificate.call_span,
+    target_call_span: {
+      start: target_start,
+      end: target_start + target_text.length,
+    },
+    requirement: semantic_certificate.requirement,
+    target_result_ordinal: 0,
+    target_argument_ordinal: 1,
+    result_term_index: checked_proposition.premise.left.index,
+    argument_term_index: checked_proposition.premise.right.index,
+  };
+  return {
+    analysis,
+    binding,
+    call_key,
+    call_proof,
+    control_flow: forward_callable.control_flow,
+    summary,
+    summary_callable,
+    summary_proof,
+  };
+}
+
+Deno.test("monomorphic calls instantiate certified identity summaries", () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "type consume = " +
+    "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+    "let consume = (left, right, evidence) => left;\n" +
+    "let forward = value => consume(identity value, value);\n" +
+    "forward 42\n";
+  const plain_source = "let identity = value => value;\n" +
+    "let consume = (left, right) => left;\n" +
+    "let forward = value => consume(identity value, value);\n" +
+    "forward 42\n";
+  const contracted = analyze_duck_source(
+    parse_duck_source(contracted_source),
+  );
+  const plain = analyze_duck_source(parse_duck_source(plain_source));
+  assert_equals(contracted.diagnostics, []);
+  assert_equals(contracted.proofs.size, 2);
+  const call_proof = [...contracted.proofs.values()].find((proof) =>
+    proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+  );
+  if (
+    call_proof?.semantic_certificate?.tag !==
+      "monomorphic_call_instantiation"
+  ) {
+    throw new Error("Expected a monomorphic call instantiation proof.");
+  }
+  assert_equals(
+    call_proof.semantic_certificate.requirement.parameter_ordinal,
+    0,
+  );
+  assert_equals(
+    call_proof.semantic_certificate.requirement.callable,
+    contracted.symbols.get("identity")?.[0],
+  );
+  const contracted_program = checked_value(lower_duck_source(contracted));
+  const plain_program = checked_value(lower_duck_source(plain));
+  if (contracted_program === undefined || plain_program === undefined) {
+    throw new Error("Expected contracted and proof-free calls to lower.");
+  }
+  assert_equals(contracted_program.core, plain_program.core);
+});
+
+Deno.test("identity summaries prove reversed target equalities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures value = result\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(value, identity value);\n" +
+      "forward 42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    true,
+  );
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("identity summary evidence does not cross result aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => do\n" +
+      "  let alias = identity value;\n" +
+      "  consume(alias, value)\n" +
+      "end;\n" +
+      "forward 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summary evidence rejects polymorphic call shapes", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = forall (a: Type). " +
+      "(value: a) -> (result: a)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(identity value, value);\n" +
+      "forward 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("unrelated identity calls do not prove target equalities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => do\n" +
+      "  identity value;\n" +
+      "  consume(value, 0i32)\n" +
+      "end;\n" +
+      "forward 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summary evidence stays bound to its certified input", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = (left, right) => consume(identity left, right);\n" +
+      "forward(1i32, 2i32)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summaries instantiate nonzero parameter ordinals", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(ignored: I32, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (ignored, value) => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(choose(0i32, value), value);\n" +
+      "forward 7i32\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const call_proof = [...analysis.proofs.values()].find((proof) =>
+    proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+  );
+  if (
+    call_proof?.semantic_certificate?.tag !==
+      "monomorphic_call_instantiation"
+  ) {
+    throw new Error("Expected a nonzero-ordinal call proof.");
+  }
+  assert_equals(
+    call_proof.semantic_certificate.requirement.parameter_ordinal,
+    1,
+  );
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("nonzero identity ordinals reject a different certified input", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(ignored: I32, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (ignored, value) => value;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let forward = value => consume(choose(value, 0i32), value);\n" +
+      "forward 7i32\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    [...analysis.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "monomorphic_call_instantiation"
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification accepts exact summary-call evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    true,
+  );
+});
+
+Deno.test("pre-erasure verification rejects unbranded summaries", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      { ...fixture.call_proof },
+      { ...fixture.summary },
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects detached summary evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  const other = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      { ...fixture.summary_callable },
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      { ...fixture.summary_proof },
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      other.summary,
+      other.summary_callable,
+      other.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched source provenance", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        source_call_span: {
+          ...fixture.binding.source_call_span,
+          end: fixture.binding.source_call_span.end + 1,
+        },
+      },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        requirement: {
+          ...fixture.binding.requirement,
+          argument: fixture.binding.requirement.callable,
+        },
+      },
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched representations", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        requirement: {
+          ...fixture.binding.requirement,
+          parameter_type: { tag: "scalar", name: "I64" },
+        },
+      },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        requirement: {
+          ...fixture.binding.requirement,
+          result_type: { tag: "scalar", name: "I64" },
+        },
+      },
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched target provenance", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        target_call_span: {
+          ...fixture.binding.target_call_span,
+          end: fixture.binding.target_call_span.end + 1,
+        },
+      },
+    ),
+    false,
+  );
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        target_result_ordinal: fixture.binding.target_argument_ordinal,
+        target_argument_ordinal: fixture.binding.target_result_ordinal,
+      },
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects mismatched kernel identities", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      fixture.call_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      {
+        ...fixture.binding,
+        result_term_index: fixture.binding.argument_term_index,
+      },
+    ),
+    false,
+  );
+  const first_type = fixture.call_proof.term_context[0];
+  if (first_type === undefined) {
+    throw new Error("Expected a summary-call kernel context.");
+  }
+  const mismatched_context = {
+    ...fixture.call_proof,
+    term_context: snapshot_kernel_context([
+      ...fixture.call_proof.term_context,
+      first_type,
+    ]),
+  };
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      mismatched_context,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects unsafe call-site evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  const proposition = fixture.call_proof.certificate.proposition;
+  const unsafe_proof = {
+    ...fixture.call_proof,
+    certificate: check_proof(
+      { tag: "unsafe_assume", proposition },
+      proposition,
+      {
+        allow_unsafe: true,
+        environment: fixture.call_proof.environment,
+        term_context: fixture.call_proof.term_context,
+      },
+    ),
+  };
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      unsafe_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("pre-erasure verification rejects a reversed assumed premise", () => {
+  const fixture = certified_summary_call_fixture();
+  const proposition = fixture.call_proof.certificate.proposition;
+  if (proposition.tag !== "implies" || proposition.premise.tag !== "equal") {
+    throw new Error("Expected a summary-call equality implication.");
+  }
+  const reversed = {
+    tag: "equal" as const,
+    type: proposition.premise.type,
+    left: proposition.premise.right,
+    right: proposition.premise.left,
+  };
+  const reversed_goal = {
+    tag: "implies" as const,
+    premise: reversed,
+    conclusion: reversed,
+  };
+  const reversed_proof = {
+    ...fixture.call_proof,
+    certificate: check_proof(
+      {
+        tag: "implies_intro",
+        premise: reversed,
+        body: { tag: "assumption", index: 0 },
+      },
+      reversed_goal,
+      {
+        allow_unsafe: false,
+        environment: fixture.call_proof.environment,
+        term_context: fixture.call_proof.term_context,
+      },
+    ),
+  };
+  assert_equals(
+    verify_summary_call_checked_certificate(
+      reversed_proof,
+      fixture.summary,
+      fixture.summary_callable,
+      fixture.summary_proof,
+      fixture.control_flow,
+      fixture.binding,
+    ),
+    false,
+  );
+});
+
+Deno.test("summary-call proof keys reject duplicate private evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key],
+      fixture.analysis.proofs,
+    ),
+    true,
+  );
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key, fixture.call_key],
+      fixture.analysis.proofs,
+    ),
+    false,
+  );
+});
+
+Deno.test("summary-call proof keys reject orphaned evidence", () => {
+  const fixture = certified_summary_call_fixture();
+  assert_equals(
+    summary_call_proof_keys_match([], fixture.analysis.proofs),
+    false,
+  );
+  const proofs_without_call = new Map(fixture.analysis.proofs);
+  proofs_without_call.delete(fixture.call_key);
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key],
+      proofs_without_call,
+    ),
+    false,
+  );
+  const proofs_with_orphan = new Map(fixture.analysis.proofs);
+  proofs_with_orphan.set("orphan-summary-call", fixture.call_proof);
+  assert_equals(
+    summary_call_proof_keys_match(
+      [fixture.call_key],
+      proofs_with_orphan,
+    ),
+    false,
+  );
+});
+
+Deno.test("identity summaries exclude required and additional contracts", () => {
+  const required = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "requires value = value\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(required.diagnostics, []);
+  assert_equals(required.function_summaries.size, 0);
+
+  const additional = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "ensures value = result\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(additional.diagnostics, []);
+  assert_equals(additional.function_summaries.size, 0);
+
+  const proof_parameter = analyze_duck_source(parse_duck_source(
+    "type identity = " +
+      "(value: I32, evidence: Proof value = value) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = (actual, evidence) => actual;\n",
+  ));
+  assert_equals(proof_parameter.diagnostics, []);
+  assert_equals(proof_parameter.function_summaries.size, 0);
+
+  const refined_parameter = analyze_duck_source(parse_duck_source(
+    "type identity = " +
+      "(value: {refined: I32 | refined = refined}) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(refined_parameter.diagnostics, []);
+  assert_equals(refined_parameter.function_summaries.size, 0);
+
+  const refined_result = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> " +
+      "(result: {answer: I32 | answer = value})\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(refined_result.diagnostics, []);
+  assert_equals(refined_result.function_summaries.size, 0);
+});
+
+Deno.test("shadowed identity summaries retain distinct callable keys", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "let inner = do\n" +
+      "  type identity = (value: I64) -> (result: I64)\n" +
+      "  ensures result = value\n" +
+      "  let identity = value => value;\n" +
+      "  identity\n" +
+      "end;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.function_summaries.size, 2);
+  const identities = analysis.symbols.get("identity");
+  if (identities === undefined || identities.length !== 2) {
+    throw new Error("Expected two identity callable values.");
+  }
+  assert_equals(
+    identities.every((identity) => analysis.function_summaries.has(identity)),
+    true,
+  );
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("checked refinement signatures erase to their base representation", () => {
+  const refined_source = "type identity = " +
+    "(value: {refined: I32 | refined = refined}) -> " +
+    "(result: {answer: I32 | answer = value})\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\n" +
+    "identity 42\n";
+  const refined = analyze_duck_source(parse_duck_source(refined_source));
+  const plain = analyze_duck_source(parse_duck_source(plain_source));
+  assert_equals(refined.diagnostics, []);
+  assert_equals(refined.proofs.size, 2);
+  const refined_program = checked_value(lower_duck_source(refined));
+  const plain_program = checked_value(lower_duck_source(plain));
+  if (refined_program === undefined || plain_program === undefined) {
+    throw new Error("Expected refined and plain programs to lower.");
+  }
+  assert_equals(refined_program.core, plain_program.core);
+  assert_equals(
+    JSON.stringify(refined_program.core).includes("refinement"),
+    false,
+  );
+
+  const reflexive = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> " +
+      "{answer: I32 | answer = answer}\n" +
+      "let identity = value => value;\n" +
+      "identity 42\n",
+  ));
+  assert_equals(reflexive.diagnostics, []);
+  assert_equals(reflexive.proofs.size, 1);
+
+  const product_parameter = analyze_duck_source(parse_duck_source(
+    "type accept = " +
+      "(input: {value: I32 | [value, value] = [value, value]}) -> I32\n" +
+      "let accept = input => input;\n" +
+      "accept(1i32)\n",
+  ));
+  assert_equals(product_parameter.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(product_parameter)), []);
+
+  const product_result = analyze_duck_source(parse_duck_source(
+    "type make = () -> " +
+      "{value: I32 | [value, value] = [value, value]}\n" +
+      "let make = () => 1i32;\n" +
+      "make()\n",
+  ));
+  assert_equals(product_result.diagnostics, []);
+  assert_equals(diagnostics_of(lower_duck_source(product_result)), []);
+
+  const unproved = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> {answer: I32 | answer = 0}\n" +
+      "let identity = value => value;\n" +
+      "identity 42\n",
+  ));
+  assert_equals(
+    unproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("does not match the inferred")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(unproved)), undefined);
+
+  const unchecked_parameter = analyze_duck_source(parse_duck_source(
+    "type divide = " +
+      "(value: {nonzero: I32 | nonzero != 0}) -> I32\n" +
+      "let divide = value => value;\n" +
+      "divide 0\n",
+  ));
+  assert_equals(
+    unchecked_parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "disproved: call to divide cannot prove parameter refinement",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    checked_value(lower_duck_source(unchecked_parameter)),
+    undefined,
+  );
+
+  const captured_result = analyze_duck_source(parse_duck_source(
+    "type f = (result: I32) -> {answer: I32 | answer = result}\n" +
+      "let f = ignored => 0;\n" +
+      "f 42\n",
+  ));
+  assert_equals(
+    captured_result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes(
+        "cannot use reserved result as a parameter binder",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(captured_result)), undefined);
+});
+
+Deno.test("direct proof declarations are kernel checked and erased", () => {
+  const proof_source =
+    "type reflexive = (value: I32) -> Proof value = value\n" +
+    "let reflexive = actual => by refl;\n" +
+    "42\n";
+  const proof_analysis = analyze_duck_source(
+    parse_duck_source(proof_source),
+  );
+  const plain_analysis = analyze_duck_source(parse_duck_source("42\n"));
+  assert_equals(proof_analysis.diagnostics, []);
+  assert_equals(proof_analysis.symbols.has("reflexive"), false);
+  assert_equals([...proof_analysis.proofs.keys()], [
+    "root:reflexive:proof",
+  ]);
+  const checked_certificate = [...proof_analysis.proofs.values()][0];
+  if (checked_certificate === undefined) {
+    throw new Error("Expected a checked proof certificate.");
+  }
+  assert_equals(checked_certificate.certificate.safety, { tag: "safe" });
+  assert_equals(
+    check_certificate(
+      checked_certificate.certificate,
+      checked_certificate.certificate.proposition,
+      {
+        environment: checked_certificate.environment,
+        term_context: checked_certificate.term_context,
+        require_safe: true,
+      },
+    ),
+    checked_certificate.certificate,
+  );
+  const proof_program = checked_value(lower_duck_source(proof_analysis));
+  const plain_program = checked_value(lower_duck_source(plain_analysis));
+  if (proof_program === undefined || plain_program === undefined) {
+    throw new Error("Expected proof and plain programs to lower.");
+  }
+  assert_equals(proof_program.core, plain_program.core);
+  assert_equals(JSON.stringify(proof_program.core).includes("proof"), false);
+
+  const polymorphic = analyze_duck_source(parse_duck_source(
+    "type reflexive = " +
+      "forall (a: Type). (value: a) -> Proof value = value\n" +
+      "let reflexive = actual => by refl;\n42\n",
+  ));
+  assert_equals(polymorphic.diagnostics, []);
+  assert_equals(polymorphic.proofs.size, 1);
+});
+
+Deno.test("direct proof hypotheses alpha rename and compose", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type both = " +
+      "(left: Proof True, right: Proof True) -> Proof True and True\n" +
+      "let both = (first, second) => by and_intro(first, second,);\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements,
+    [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
+  );
+});
+
+Deno.test("tactic blocks elaborate to kernel-checked proof terms", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = () -> Proof True implies True\n" +
+      "let identity = () => by { intro evidence assumption };\n" +
+      "type both = " +
+      "(left: Proof True, right: Proof True) -> Proof True and True\n" +
+      "let both = (left, right) => " +
+      "by { constructor exact left exact right };\n" +
+      "type choose_left = (evidence: Proof True) -> Proof True or False\n" +
+      "let choose_left = evidence => by { left assumption };\n" +
+      "type choose_right = (evidence: Proof True) -> Proof False or True\n" +
+      "let choose_right = evidence => by { right exact evidence };\n" +
+      "type negate_false = () -> Proof not False\n" +
+      "let negate_false = () => by { intro impossible assumption };\n" +
+      "type all_reflexive = " +
+      "() -> Proof forall (value: I32). value = value\n" +
+      "let all_reflexive = () => by { intro value exact refl };\n" +
+      "type apply_chain = " +
+      "(theorem: Proof True implies False implies True, " +
+      "truth: Proof True, falsehood: Proof False) -> Proof True\n" +
+      "let apply_chain = (theorem, truth, falsehood) => " +
+      "by { apply theorem exact truth exact falsehood };\n" +
+      "type apply_exact = (evidence: Proof True) -> Proof True\n" +
+      "let apply_exact = evidence => by { apply evidence };\n" +
+      "type merge_cases = (choice: Proof True or True) -> Proof True\n" +
+      "let merge_cases = choice => " +
+      "by { cases choice assumption assumption };\n" +
+      "type false_cases = (impossible: Proof False) -> Proof True\n" +
+      "let false_cases = impossible => by { cases impossible };\n" +
+      "type exists_cases = " +
+      "(package: Proof exists (value: I32). True) -> Proof True\n" +
+      "let exists_cases = package => by { cases package assumption };\n" +
+      "type exists_retains_outer = " +
+      "(outer: I32, package: Proof exists (value: I32). True, " +
+      "retained: Proof outer = outer) -> Proof outer = outer\n" +
+      "let exists_retains_outer = (outer, package, retained) => " +
+      "by { cases package assumption };\n" +
+      "type rewrite_equal = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof right = right) -> Proof left = left\n" +
+      "let rewrite_equal = (left, right, equality, evidence) => " +
+      "by { rewrite equality exact evidence };\n" +
+      "type rewrite_under_forall = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof right = right) -> " +
+      "Proof forall (inner: I32). left = left\n" +
+      "let rewrite_under_forall = (left, right, equality, evidence) => " +
+      "by { rewrite equality intro inner exact evidence };\n" +
+      "type decide_closed = () -> Proof 1i32 < 2i32\n" +
+      "let decide_closed = () => by { decide };\n" +
+      "type decide_negative = () -> Proof -1i8 < 0i8\n" +
+      "let decide_negative = () => by { decide };\n" +
+      "type decide_parenthesized_negative = () -> Proof -(1i8) < 0i8\n" +
+      "let decide_parenthesized_negative = () => by { decide };\n" +
+      "type decide_signed_minimum = () -> Proof -128i8 = -128i8\n" +
+      "let decide_signed_minimum = () => by { decide };\n" +
+      "type decide_parenthesized_minimum = () -> " +
+      "Proof -(128i8) = -128i8\n" +
+      "let decide_parenthesized_minimum = () => by { decide };\n" +
+      "type decide_unary_plus = () -> Proof +((1i8)) = 1i8\n" +
+      "let decide_unary_plus = () => by { decide };\n" +
+      "type decide_plus_negative = () -> Proof +(-1i8) = -1i8\n" +
+      "let decide_plus_negative = () => by { decide };\n" +
+      "type decide_wrapping_negation = () -> Proof -(-128i8) = -128i8\n" +
+      "let decide_wrapping_negation = () => by { decide };\n" +
+      "type simp_conjunction = () -> Proof True and True\n" +
+      "let simp_conjunction = () => by { simp };\n" +
+      "type simp_implication = () -> Proof True implies True\n" +
+      "let simp_implication = () => by { simp };\n" +
+      "type simp_disjunction = () -> Proof False or True\n" +
+      "let simp_disjunction = () => by { simp };\n" +
+      "type simp_negation = () -> Proof not False\n" +
+      "let simp_negation = () => by { simp };\n" +
+      "type simp_false_elimination = () -> Proof False implies 1i32 = 2i32\n" +
+      "let simp_false_elimination = () => by { simp };\n" +
+      "type simp_quantified = () -> " +
+      "Proof forall (value: I32). value = value\n" +
+      "let simp_quantified = () => by { simp };\n" +
+      "type simp_rewrite = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let simp_rewrite = (left, right, equality) => " +
+      "by { simp [equality] };\n" +
+      "type simp_fixed_point = " +
+      "(first: I32, second: I32, third: I32, " +
+      "first_step: Proof first = second, " +
+      "second_step: Proof second = third) -> Proof first = third\n" +
+      "let simp_fixed_point = " +
+      "(first, second, third, first_step, second_step) => " +
+      "by { simp [second_step, first_step] };\n" +
+      "type simp_cycle = " +
+      "(first: I32, second: I32, forward: Proof first = second, " +
+      "backward: Proof second = first) -> Proof first = first\n" +
+      "let simp_cycle = (first, second, forward, backward) => " +
+      "by { simp [forward, backward] };\n" +
+      "type simp_empty = () -> Proof True\n" +
+      "let simp_empty = () => by { simp [] };\n" +
+      "type omega_difference = " +
+      "(first: I32, second: I32, third: I32, " +
+      "first_step: Proof first < second, " +
+      "second_step: Proof second <= third) -> Proof first < third\n" +
+      "let omega_difference = " +
+      "(first, second, third, first_step, second_step) => by { omega };\n" +
+      "type omega_equality = " +
+      "(left: U32, right: U32, forward: Proof left <= right, " +
+      "reverse: Proof right <= left) -> Proof left = right\n" +
+      "let omega_equality = " +
+      "(left, right, forward, reverse) => by { omega };\n" +
+      "type omega_negated_order = " +
+      "(left: I32, right: I32, not_less: Proof not left < right) -> " +
+      "Proof right <= left\n" +
+      "let omega_negated_order = (left, right, not_less) => by { omega };\n" +
+      "type omega_disequality = " +
+      "(left: U32, right: U32, ordered: Proof left < right) -> " +
+      "Proof left != right\n" +
+      "let omega_disequality = (left, right, ordered) => by { omega };\n" +
+      "type omega_machine_bound = (value: U8) -> Proof 0u8 <= value\n" +
+      "let omega_machine_bound = value => by { omega };\n" +
+      "type omega_weaker_upper = " +
+      "(value: I32, upper: Proof value <= 5i32) -> Proof value <= 6i32\n" +
+      "let omega_weaker_upper = (value, upper) => by { omega };\n" +
+      "type omega_weaker_lower = " +
+      "(value: I32, lower: Proof -5i32 <= value) -> Proof -6i32 <= value\n" +
+      "let omega_weaker_lower = (value, lower) => by { omega };\n" +
+      "type omega_contradiction = " +
+      "(value: I32, impossible: Proof value < value) -> Proof False\n" +
+      "let omega_contradiction = (value, impossible) => by { omega };\n" +
+      "type omega_wrapping = () -> Proof 127i8 + 1i8 = -128i8\n" +
+      "let omega_wrapping = () => by { omega };\n" +
+      "type omega_congruence = " +
+      "(value: I32, lower: Proof 0i32 <= value, " +
+      "upper: Proof value < 8i32, residue: Proof value % 3i32 = 1i32) -> " +
+      "Proof not value = 2i32\n" +
+      "let omega_congruence = " +
+      "(value, lower, upper, residue) => by { omega };\n" +
+      "type omega_divisibility = " +
+      "(value: I32, divisible: Proof value % 12i32 = 0i32) -> " +
+      "Proof value % 3i32 = 0i32\n" +
+      "let omega_divisibility = (value, divisible) => by { omega };\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 43);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements,
+    [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
+  );
+});
+
+Deno.test("omega preserves wrapping semantics and consistent exclusions", () => {
+  for (
+    const source of [
+      "type broken = (value: I8, exact: Proof value = 127i8) -> " +
+      "Proof value < value + 1i8\n" +
+      "let broken = (value, exact) => by { omega };\n42\n",
+      "type broken = " +
+      "(value: U8, exact: Proof value = 0u8, " +
+      "excluded: Proof value != 255u8) -> Proof False\n" +
+      "let broken = (value, exact, excluded) => by { omega };\n42\n",
+      "type broken = " +
+      "(value: I32, divisible: Proof value % 6i32 = 0i32) -> " +
+      "Proof value % 4i32 = 0i32\n" +
+      "let broken = (value, divisible) => by { omega };\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        (diagnostic.message.includes("omega could not prove") ||
+          diagnostic.message.includes("omega exceeded"))
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("omega does not emit oversized hypothesis certificates", () => {
+  const parameters = ["value: I8"];
+  const arguments_ = ["value"];
+  for (let index = 0; index < 65; index += 1) {
+    parameters.push(`h${index}: Proof value = value`);
+    arguments_.push(`h${index}`);
+  }
+  const source =
+    `type many = (${parameters.join(", ")}) -> Proof value = value\n` +
+    `let many = (${arguments_.join(", ")}) => by { omega };\n42\n`;
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("tactic blocks report the command that cannot solve its goal", () => {
+  for (
+    const [body, message] of [
+      ["by { assumption }", "assumption found no hypothesis"],
+      ["by { intro evidence }", "intro requires an implication"],
+      ["by { constructor }", "constructor requires a True or conjunction"],
+      ["by { left }", "left requires a disjunction"],
+      ["by { apply true_intro }", "apply proof conclusion does not match"],
+      ["by { cases true_intro }", "cases requires disjunction"],
+      ["by { rewrite true_intro }", "rewrite requires equality"],
+      ["by { decide }", "decide found no total compile-time decision"],
+      ["by { simp }", "simp could not prove the current goal"],
+      ["by { exact true_intro assumption }", "has no remaining goal"],
+      ["by {}", "leaves 1 unresolved goal"],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type broken = () -> Proof False\n" +
+        `let broken = () => ${body};\n42\n`,
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("simp rejects rewrite evidence that is not equality", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type broken = (evidence: Proof True) -> Proof False\n" +
+      "let broken = evidence => by { simp [evidence] };\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "simp lemmas must establish propositional equality",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("simp reports its structural proof-search depth limit", () => {
+  const implication_chain = "True implies ".repeat(17) + "True";
+  const analysis = analyze_duck_source(parse_duck_source(
+    `type too_deep = () -> Proof ${implication_chain}\n` +
+      "let too_deep = () => by { simp };\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "simp exceeded the compiler proof-search budget",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("simp reports structural exhaustion before kernel snapshot limits", () => {
+  let propositions = new Array<string>(6_000).fill("True");
+  while (propositions.length > 1) {
+    const combined: string[] = [];
+    for (let index = 0; index < propositions.length; index += 2) {
+      const left = propositions[index];
+      const right = propositions[index + 1];
+      if (left === undefined) {
+        throw new Error(`Missing simplification proposition ${index}.`);
+      }
+      if (right === undefined) {
+        combined.push(left);
+        continue;
+      }
+      combined.push(`(${left} and ${right})`);
+    }
+    propositions = combined;
+  }
+  const large_proposition = propositions[0];
+  if (large_proposition === undefined) {
+    throw new Error("Expected a large simplification proposition.");
+  }
+  for (
+    const [source, message] of [
+      [
+        `type too_large = (evidence: Proof ${large_proposition}) -> ` +
+        `Proof ${large_proposition}\n` +
+        "let too_large = evidence => by { simp };\n42\n",
+        "simp exceeded the compiler proof-search budget",
+      ],
+      [
+        `type too_large = () -> Proof (${large_proposition}) implies True\n` +
+        "let too_large = () => by { simp };\n42\n",
+        "simp exceeded the compiler proof-search budget",
+      ],
+      [
+        `type too_large = () -> Proof (${large_proposition}) or True\n` +
+        "let too_large = () => by { right simp };\n42\n",
+        "Tactic block exceeded the compiler proof-construction budget",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("simp shares one structural budget across its tactic block", () => {
+  const build_conjunction = (
+    leaves: number,
+  ): { proposition: string; tactics: string } => {
+    if (leaves === 1) {
+      return { proposition: "0i32 = 0i32", tactics: "simp" };
+    }
+    const left = build_conjunction(Math.floor(leaves / 2));
+    const right = build_conjunction(leaves - Math.floor(leaves / 2));
+    return {
+      proposition: `(${left.proposition} and ${right.proposition})`,
+      tactics: `constructor ${left.tactics} ${right.tactics}`,
+    };
+  };
+  const conjunction = build_conjunction(700);
+  const analysis = analyze_duck_source(parse_duck_source(
+    `type partitioned = () -> Proof ${conjunction.proposition}\n` +
+      `let partitioned = () => by { ${conjunction.tactics} };\n` +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "simp exceeded the compiler proof-search budget",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("rewrite tactics reject equality absent from the goal", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type unchanged = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> Proof True\n" +
+      "let unchanged = (left, right, equality) => " +
+      "by { rewrite equality constructor };\n" +
+      "42\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("rewrite found no matching occurrence")
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("runtime callables erase explicit proof parameters from Core", () => {
+  const proved = analyze_duck_source(parse_duck_source(
+    "type identity = " +
+      "(value: I32, evidence: Proof value = value) -> I32\n" +
+      "let identity = (actual, evidence) => actual;\n" +
+      "identity 42\n",
+  ));
+  const plain = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> I32\n" +
+      "let identity = actual => actual;\n" +
+      "identity 42\n",
+  ));
+  assert_equals(proved.diagnostics, []);
+  assert_equals(plain.diagnostics, []);
+  assert_equals(proved.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(proved))?.core,
+    checked_value(lower_duck_source(plain))?.core,
+  );
+});
+
+Deno.test("closed machine literals discharge nonzero call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "consume 1\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements.length,
+    2,
+  );
+});
+
+Deno.test("closed machine literals discharge ordered call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+      "let consume = (actual_left, actual_right, evidence) => actual_left;\n" +
+      "consume (1, 2)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements.length,
+    2,
+  );
+});
+
+Deno.test("proof-only runtime callables erase to zero parameters", () => {
+  const constant = analyze_duck_source(parse_duck_source(
+    "type constant = (evidence: Proof True) -> I32\n" +
+      "let constant = evidence => 42;\n" +
+      "constant()\n",
+  ));
+  assert_equals(constant.diagnostics, []);
+  assert_equals(
+    checked_value(lower_duck_source(constant))?.core.statements.length,
+    2,
+  );
+});
+
+Deno.test("explicit proof parameters propagate exact contextual evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let forward = (actual, evidence) => consume actual;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected contextual proof evidence to reach Core.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("evidence"),
+    false,
+  );
+});
+
+Deno.test("true comparison branches establish call evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual != 0 then consume actual else 0 end;\n" +
+      "guarded 1\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("false comparison branches establish call evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual == 0 then 0 else consume actual end;\n" +
+      "guarded 1\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type-test branches establish positive membership evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias = I32\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Alias) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let matches = actual is Alias;\n" +
+      "  if matches then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership normalizes reordered associative type sets", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias = I32 :| Text :| Bool\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Alias) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Bool :| (Text :| I32) " +
+      "then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership deduplicates members introduced by aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Inner = I32 :| Text\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Inner) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Inner :| I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership specializes generic transparent aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias a = a\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Alias I32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Alias I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("recursive generic aliases fail as checked source", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Loop a = Loop a\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Loop I32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Loop I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("mutually recursive generic aliases fail as checked source", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Left a = Right a\n" +
+      "type Right a = Left a\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Left I32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Left I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.filter((diagnostic) => diagnostic.code === "DUCK2317")
+      .length,
+    2,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("if-let branches establish constructor membership", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "type consume = " +
+      "(value: Maybe, evidence: Proof value is #Some) -> I32\n" +
+      "let consume = (actual, evidence) => 1;\n" +
+      "type guarded = (value: Maybe) -> I32\n" +
+      "let guarded = actual => " +
+      "if let #Some payload = actual " +
+      "then consume actual else 0 end;\n" +
+      "guarded (#Some 42)\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("if-let fallbacks establish negative constructor membership", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "type consume = " +
+      "(value: Maybe, evidence: Proof not value is #Some) -> I32\n" +
+      "let consume = (actual, evidence) => 1;\n" +
+      "type guarded = (value: Maybe) -> I32\n" +
+      "let guarded = actual => " +
+      "if let #Some payload = actual " +
+      "then payload else consume actual end;\n" +
+      "guarded #None\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("if-let branches do not prove a different constructor", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "type consume = " +
+      "(value: Maybe, evidence: Proof value is #None) -> I32\n" +
+      "let consume = (actual, evidence) => 1;\n" +
+      "type guarded = (value: Maybe) -> I32\n" +
+      "let guarded = actual => " +
+      "if let #Some payload = actual " +
+      "then consume actual else 0 end;\n" +
+      "guarded (#Some 42)\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("type membership learned through an alias refines its source", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value is I32) -> I32\n" +
+      "let consume = (value, evidence) => value;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let alias = actual;\n" +
+      "  if alias is I32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership learned through a source refines its alias", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value is I32) -> I32\n" +
+      "let consume = (value, evidence) => value;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let alias = actual;\n" +
+      "  if actual is I32 then consume alias else 0 end\n" +
+      "end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("text contents cannot establish atom membership evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: Text, evidence: Proof value is #answer) -> Text\n" +
+      "let consume = (value, evidence) => value;\n" +
+      'let value: Text = "#answer";\n' +
+      "consume value\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("type-test branches establish negative membership evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof not (value is F32)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is F32 then 0 else consume actual end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("integer division and remainder require trap evidence", () => {
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => left / right;\n0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.message,
+    ]),
+    [[
+      "DUCK2607",
+      "unknown: cannot prove divisor != 0 and (dividend != -2147483648 or divisor != -1) before i32.div_s.",
+    ]],
+  );
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right != 0 && right != -1 then left / right else 0 end;\n" +
+      "divide (84, 2)\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(
+    [...guarded.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "primitive_safety"
+    ),
+    true,
+  );
+
+  const pathwise_overflow_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "left / right else 0 end;\n" +
+      "divide (84, 2)\n",
+  ));
+  assert_equals(pathwise_overflow_guard.diagnostics, []);
+  assert_equals(
+    [...pathwise_overflow_guard.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "primitive_safety" &&
+      proof.semantic_certificate.requirement.overflow_guard ===
+        "pathwise_disjunction"
+    ),
+    true,
+  );
+
+  const loop_invariant_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && right != -1 then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(loop_invariant_guard.diagnostics, []);
+
+  const loop_pathwise_overflow_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && " +
+      "(left != -2147483648i32 || right != -1i32) then " +
+      "for index in 0..3 do left / right; end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(loop_pathwise_overflow_guard.diagnostics, []);
+  assert_equals(
+    [...loop_pathwise_overflow_guard.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "primitive_safety" &&
+      proof.semantic_certificate.requirement.overflow_guard ===
+        "pathwise_disjunction"
+    ),
+    true,
+  );
+
+  const nested_loop_invariant_guard = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && right != -1 then " +
+      "for outer in 0..2 do " +
+      "for inner in 0..2 do left / right; end; " +
+      "end; end; 0 end;\n0\n",
+  ));
+  assert_equals(nested_loop_invariant_guard.diagnostics, []);
+
+  const nested_loop_mutation = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => do " +
+      "if right != 0 && left != -2147483648i32 then " +
+      "for outer in 0..2 do for inner in 0..2 do " +
+      "left = left + 1; left / right; " +
+      "end; end; end; 0 end;\n0\n",
+  ));
+  assert_equals(
+    nested_loop_mutation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607"
+    ),
+    true,
+  );
+
+  const unsigned = analyze_duck_source(parse_duck_source(
+    "let remainder = (left: U32, right: U32) => " +
+      "if right != 0u32 then left % right else 0u32 end;\n" +
+      "remainder (84u32, 30u32)\n",
+  ));
+  assert_equals(unsigned.diagnostics, []);
+
+  const unsigned_64_callable = analyze_duck_source(parse_duck_source(
+    "let divide = (left: U64, right: U64) => " +
+      "if right != 0u64 then left / right else 0u64 end;\n" +
+      "let remainder = (left: U64, right: U64) => " +
+      "if right != 0u64 then left % right else 0u64 end;\n0\n",
+  ));
+  assert_equals(unsigned_64_callable.diagnostics, []);
+  assert_equals(unsigned_64_callable.callable_control_flow.size, 2);
+
+  const unsigned_64 = analyze_duck_source(parse_duck_source(
+    "(84u64 / 2u64, 84u64 % 30u64, " +
+      "84u64 / 18446744073709551615u64)\n",
+  ));
+  assert_equals(unsigned_64.diagnostics, []);
+
+  for (
+    const [source, message] of [
+      [
+        "84 / 0\n",
+        "disproved: cannot prove divisor != 0 and (dividend != -2147483648 or divisor != -1) before i32.div_s.",
+      ],
+      [
+        "(-2147483648i32) / (-1i32)\n",
+        "disproved: cannot prove divisor != 0 and (dividend != -2147483648 or divisor != -1) before i32.div_s.",
+      ],
+      [
+        "84 % 0\n",
+        "disproved: cannot prove divisor != 0 before i32.rem_s.",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2607" &&
+        diagnostic.message === message
+      ),
+      true,
+    );
+  }
+
+  const branch_zero = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right == 0 then left / right else 0 end;\n0\n",
+  ));
+  assert_equals(
+    branch_zero.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "disproved: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const branch_overflow = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if left == -2147483648i32 && right == -1i32 then " +
+      "left / right else 0 end;\n0\n",
+  ));
+  assert_equals(
+    branch_overflow.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "disproved: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const pathwise_traps = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if right == 0 || " +
+      "(left == -2147483648i32 && right == -1i32) then " +
+      "left / right else 0 end;\n0\n",
+  ));
+  assert_equals(
+    pathwise_traps.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "disproved: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let divide = (choose_zero: Bool) => do\n" +
+      "let right = if choose_zero then 0 else 2 end;\n" +
+      "84 / right\n" +
+      "end;\n0\n",
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "unknown: cannot prove divisor != 0",
+      )
+    ),
+    true,
+  );
+
+  const unsigned_branch_zero = analyze_duck_source(parse_duck_source(
+    "let remainder = (left: U32, right: U32) => " +
+      "if right == 0u32 then left % right else 0u32 end;\n0\n",
+  ));
+  assert_equals(
+    unsigned_branch_zero.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove divisor != 0 before i32.rem_u."
+    ),
+    true,
+  );
+});
+
+Deno.test("unreachable integer traps create no proof obligation", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let divide = (left: I32, right: I32) => " +
+      "if false then left / right else 0 end;\n0\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("integer narrowing requires a proved target range", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => " +
+      "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+      "@integer.narrow(value, I32) else 0 end;\n0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(
+    [...guarded.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "integer_narrowing"
+    ),
+    true,
+  );
+
+  const unsigned = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I32) => " +
+      "if value >= 0 && value <= 255 then " +
+      "@integer.narrow(value, U8) else 0u8 end;\n0\n",
+  ));
+  assert_equals(unsigned.diagnostics, []);
+
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => @integer.narrow(value, I32);\n0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const in_range = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(42i64, I32)\n",
+  ));
+  assert_equals(in_range.diagnostics, []);
+
+  const out_of_range = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(2147483648i64, I32)\n",
+  ));
+  assert_equals(
+    out_of_range.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const branch_disproved = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => " +
+      "if value < -2147483648i64 || value > 2147483647i64 then " +
+      "@integer.narrow(value, I32) else 0 end;\n0\n",
+  ));
+  assert_equals(
+    branch_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let narrow = (outside: Bool) => do " +
+      "let value = if outside then 2147483648i64 else 0i64 end; " +
+      "@integer.narrow(value, I32) end;\n0\n",
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove integer narrowing requirement -2147483648 <= value <= 2147483647."
+    ),
+    true,
+  );
+
+  const widening = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(42, I64)\n",
+  ));
+  assert_equals(
+    widening.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow target I64 does not narrow source I32"
+    ),
+    true,
+  );
+
+  const non_integer = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(1.0f32, I32)\n",
+  ));
+  assert_equals(
+    non_integer.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow value must have an I<N> or U<N> type, got F32"
+    ),
+    true,
+  );
+
+  const oversized_target = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(1, I9007199254740991)\n",
+  ));
+  assert_equals(
+    oversized_target.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow target must be no wider than 64 bits, got I9007199254740991"
+    ),
+    true,
+  );
+
+  const oversized_source = analyze_duck_source(parse_duck_source(
+    "@integer.narrow(1i65, I32)\n",
+  ));
+  assert_equals(
+    oversized_source.diagnostics.some((diagnostic) =>
+      diagnostic.message ===
+        "@integer.narrow value must be no wider than 64 bits, got I65"
+    ),
+    true,
+  );
+});
+
+Deno.test("integer narrowing proofs survive loops but not value mutation", () => {
+  const loop_invariant = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => do " +
+      "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+      "for unused in 0..3 do @integer.narrow(value, I32); end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(loop_invariant.diagnostics, []);
+
+  const loop_mutation = analyze_duck_source(parse_duck_source(
+    "let narrow = (value: I64) => do " +
+      "if value >= -2147483648i64 && value <= 2147483647i64 then " +
+      "for unused in 0..3 do " +
+      "value = value + 1i64; @integer.narrow(value, I32); end; " +
+      "end; 0 end;\n0\n",
+  ));
+  assert_equals(
+    loop_mutation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith(
+        "unknown: cannot prove integer narrowing requirement",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("partial integer narrowing cannot escape a checked call site", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let operation = @integer.narrow;\n0\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "partial intrinsic @integer.narrow cannot escape",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("partial Wasm intrinsics cannot escape checked call sites", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let invoke: (((I32, I32) -> I32), I32, I32) -> I32 = " +
+      "(operation, left, right) => operation(left, right);\n" +
+      "invoke (@wasm.div_i32, 84, 0)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "partial intrinsic @wasm.div_i32 cannot escape",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("text slicing requires ordered in-bounds endpoints", () => {
+  const literal = analyze_duck_source(parse_duck_source(
+    '@slice("aéz", 1, 3)\n',
+  ));
+  assert_equals(literal.diagnostics, []);
+  assert_equals(
+    [...literal.proofs.values()].some((proof) =>
+      proof.semantic_certificate?.tag === "slice_bounds"
+    ),
+    true,
+  );
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "@slice(value, start, finish) else Bytes.empty end end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.callable_control_flow.size, 1);
+
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => " +
+      "@slice(value, start, finish);\n0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove slice bounds 0 <= start <= end <= length(value)."
+    ),
+    true,
+  );
+
+  const wrong_measure = analyze_duck_source(parse_duck_source(
+    "let take = " +
+      "(value: Bytes, other: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len other; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "@slice(value, start, finish) else Bytes.empty end end;\n0\n",
+  ));
+  assert_equals(
+    wrong_measure.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith("unknown: cannot prove slice bounds")
+    ),
+    true,
+  );
+
+  const disproved = analyze_duck_source(parse_duck_source(
+    '@slice("hello", 1, 6)\n',
+  ));
+  assert_equals(
+    disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove slice bounds 0 <= start <= end <= 5."
+    ),
+    true,
+  );
+
+  const pathwise_disproved = analyze_duck_source(parse_duck_source(
+    "let take = (start: I32, finish: I32) => " +
+      "if start < 0 || start > finish then " +
+      '@slice("hello", start, finish) else "" end;\n0\n',
+  ));
+  assert_equals(
+    pathwise_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove slice bounds 0 <= start <= end <= 5."
+    ),
+    true,
+  );
+
+  const dynamic_disproved = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if finish > length then @slice(value, start, finish) " +
+      "else Bytes.empty end end;\n0\n",
+  ));
+  assert_equals(
+    dynamic_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove slice bounds 0 <= start <= end <= length(value)."
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let take = (outside: Bool) => do " +
+      "let start = if outside then -1 else 0 end; " +
+      '@slice("hello", start, 1) end;\n0\n',
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove slice bounds 0 <= start <= end <= 5."
+    ),
+    true,
+  );
+
+  const invalid_utf8_boundary = analyze_duck_source(parse_duck_source(
+    '@slice("é", 0, 1)\n',
+  ));
+  assert_equals(
+    invalid_utf8_boundary.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove Text slice endpoints are UTF-8 boundaries."
+    ),
+    true,
+  );
+
+  const dynamic_text = analyze_duck_source(parse_duck_source(
+    "let take = (value: Text, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      '@slice(value, start, finish) else "" end end;\n0\n',
+  ));
+  assert_equals(
+    dynamic_text.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove Text slice endpoints are UTF-8 boundaries."
+    ),
+    true,
+  );
+});
+
+Deno.test("partial slice intrinsics cannot escape checked call sites", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let invoke: ((Text, I32, I32) -> Text, Text, I32, I32) -> Text = " +
+      "(operation, value, start, finish) => " +
+      "operation(value, start, finish);\n" +
+      'invoke(@slice, "hello", 1, 4)\n',
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "partial intrinsic @slice cannot escape",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("byte slice bounds survive equivalent guards and loop invariants", () => {
+  const equivalent_guard = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start > -1 && start <= finish && finish <= length then " +
+      "@slice(value, start, finish) else Bytes.empty end end;\n0\n",
+  ));
+  assert_equals(equivalent_guard.diagnostics, []);
+
+  const loop_invariant = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "for unused in 0..3 do @slice(value, start, finish); end; " +
+      "end; Bytes.empty end;\n0\n",
+  ));
+  assert_equals(loop_invariant.diagnostics, []);
+
+  const loop_mutation = analyze_duck_source(parse_duck_source(
+    "let take = (value: Bytes, start: I32, finish: I32) => do " +
+      "let length = @len value; " +
+      "if start >= 0 && start <= finish && finish <= length then " +
+      "for unused in 0..3 do " +
+      "finish = finish + 1; @slice(value, start, finish); end; " +
+      "end; Bytes.empty end;\n0\n",
+  ));
+  assert_equals(
+    loop_mutation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.startsWith("unknown: cannot prove slice bounds")
+    ),
+    true,
+  );
+});
+
+Deno.test("remainder branches establish exact expression evidence", () => {
+  for (
+    const [value_type, divisor, expected] of [
+      ["I32", "4i32", "0i32"],
+      ["U32", "4u32", "0u32"],
+      ["I64", "4i64", "0i64"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ` +
+        `value % ${divisor} = ${expected}) -> ${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        "let guarded = actual => " +
+        `if actual % ${divisor} == ${expected} ` +
+        `then consume actual else ${expected} end;\n` +
+        `guarded ${divisor}\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "remainder_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("bitwise branches establish certified machine facts", () => {
+  const odd = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let masked = @bit_and(actual, 1i32);\n" +
+      "  if masked == 1i32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded 3\n",
+  ));
+  assert_equals(odd.diagnostics, []);
+  assert_equals(
+    [...odd.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(odd)) !== undefined, true);
+
+  const exact = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if @bit_xor(actual, 1i32) == 3i32 " +
+      "then consume actual else 0 end;\n" +
+      "guarded 2\n",
+  ));
+  assert_equals(exact.diagnostics, []);
+  assert_equals(
+    [...exact.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(exact)) !== undefined, true);
+
+  const mixed_phi = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32, alternate: I32, choose: Bool) -> I32\n" +
+      "let guarded = (actual, alternate, choose) => do\n" +
+      "  let masked = if choose then @bit_and(actual, 1i32) " +
+      "else alternate end;\n" +
+      "  if masked == 1i32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded (3, 1, false)\n",
+  ));
+  assert_equals(
+    mixed_phi.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+
+  const loop_alias = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type run = (value: I32) -> I32\n" +
+      "let run = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    let masked = @bit_and(actual, 1i32);\n" +
+      "    if masked == 1i32 then consume actual else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "run 3\n",
+  ));
+  assert_equals(
+    loop_alias.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("bitwise branches establish power-of-two congruences", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if @bit_and(actual, 1i32) == 0i32 " +
+      "then consume actual else 0 end;\n" +
+      "guarded 4\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("incompatible bitmask and remainder branches are unreachable", () => {
+  for (
+    const [divisor, mask, expected] of [
+      ["2i32", "1i32", "1i32"],
+      ["3i32", "2147483647i32", "1i32"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value = 1i32) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        "let guarded = actual => " +
+        `if actual % ${divisor} == 0i32 then ` +
+        `if @bit_and(actual, ${mask}) == ${expected} ` +
+        "then consume actual else 0 end else 0 end;\n" +
+        "guarded 4\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag !== "primitive_safety"
+      ).length,
+      0,
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("remainder branches establish transparent modular facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type multiple_of_four = (value: I32) -> Prop\n" +
+      "fact multiple_of_four = value => value % 4i32 = 0i32;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof multiple_of_four(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "remainder_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder branches establish zero-residue divisibility facts", () => {
+  for (
+    const [value_type, premise_divisor, goal_divisor, zero, argument] of [
+      ["I32", "4i32", "2i32", "0i32", "(-8i32)"],
+      ["U32", "6u32", "3u32", "0u32", "12u32"],
+      ["I64", "10i64", "5i64", "0i64", "(-20i64)"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ` +
+        `value % ${goal_divisor} = ${zero}) -> ${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        "let guarded = actual => " +
+        `if actual % ${premise_divisor} == ${zero} ` +
+        `then consume actual else ${zero} end;\n` +
+        `guarded ${argument}\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("remainder divisibility recognizes reversed logical equality", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof 0i32 = value % 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+      "guarded (-8i32)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder divisibility establishes transparent modular facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type even = (value: I32) -> Prop\n" +
+      "fact even = value => value % 2i32 = 0i32;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof even(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 4i32 != 0i32 then 0 else consume actual end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder congruences combine across nested branches", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 6i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 2i32 == 0i32 then " +
+      "if actual % 3i32 == 0i32 then consume actual else 0 end " +
+      "else 0 end;\n" +
+      "guarded 12\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder congruences reduce machine ranges to exact values", () => {
+  const exact = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 2i32 == 0i32 then " +
+      "if actual % 2147483647i32 == 0i32 " +
+      "then consume actual else 1i32 end else 1i32 end;\n" +
+      "guarded 0i32\n",
+  ));
+  assert_equals(exact.diagnostics, []);
+  assert_equals(
+    [...exact.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(exact)) !== undefined, true);
+
+  const exclusion = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 1i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 2i32 == 0i32 then consume actual else 0i32 end;\n" +
+      "guarded 2i32\n",
+  ));
+  assert_equals(exclusion.diagnostics, []);
+  assert_equals(
+    [...exclusion.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(
+    checked_value(lower_duck_source(exclusion)) !== undefined,
+    true,
+  );
+});
+
+Deno.test("modulo one contracts need no branch evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 1i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type direct = (value: I32) -> I32\n" +
+      "let direct = actual => consume actual;\n" +
+      "direct (-7i32)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder divisibility rejects unsupported modular implications", () => {
+  for (
+    const [condition, requirement] of [
+      ["actual % 3i32 == 0i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 == 1i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 == -1i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 != 0i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 == 0i32", "value % 2i32 = 1i32"],
+      ["actual % 4i32 == 0i32", "value % -2i32 = 0i32"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        `let guarded = actual => if ${condition} ` +
+        "then consume actual else 0 end;\n" +
+        "guarded 8\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("remainder divisibility stays bound to the dividend identity", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left % 4i32 == 0i32 then consume right else 0 end;\n" +
+      "guarded (8, 3)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder divisibility rejects calls repeated by loops", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    if actual % 4i32 == 0i32 then consume actual else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder congruence follows predecessor-specific remainder identities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32, choose: Bool) -> I32\n" +
+      "let guarded = (actual, choose) => do\n" +
+      "  let remainder = if choose then actual % 4i32 " +
+      "else actual % 4i32 end;\n" +
+      "  if remainder == 0i32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded (8, true)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder congruence rejects a phi with another dividend", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32, choose: Bool) -> I32\n" +
+      "let guarded = (left, right, choose) => do\n" +
+      "  let remainder = if choose then left % 4i32 " +
+      "else right % 4i32 end;\n" +
+      "  if remainder == 0i32 then consume left else 0 end\n" +
+      "end;\n" +
+      "guarded (8, 3, false)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder divisibility returns unknown after its path budget", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = " +
+      "(value: I32, a: Bool, b: Bool, c: Bool, d: Bool, e: Bool) -> I32\n" +
+      "let guarded = (actual, a, b, c, d, e) => " +
+      "if actual % 4i32 != 0i32 then 0 else do\n" +
+      "  let one = if a then 1 else 2 end;\n" +
+      "  let two = if b then 1 else 2 end;\n" +
+      "  let three = if c then 1 else 2 end;\n" +
+      "  let four = if d then 1 else 2 end;\n" +
+      "  let five = if e then 1 else 2 end;\n" +
+      "  consume actual + one - one + two - two + three - three + " +
+      "four - four + five - five\n" +
+      "end end;\n" +
+      "guarded (8, true, true, true, true, true)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder evidence stays bound to its divisor and result", () => {
+  for (
+    const condition of [
+      "actual % 3i32 == 0i32",
+      "actual % 4i32 == 1i32",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        `let guarded = actual => if ${condition} ` +
+        "then consume actual else 0 end;\n" +
+        "guarded 8\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("remainder evidence follows exact equality branch polarity", () => {
+  for (
+    const [condition, then_branch, else_branch] of [
+      [
+        "0i32 == actual % 4i32",
+        "consume actual",
+        "0",
+      ],
+      [
+        "actual % 4i32 != 0i32",
+        "0",
+        "consume actual",
+      ],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        `let guarded = actual => if ${condition} then ` +
+        `${then_branch} else ${else_branch} end;\n` +
+        "guarded 8\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "remainder_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("remainder evidence rejects replacement values and follows aliases", () => {
+  const changed_dividend = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left % 4i32 == 0i32 then consume right else 0 end;\n" +
+      "guarded (8, 3)\n",
+  ));
+  assert_equals(
+    changed_dividend.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(changed_dividend)), undefined);
+
+  const alias = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let alias = actual;\n" +
+      "  if actual % 4i32 == 0i32 then consume alias else 0 end\n" +
+      "end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(alias.diagnostics, []);
+  assert_equals(
+    [...alias.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(alias)) !== undefined, true);
+});
+
+Deno.test("duplicate exact remainder computations preserve evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 4i32 == 0i32 then do\n" +
+      "  let duplicate = actual % 4i32;\n" +
+      "  consume actual + duplicate\n" +
+      "end else 0 end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "remainder_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder certificates reject calls repeated by loops", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    if actual % 4i32 == 0i32 then consume actual else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("bounded offsets establish ordered result evidence", () => {
+  for (
+    const [value_type, requirement, body, argument] of [
+      [
+        "I32",
+        "value <= 10i32",
+        "if actual < 10i32 then do " +
+        "let next = actual + 1i32; consume next end else 0 end",
+        "9i32",
+      ],
+      [
+        "U32",
+        "value <= 10u32",
+        "if actual >= 10u32 then 0u32 else do " +
+        "let next = actual + 1u32; consume next end end",
+        "9u32",
+      ],
+      [
+        "I64",
+        "value < 10i64",
+        "if actual < 9i64 then do " +
+        "let next = actual - (-1i64); consume next end else 0i64 end",
+        "8i64",
+      ],
+      [
+        "I32",
+        "9i32 < value",
+        "if 10i32 < actual then do " +
+        "let next = actual - 1i32; consume next end else 0 end",
+        "11i32",
+      ],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ${requirement}) -> ` +
+        `${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        `let guarded = actual => ${body};\n` +
+        `guarded ${argument}\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "bounded_offset",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("bounded offsets establish transparent ordered facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type at_most_ten = (value: I32) -> Prop\n" +
+      "fact at_most_ten = value => value <= 10i32;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof at_most_ten(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => if actual < 10i32 then do\n" +
+      "  let next = actual + 1i32;\n" +
+      "  consume next\n" +
+      "end else 0 end;\n" +
+      "guarded 9i32\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "bounded_offset",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("bounded offsets reject operations outside the one-hop boundary", () => {
+  for (
+    const body of [
+      "do let next = actual + 1i32; " +
+      "if actual < 10i32 then consume next else 0 end end",
+      "if choose then do let next = actual + 1i32; " +
+      "consume next end else 0 end",
+      "if actual < 10i32 then do let next = 1i32 + actual; " +
+      "consume next end else 0 end",
+      "if actual < 9i32 then do let next = actual + 1i32 + 1i32; " +
+      "consume next end else 0 end",
+      "if actual < 10i32 then do let next = actual + 1i32; " +
+      "let alias = next; consume alias end else 0 end",
+      "if actual < 10i32 then do " +
+      "let next = if choose then actual + 1i32 else actual + 1i32 end; " +
+      "consume next end else 0 end",
+      "do let alias = actual; if alias < 10i32 then do " +
+      "let next = actual + 1i32; consume next end else 0 end end",
+      "do let alias = if choose then actual else actual end; " +
+      "if alias < 10i32 then do let next = actual + 1i32; " +
+      "consume next end else 0 end end",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32, choose: Bool) -> I32\n" +
+        `let guarded = (actual, choose) => ${body};\n` +
+        "guarded (9i32, true)\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("bounded offsets drop facts when arithmetic may wrap", () => {
+  for (
+    const [value_type, requirement, condition, expression, zero, argument] of [
+      [
+        "I32",
+        "value <= 2147483647i32",
+        "actual <= 2147483647i32",
+        "actual + 1i32",
+        "0i32",
+        "2147483647i32",
+      ],
+      [
+        "U32",
+        "0u32 <= value",
+        "0u32 <= actual",
+        "actual - 1u32",
+        "0u32",
+        "0u32",
+      ],
+      [
+        "I64",
+        "value <= 9223372036854775807i64",
+        "actual <= 9223372036854775807i64",
+        "actual + 1i64",
+        "0i64",
+        "9223372036854775807i64",
+      ],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ${requirement}) -> ` +
+        `${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        `let guarded = actual => if ${condition} then do ` +
+        `let next = ${expression}; consume next end else ${zero} end;\n` +
+        `guarded ${argument}\n`,
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("bounded offset certificates reject calls repeated by loops", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    if actual < 10i32 then do\n" +
+      "      let next = actual + 1i32;\n" +
+      "      consume next\n" +
+      "    end else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "guarded 9i32\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("bounded offset inference returns unknown after its path budget", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value <= 10i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = " +
+      "(value: I32, a: Bool, b: Bool, c: Bool, d: Bool, e: Bool) -> I32\n" +
+      "let guarded = (actual, a, b, c, d, e) => " +
+      "if actual >= 10i32 then 0 else do\n" +
+      "  let one = if a then 1 else 2 end;\n" +
+      "  let two = if b then 1 else 2 end;\n" +
+      "  let three = if c then 1 else 2 end;\n" +
+      "  let four = if d then 1 else 2 end;\n" +
+      "  let five = if e then 1 else 2 end;\n" +
+      "  let next = actual + 1i32;\n" +
+      "  consume next + one - one + two - two + three - three + " +
+      "four - four + five - five\n" +
+      "end end;\n" +
+      "guarded (9, true, true, true, true, true)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("ordered comparison branches establish call evidence", () => {
+  for (
+    const [requirement, condition, then_branch, else_branch] of [
+      ["value < 10", "actual < 10", "consume actual", "0"],
+      ["value < 10", "actual >= 10", "0", "consume actual"],
+      ["10 <= value", "actual >= 10", "consume actual", "0"],
+      ["10 <= value", "actual < 10", "0", "consume actual"],
+      ["10 < value", "actual > 10", "consume actual", "0"],
+      ["value <= 10", "actual > 10", "0", "consume actual"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        `let guarded = actual => if ${condition} then ` +
+        `${then_branch} else ${else_branch} end;\n` +
+        "guarded 5\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("ordered value comparisons establish exact branch evidence", () => {
+  const branch_cases = [
+    {
+      condition: "a < b",
+      true_requirement: "left < right",
+      false_requirement: "right <= left",
+    },
+    {
+      condition: "a <= b",
+      true_requirement: "left <= right",
+      false_requirement: "right < left",
+    },
+    {
+      condition: "a > b",
+      true_requirement: "right < left",
+      false_requirement: "left <= right",
+    },
+    {
+      condition: "a >= b",
+      true_requirement: "right <= left",
+      false_requirement: "left < right",
+    },
+  ];
+  for (const value_type of ["I32", "U32"]) {
+    for (const branch_case of branch_cases) {
+      for (
+        const [requirement, then_branch, else_branch] of [
+          [branch_case.true_requirement, "consume (a, b)", "a"],
+          [branch_case.false_requirement, "a", "consume (a, b)"],
+        ]
+      ) {
+        let literal_suffix = "";
+        if (value_type === "U32") literal_suffix = "u32";
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(left: ${value_type}, right: ${value_type}, ` +
+            `evidence: Proof ${requirement}) -> ${value_type}\n` +
+            "let consume = (a, b, evidence) => a;\n" +
+            "type guarded = " +
+            `(left: ${value_type}, right: ${value_type}) -> ${value_type}\n` +
+            "let guarded = (a, b) => " +
+            `if ${branch_case.condition} then ${then_branch} ` +
+            `else ${else_branch} end;\n` +
+            `guarded (5${literal_suffix}, 10${literal_suffix})\n`,
+        ));
+        assert_equals(analysis.diagnostics, []);
+        assert_equals(analysis.proofs.size, 1);
+        assert_equals(
+          [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+          "machine_fact",
+        );
+        assert_equals(
+          checked_value(lower_duck_source(analysis)) !== undefined,
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("value equality comparisons establish both branch polarities", () => {
+  const branch_cases = [
+    {
+      condition: "a == b",
+      true_requirement: "left = right",
+      false_requirement: "left != right",
+    },
+    {
+      condition: "a != b",
+      true_requirement: "left != right",
+      false_requirement: "left = right",
+    },
+  ];
+  for (const value_type of ["I32", "U32"]) {
+    for (const branch_case of branch_cases) {
+      for (
+        const [requirement, then_branch, else_branch] of [
+          [branch_case.true_requirement, "consume (a, b)", "a"],
+          [branch_case.false_requirement, "a", "consume (a, b)"],
+        ]
+      ) {
+        let literal_suffix = "";
+        if (value_type === "U32") literal_suffix = "u32";
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(left: ${value_type}, right: ${value_type}, ` +
+            `evidence: Proof ${requirement}) -> ${value_type}\n` +
+            "let consume = (a, b, evidence) => a;\n" +
+            "type guarded = " +
+            `(left: ${value_type}, right: ${value_type}) -> ${value_type}\n` +
+            "let guarded = (a, b) => " +
+            `if ${branch_case.condition} then ${then_branch} ` +
+            `else ${else_branch} end;\n` +
+            `guarded (5${literal_suffix}, 5${literal_suffix})\n`,
+        ));
+        assert_equals(analysis.diagnostics, []);
+        assert_equals(analysis.proofs.size, 1);
+        assert_equals(
+          [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+          "machine_fact",
+        );
+        assert_equals(
+          checked_value(lower_duck_source(analysis)) !== undefined,
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("value equalities compose and transport disequality", () => {
+  for (
+    const [second_condition, requirement] of [
+      ["b == c", "left = right"],
+      ["b != c", "left != right"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(left: I32, right: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (a, b, evidence) => a;\n" +
+        "type guarded = (left: I32, middle: I32, right: I32) -> I32\n" +
+        "let guarded = (a, b, c) => " +
+        "if a == b then " +
+        `if ${second_condition} then consume (a, c) else a end ` +
+        "else a end;\n" +
+        "guarded (5, 5, 5)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
+    );
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("reduced scalar endpoints certify value disequality", () => {
+  const cases = [
+    {
+      body: "do\n" +
+        "  let masked = @bit_and(a, -1i32);\n" +
+        "  if masked == 5i32 then " +
+        "if b == 0i32 then consume (a, b) else a end else a end\n" +
+        "end",
+      call: "guarded (5, 0)\n",
+    },
+    {
+      body: "if a >= 0 then if a <= 2 then " +
+        "if a != 0 then if a != 1 then " +
+        "if b == 0 then consume (a, b) else a end " +
+        "else a end else a end else a end else a end",
+      call: "guarded (2, 0)\n",
+    },
+    {
+      body: "if a >= 0 && a <= 7 && a % 8 == 7 && b == 0 " +
+        "then consume (a, b) else a end",
+      call: "guarded (7, 0)\n",
+    },
+  ];
+  for (const case_ of cases) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left != right) -> I32\n" +
+        "let consume = (left, right, evidence) => right;\n" +
+        "type guarded = (left: I32, right: I32) -> I32\n" +
+        `let guarded = (a, b) => ${case_.body};\n` +
+        case_.call,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("value equality survives nonconvex facts in either order", () => {
+  for (
+    const condition of [
+      "a % 2 == 0 && b % 2 == 0 && a == b",
+      "a == b && a % 2 == 0 && b % 2 == 0",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+        "let consume = (left, right, evidence) => right;\n" +
+        "type guarded = (left: I32, right: I32) -> I32\n" +
+        "let guarded = (a, b) => " +
+        `if ${condition} then consume (a, b) else a end;\n` +
+        "guarded (4, 4)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()].filter((proof) =>
+        proof.semantic_certificate?.tag === "machine_fact"
+      ).length,
+      1,
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("value equality evidence rejects opposite branches", () => {
+  for (
+    const [condition, true_requirement, false_requirement] of [
+      ["a == b", "left != right", "left = right"],
+      ["a != b", "left = right", "left != right"],
+    ]
+  ) {
+    for (
+      const [requirement, then_branch, else_branch] of [
+        [true_requirement, "consume (a, b)", "a"],
+        [false_requirement, "a", "consume (a, b)"],
+      ]
+    ) {
+      const analysis = analyze_duck_source(parse_duck_source(
+        "type consume = " +
+          `(left: I32, right: I32, evidence: Proof ${requirement}) -> I32\n` +
+          "let consume = (a, b, evidence) => a;\n" +
+          "type guarded = (left: I32, right: I32) -> I32\n" +
+          "let guarded = (a, b) => " +
+          `if ${condition} then ${then_branch} else ${else_branch} end;\n` +
+          "42\n",
+      ));
+      assert_equals(
+        analysis.diagnostics.some((diagnostic) =>
+          diagnostic.code === "DUCK2604"
+        ),
+        true,
+      );
+      assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+    }
+  }
+});
+
+Deno.test("ordered value comparisons compose through affine certificates", () => {
+  for (const value_type of ["I32", "U32"]) {
+    let literal_suffix = "";
+    if (value_type === "U32") literal_suffix = "u32";
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(left: ${value_type}, right: ${value_type}, ` +
+        `evidence: Proof left < right) -> ${value_type}\n` +
+        "let consume = (a, b, evidence) => a;\n" +
+        "type guarded = " +
+        `(left: ${value_type}, middle: ${value_type}, ` +
+        `right: ${value_type}) -> ${value_type}\n` +
+        "let guarded = (a, b, c) => " +
+        "if a < b then " +
+        "if b <= c then consume (a, c) else a end " +
+        "else a end;\n" +
+        `guarded (1${literal_suffix}, 2${literal_suffix}, ` +
+        `3${literal_suffix})\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("ordered affine certificates follow either value alias", () => {
+  for (const arguments_ of ["a, second", "first, b"]) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+        "let consume = (a, b, evidence) => b;\n" +
+        "type guarded = (left: I32, right: I32) -> I32\n" +
+        "let guarded = (a, b) => do\n" +
+        "  let first = a;\n" +
+        "  let second = b;\n" +
+        `  if a < b then consume (${arguments_}) else a end\n` +
+        "end;\n" +
+        "guarded (1, 2)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("ordered value comparison evidence rejects opposite branches", () => {
+  const branch_cases = [
+    {
+      condition: "a < b",
+      true_requirement: "right <= left",
+      false_requirement: "left < right",
+    },
+    {
+      condition: "a <= b",
+      true_requirement: "right < left",
+      false_requirement: "left <= right",
+    },
+    {
+      condition: "a > b",
+      true_requirement: "left <= right",
+      false_requirement: "right < left",
+    },
+    {
+      condition: "a >= b",
+      true_requirement: "left < right",
+      false_requirement: "right <= left",
+    },
+  ];
+  for (const value_type of ["I32", "U32"]) {
+    for (const branch_case of branch_cases) {
+      for (
+        const [requirement, then_branch, else_branch] of [
+          [branch_case.true_requirement, "consume (a, b)", "a"],
+          [branch_case.false_requirement, "a", "consume (a, b)"],
+        ]
+      ) {
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(left: ${value_type}, right: ${value_type}, ` +
+            `evidence: Proof ${requirement}) -> ${value_type}\n` +
+            "let consume = (a, b, evidence) => a;\n" +
+            "type guarded = " +
+            `(left: ${value_type}, right: ${value_type}) -> ${value_type}\n` +
+            "let guarded = (a, b) => " +
+            `if ${branch_case.condition} then ${then_branch} ` +
+            `else ${else_branch} end;\n` +
+            "42\n",
+        ));
+        assert_equals(
+          analysis.diagnostics.some((diagnostic) =>
+            diagnostic.code === "DUCK2604"
+          ),
+          true,
+        );
+        assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+      }
+    }
+  }
+});
+
+Deno.test("ordered comparison evidence respects branch polarity", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 10) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (value: I32) -> I32\n" +
+      "let wrong = actual => " +
+      "if actual < 10 then 0 else consume actual end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("false greater-than branches do not reverse operands", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof 10 <= value) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (value: I32) -> I32\n" +
+      "let wrong = actual => " +
+      "if actual > 10 then 0 else consume actual end;\n" +
+      "wrong 5\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("short-circuit conjunctions retain every required branch fact", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume_left = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume_left = (actual, evidence) => actual;\n" +
+      "type consume_right = " +
+      "(value: I32, evidence: Proof value < 10) -> I32\n" +
+      "let consume_right = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left != 0 && right < 10 then " +
+      "consume_left left + consume_right right else 0 end;\n" +
+      "guarded (5, 7)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 2);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("FactGraph proves weaker bounds from short-circuit branches", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 20) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32, ready: I32) -> I32\n" +
+      "let guarded = (actual, ready) => " +
+      "if actual < 10 && ready != 0 then consume actual else 0 end;\n" +
+      "guarded (5, 1)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("guarded aggregate indexes carry erased bounds certificates", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => " +
+      "if index >= 0 && index < 2 then values[index] else 0 end;\n" +
+      "read ([20, 22], 1)\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected guarded aggregate index to lower.");
+  }
+  assert_equals(
+    JSON.stringify(program.core).includes("index_bounds"),
+    false,
+  );
+});
+
+Deno.test("guarded indexed updates carry the same bounds certificate", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let update = (values: [I32, I32], index: I32) => do\n" +
+      "if index >= 0 && index < 2 then values[index] = 22; end;\n" +
+      "values\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+  assert_equals(
+    [...guarded.proofs.values()][0]?.semantic_certificate?.tag,
+    "index_bounds",
+  );
+  assert_equals(
+    guarded.callable_control_flow.values().next().value?.control_flow.blocks
+      .flatMap((block) => block.nodes).find((node) =>
+        node.operation.tag === "index"
+      )?.operation,
+    { tag: "index", length: 2, mode: "write" },
+  );
+
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let update = (values: [I32, I32], index: I32) => do\n" +
+      "values[index] = 22;\n" +
+      "values\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+  assert_equals(unguarded.proofs.size, 0);
+});
+
+Deno.test("unguarded dynamic indexes report the remaining bounds goal", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => values[index];\n" +
+      "read ([20, 22], 1)\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("runtime-sized indexes require an explicit length witness", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => value[index];\n" +
+      "0\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < length(value); this value has no compile-time length measure."
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("runtime length measures prove guarded index bounds", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "if index >= 0 && index < length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+  const certificate = [...guarded.proofs.values()][0]?.semantic_certificate;
+  if (certificate?.tag !== "index_bounds") {
+    throw new Error("Expected dynamic index bounds certificate.");
+  }
+  assert_equals(certificate.requirement.length, undefined);
+  assert_equals(
+    certificate.requirement.length_value === undefined,
+    false,
+  );
+  assert_equals(certificate.requirement.object === undefined, false);
+  assert_equals(checked_value(lower_duck_source(guarded)) !== undefined, true);
+
+  const unrelated = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, other: Text, index: I32) => do\n" +
+      "let length = @len other;\n" +
+      "if index >= 0 && index < length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unrelated.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "this value has no compile-time length measure",
+      )
+    ),
+    true,
+  );
+  assert_equals(unrelated.proofs.size, 0);
+
+  const unproved = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "value[index]\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const disproved = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "if index < 0 || index >= length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const measured_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len alias;\n" +
+      "if index >= 0 && index < length then value[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(measured_alias.diagnostics, []);
+  assert_equals(measured_alias.proofs.size, 1);
+
+  const indexed_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len value;\n" +
+      "if index >= length then alias[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    indexed_alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const loop_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len value;\n" +
+      "if index >= length then do\n" +
+      "for unused in 0..1 do alias[index]; end;\n" +
+      "0\n" +
+      "end else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    loop_alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < length(value)."
+    ),
+    true,
+  );
+
+  const rebound_alias = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, other: Text, index: I32) => do\n" +
+      "let alias = value;\n" +
+      "let length = @len alias;\n" +
+      "alias = other;\n" +
+      "if index >= 0 && index < length then alias[index] else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    rebound_alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "this value has no compile-time length measure",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("raw get obeys the same runtime length obligation", () => {
+  const unguarded = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => @get(value, index);\n" +
+      "0\n",
+  ));
+  assert_equals(
+    unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message.includes(
+        "this value has no compile-time length measure",
+      )
+    ),
+    true,
+  );
+  assert_equals(unguarded.proofs.size, 0);
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let read = (value: Text, index: I32) => do\n" +
+      "let length = @len value;\n" +
+      "if index >= 0 && index < length then @get(value, index) else 0 end\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+});
+
+Deno.test("raw get cannot escape its checked call site", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let invoke: ((([I32, I32], I32) -> I32), [I32, I32], I32) -> I32 = " +
+      "(getter, values, index) => getter(values, index);\n" +
+      "invoke (@get, [20, 22], 2)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.message,
+    ]),
+    [[
+      "DUCK2607",
+      "unknown: partial intrinsic @get cannot escape a directly checked call.",
+    ]],
+  );
+});
+
+Deno.test("index operands reject unsupported widths and replacements", () => {
+  for (
+    const source of [
+      "let read = (values: [I32, I32], index: I64) => values[index];\n0\n",
+      "let update = (values: [I32, I32], index: I64) => do " +
+      "values[index] = 1; values end;\n0\n",
+      "let read = (values: [I32, I32], index: F32) => values[index];\n0\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2302" &&
+        diagnostic.message.includes(
+          "Index expects an integer no wider than 32 bits",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+
+  const replacement = analyze_duck_source(parse_duck_source(
+    "let update = (values: [I32, I32], index: I32) => do\n" +
+      'if index >= 0 && index < 2 then values[index] = "wrong"; end;\n' +
+      "values\n" +
+      "end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    replacement.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2306" &&
+      diagnostic.message.includes("index update expects I32, got Text")
+    ),
+    true,
+  );
+});
+
+Deno.test("fixed arrays expose exact static index bounds", () => {
+  const guarded = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32; 2], index: I32) => " +
+      "if index >= 0 && index < 2 then values[index] else 0 end;\n" +
+      "0\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+  assert_equals(guarded.proofs.size, 1);
+
+  for (
+    const source of [
+      "let read = (values: [I32; 0]) => values[0];\n0\n",
+      "let read = (values: [I32, Text]) => values[2];\n0\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2607"),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("indexes in impossible range iterations are unreachable", () => {
+  for (
+    const body of [
+      "for unused in 0..0 do values[index]; end;",
+      "for unused in 2..0 do values[index]; end;",
+      "for unused in 0..2 by -1 do values[index]; end;",
+      "for unused in 0..2 do if false then values[index]; end; end;",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "let read = (values: [I32, I32], index: I32) => do " +
+        body + " 0 end;\n0\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("statically invalid indexes are disproved before Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], unused: I32) => values[2];\n" +
+      "read ([20, 22], 0)\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+
+  const branch_disproved = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => " +
+      "if index < 0 || index >= 2 then values[index] else 0 end;\n" +
+      "0\n",
+  ));
+  assert_equals(
+    branch_disproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "disproved: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+
+  const mixed_paths = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], outside: Bool) => do " +
+      "let index = if outside then 2 else 0 end; " +
+      "values[index] end;\n0\n",
+  ));
+  assert_equals(
+    mixed_paths.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2607" &&
+      diagnostic.message ===
+        "unknown: cannot prove index bounds 0 <= index < 2."
+    ),
+    true,
+  );
+});
+
+Deno.test("statically unreachable indexes create no bounds obligation", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let read = (values: [I32, I32], index: I32) => " +
+      "if false then values[index] else 0 end;\n" +
+      "0\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(
+    checked_value(lower_duck_source(analysis)) !== undefined,
+    true,
+  );
+});
+
+Deno.test("short-circuit ordered facts preserve every machine polarity", () => {
+  for (const value_type of ["I32", "U32"]) {
+    let suffix = "";
+    if (value_type === "U32") suffix = "u32";
+    const bound = "10" + suffix;
+    for (
+      const [condition, true_requirement, false_requirement] of [
+        [`actual < ${bound}`, `value < ${bound}`, `${bound} <= value`],
+        [`actual <= ${bound}`, `value <= ${bound}`, `${bound} < value`],
+        [`actual > ${bound}`, `${bound} < value`, `value <= ${bound}`],
+        [`actual >= ${bound}`, `${bound} <= value`, `value < ${bound}`],
+      ]
+    ) {
+      for (
+        const [requirement, body] of [
+          [
+            true_requirement,
+            `if ${condition} && ready != 0 then consume actual else actual end`,
+          ],
+          [
+            false_requirement,
+            `if ${condition} || ready != 0 then actual else consume actual end`,
+          ],
+        ]
+      ) {
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(value: ${value_type}, evidence: Proof ${requirement}) -> ` +
+            `${value_type}\n` +
+            "let consume = (actual, evidence) => actual;\n" +
+            `type guarded = (value: ${value_type}, ready: I32) -> ` +
+            `${value_type}\n` +
+            `let guarded = (actual, ready) => ${body};\n` +
+            `guarded (5${suffix}, 1)\n`,
+        ));
+        assert_equals(analysis.diagnostics, []);
+        assert_equals(analysis.proofs.size, 1);
+        assert_equals(
+          checked_value(lower_duck_source(analysis)) !== undefined,
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("false disjunction branches retain both negative facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left != 0 || right != 0 then 1 else consume left end;\n" +
+      "guarded (0, 0)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("true disjunction branches do not choose one sufficient fact", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (left: I32, right: I32) -> I32\n" +
+      "let wrong = (left, right) => " +
+      "if left != 0 || right != 0 then consume left else 0 end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("false conjunction branches do not choose one failed fact", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (left: I32, right: I32) -> I32\n" +
+      "let wrong = (left, right) => " +
+      "if left != 0 && right != 0 then 1 else consume left end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("statically unreachable calls do not require proof evidence", () => {
+  for (
+    const body of [
+      "if false then consume actual else 0 end",
+      "if 1 < 0 && actual < 10 then consume actual else 0 end",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(value: I32, evidence: Proof value != 0) -> I32\n" +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type unreachable = (value: I32) -> I32\n" +
+        `let unreachable = actual => ${body};\n` +
+        "unreachable 0\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("branch joins retain facts from every live predecessor", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 20) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type joined = (value: I32, ready: I32) -> I32\n" +
+      "let joined = (actual, ready) => do\n" +
+      "if ready != 0 then\n" +
+      "if actual >= 20 then return 0; end;\n" +
+      "else\n" +
+      "if actual >= 10 then return 0; end;\n" +
+      "end;\n" +
+      "consume actual\n" +
+      "end;\n" +
+      "joined (15, 1)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("loop calls cannot reuse facts from only their first visit", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type run = () -> I32\n" +
+      "let run = () => do\n" +
+      "for index in 0..3 do consume index; end;\n" +
+      "0\n" +
+      "end;\n" +
+      "run ()\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("range guards establish bounds on every loop visit", () => {
+  for (
+    const [range, requirement] of [
+      ["0..3", "value < 3"],
+      ["0..3", "0 <= value"],
+      ["0..=3", "value <= 3"],
+      ["3..0 by -1", "0 < value"],
+      ["3..=0 by -1", "0 <= value"],
+      ["3..=0 by -1", "value <= 3"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type run = () -> I32\n" +
+        "let run = () => do\n" +
+        `for index in ${range} do consume index; end;\n` +
+        "0\n" +
+        "end;\n" +
+        "run ()\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("wrapping range edges do not establish induction bounds", () => {
+  for (
+    const [range, requirement] of [
+      ["2147483646..=2147483647", "0 <= value"],
+      ["-2147483647..=-2147483648 by -1", "value <= 0"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type run = () -> I32\n" +
+        "let run = () => do\n" +
+        `for index in ${range} do consume index; end;\n` +
+        "0\n" +
+        "end;\n" +
+        "run ()\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(analysis.proofs.size, 0);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("range loops establish static aggregate index bounds", () => {
+  for (const range of ["0..2", "1..=0 by -1"]) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "let read = (values: [I32, I32]) => do\n" +
+        "let total = 0;\n" +
+        `for index in ${range} do\n` +
+        "total = total + values[index];\n" +
+        "end;\n" +
+        "total\n" +
+        "end;\n" +
+        "0\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "index_bounds",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("short-circuit facts stay bound to their original ValueId", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 20) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (value: I32, ready: I32) -> I32\n" +
+      "let wrong = (actual, ready) => " +
+      "if actual < 10 && ready != 0 then do " +
+      "actual = 100; consume actual end else 0 end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("comparison evidence does not cross branch joins", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type unguarded = (value: I32) -> I32\n" +
+      "let unguarded = actual => do\n" +
+      "if actual != 0 then actual else 1 end;\n" +
+      "consume actual\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("comparison evidence stays bound to its ValueId", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type changed = (value: I32) -> I32\n" +
+      "let changed = actual => if actual != 0 then do\n" +
+      "actual = 0;\n" +
+      "consume actual\n" +
+      "end else 0 end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("shadowed values cannot reuse contextual proof evidence", () => {
+  const shadowed = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = " +
+      "(value: I32, evidence: Proof value != 0) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "let actual = 0;\n" +
+      "consume actual\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    shadowed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(shadowed)), undefined);
+});
+
+Deno.test("erased proof evidence cannot become runtime data", () => {
+  const used = analyze_duck_source(parse_duck_source(
+    "type expose = " +
+      "(value: I32, evidence: Proof value = value) -> I32\n" +
+      "let expose = (actual, evidence) => evidence;\n" +
+      "expose 42\n",
+  ));
+  assert_equals(
+    used.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "Erased proof evidence evidence cannot be used as runtime data",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(used)), undefined);
+});
+
+Deno.test("assignment targets cannot reference erased proof evidence", () => {
+  for (const operator of ["=", ":="]) {
+    const assigned = analyze_duck_source(parse_duck_source(
+      "type expose = (value: I32, evidence: Proof True) -> I32\n" +
+        "let expose = (actual, evidence) => do\n" +
+        `evidence ${operator} true;\n` +
+        "actual\n" +
+        "end;\n" +
+        "expose 42\n",
+    ));
+    assert_equals(
+      assigned.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(
+          "Erased proof evidence evidence cannot be used as runtime data",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(assigned)), undefined);
+  }
+});
+
+Deno.test("shadowed proof parameter names remain runtime values", () => {
+  const shadowed = analyze_duck_source(parse_duck_source(
+    "type expose = (value: I32, evidence: Proof True) -> I32\n" +
+      "let expose = (actual, evidence) => do\n" +
+      "let evidence = actual;\n" +
+      "evidence\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    shadowed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Erased proof evidence")
+    ),
+    false,
+  );
+});
+
+Deno.test("proof arguments cannot be supplied as runtime values", () => {
+  const supplied = analyze_duck_source(parse_duck_source(
+    "type expose = (evidence: Proof True) -> I32\n" +
+      "let expose = evidence => 42;\n" +
+      "expose true\n",
+  ));
+  assert_equals(
+    supplied.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "erased signature accepts 0; proof arguments are implicit",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(supplied)), undefined);
+});
+
+Deno.test("proof-requiring callables cannot escape unchecked", () => {
+  const escaped = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = value) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "let callback = consume;\n" +
+      "callback\n",
+  ));
+  assert_equals(
+    escaped.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "cannot be used as a runtime value without higher-order contract checking",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(escaped)), undefined);
+});
+
+Deno.test("custom operators reject proof-requiring targets", () => {
+  for (const operands of ["1 === 1", "1 === 2"]) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+        "let consume = (left, right, evidence) => left;\n" +
+        "infixl 60 === = consume\n" +
+        operands + "\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "cannot be a custom fixity target until operator applications support contract checking",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("custom operators reject aliased proof-requiring targets", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left = right) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "let alias = consume;\n" +
+      "infixl 60 === = alias\n" +
+      "1 === 1\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "cannot be a custom fixity target until operator applications support contract checking",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("direct proof eliminators produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type symmetric = " +
+      "(left: I32, right: I32, equality: Proof right = left) -> " +
+      "Proof left = right\n" +
+      "let symmetric = (a, b, evidence) => by symm(evidence);\n42\n",
+      "type chain = " +
+      "(a: I32, b: I32, c: I32, first: Proof a = b, second: Proof b = c) -> " +
+      "Proof a = c\n" +
+      "let chain = (x, y, z, left, right) => by trans(left, right);\n42\n",
+      "type project = (pair: Proof True and False) -> Proof True\n" +
+      "let project = evidence => by and_left(evidence);\n42\n",
+      "type apply_implication = " +
+      "(function: Proof True implies False, argument: Proof True) -> " +
+      "Proof False\n" +
+      "let apply_implication = (f, value) => " +
+      "by implies_apply(f, value);\n42\n",
+      "type left_nested = " +
+      "(value: I32, evidence: Proof True) -> Proof value = value\n" +
+      "let left_nested = (value, evidence) => " +
+      "by and_left(and_intro(refl, evidence));\n42\n",
+      "type applied_refl = " +
+      "(value: I32, function: Proof value = value implies True) -> " +
+      "Proof True\n" +
+      "let applied_refl = (value, function) => " +
+      "by implies_apply(function, refl);\n42\n",
+      "type left_identity = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let left_identity = (left, right, equality) => " +
+      "by trans(refl, equality);\n42\n",
+      "type right_identity = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let right_identity = (left, right, equality) => " +
+      "by trans(equality, refl);\n42\n",
+      "type literal_refl = () -> Proof 0 = 0i32\n" +
+      "let literal_refl = () => by refl;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type parenthesized = " +
+      "(value: I32, evidence: Proof predicate(value)) -> " +
+      "Proof predicate((value))\n" +
+      "let parenthesized = (value, evidence) => by evidence;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type numeric_atom = " +
+      "(evidence: Proof predicate(0)) -> Proof predicate(0i32)\n" +
+      "let numeric_atom = evidence => by evidence;\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("direct propositional proof terms produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type implication_identity = () -> Proof True implies True\n" +
+      "let implication_identity = () => by evidence => evidence;\n42\n",
+      "type not_false = () -> Proof not False\n" +
+      "let not_false = () => by impossible => impossible;\n42\n",
+      "type choose_left = " +
+      "(evidence: Proof True) -> Proof True or False\n" +
+      "let choose_left = value => by or_left(value);\n42\n",
+      "type choose_right = " +
+      "(evidence: Proof True) -> Proof False or True\n" +
+      "let choose_right = value => by or_right(value);\n42\n",
+      "type explosion = (evidence: Proof False) -> Proof True\n" +
+      "let explosion = impossible => by false_elim(impossible);\n42\n",
+      "type merge = (choice: Proof True or True) -> Proof True\n" +
+      "let merge = choice => " +
+      "by or_cases(choice, left => left, right => right,);\n42\n",
+      "type retain_outer = " +
+      "(outer: Proof True) -> Proof True implies True\n" +
+      "let retain_outer = retained => by inner => retained;\n42\n",
+      "type retain_case_outer = " +
+      "(choice: Proof False or False, outer: Proof True) -> Proof True\n" +
+      "let retain_case_outer = (choice, retained) => " +
+      "by or_cases(choice, left => retained, right => retained);\n42\n",
+      "type nested_implication = " +
+      "() -> Proof True implies True implies True\n" +
+      "let nested_implication = () => by first => second => first;\n42\n",
+      "type shadow_implication = " +
+      "(outer: Proof False) -> Proof True implies True\n" +
+      "let shadow_implication = retained => by retained => retained;\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("invalid direct propositional proof terms fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by evidence => evidence;\n42\n",
+        "Proof lambda requires an implication, negation, or universal goal",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => by or_left(evidence);\n42\n",
+        "Disjunction introduction requires a disjunction goal",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => " +
+        "by or_cases(evidence, left => left, right => right);\n42\n",
+        "or_cases requires a disjunction proof",
+      ],
+      [
+        "type bad = (choice: Proof True or False) -> Proof True\n" +
+        "let bad = choice => " +
+        "by or_cases(choice, left => left, right => right);\n42\n",
+        "Proof establishes False, not True",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof False\n" +
+        "let bad = evidence => by false_elim(evidence);\n42\n",
+        "False elimination requires a proof of False",
+      ],
+      [
+        "type bad = (choice: Proof True or True) -> Proof True\n" +
+        "let bad = choice => " +
+        "by or_cases(choice, left => left, right => left);\n42\n",
+        "Unknown proof evidence left",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("direct quantified proof terms produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type all_reflexive = " +
+      "() -> Proof forall (value: I32). value = value\n" +
+      "let all_reflexive = () => by value => refl;\n42\n",
+      "type specialize = " +
+      "(universal: Proof forall (value: I32). value = value, value: I32) -> " +
+      "Proof value = value\n" +
+      "let specialize = (all, actual) => " +
+      "by forall_apply(all, actual);\n42\n",
+      "type positional_specialize = " +
+      "(left: I32, right: I32, " +
+      "universal: Proof forall (value: I32). value = value) -> " +
+      "Proof left = left\n" +
+      "let positional_specialize = (right, actual, all) => " +
+      "by forall_apply(all, right);\n42\n",
+      "type specialize_literal = " +
+      "(universal: Proof forall (value: I32). value = value) -> " +
+      "Proof 0 = 0i32\n" +
+      "let specialize_literal = all => by forall_apply(all, 0);\n42\n",
+      "type witness = " +
+      "(value: I32) -> Proof exists (found: I32). found = value\n" +
+      "let witness = actual => by exists_intro(actual, refl);\n42\n",
+      "type literal_witness = " +
+      "() -> Proof exists (found: I32). found = 0\n" +
+      "let literal_witness = () => by exists_intro(0i32, refl);\n42\n",
+      "type unpack = " +
+      "(existence: Proof exists (value: I32). True) -> Proof True\n" +
+      "let unpack = package => " +
+      "by exists_elim(package, witness, evidence => evidence);\n42\n",
+      "type repack = " +
+      "(package: Proof exists (value: I32). value = value) -> " +
+      "Proof exists (copy: I32). copy = copy\n" +
+      "let repack = package => " +
+      "by exists_elim(" +
+      "package, witness, evidence => exists_intro(witness, evidence));\n" +
+      "42\n",
+      "type retain_universal = " +
+      "(outer: I32, evidence: Proof outer = outer) -> " +
+      "Proof forall (inner: I32). outer = outer\n" +
+      "let retain_universal = (outer, retained) => " +
+      "by inner => retained;\n42\n",
+      "type retain_existential = " +
+      "(package: Proof exists (value: I32). True, " +
+      "outer: I32, evidence: Proof outer = outer) -> Proof outer = outer\n" +
+      "let retain_existential = (package, outer, retained) => " +
+      "by exists_elim(package, witness, opened => retained);\n42\n",
+      "type nested_universal = " +
+      "() -> Proof forall (left: I32). forall (right: I32). left = left\n" +
+      "let nested_universal = () => by left => right => refl;\n42\n",
+      "type specialize_exists = " +
+      "(universal: Proof forall (value: I32). " +
+      "exists (witness: I32). value = value, actual: I32) -> " +
+      "Proof exists (witness: I32). actual = actual\n" +
+      "let specialize_exists = (universal, actual) => " +
+      "by forall_apply(universal, actual);\n42\n",
+      "type eliminate_under_universal = " +
+      "(package: Proof exists (value: I32). True) -> " +
+      "Proof forall (other: I32). True\n" +
+      "let eliminate_under_universal = package => " +
+      "by exists_elim(package, witness, evidence => other => evidence);\n" +
+      "42\n",
+      "type shadow_universal = " +
+      "(outer: I32) -> Proof forall (outer: I32). outer = outer\n" +
+      "let shadow_universal = actual => by actual => refl;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type retain_quantified_predicate = " +
+      "(universal: Proof forall (value: I32). predicate(value)) -> " +
+      "Proof True\n" +
+      "let retain_quantified_predicate = universal => by true_intro;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type specialize_predicate = " +
+      "(actual: I32, universal: Proof forall (value: I32). predicate(value)) -> " +
+      "Proof predicate(actual)\n" +
+      "let specialize_predicate = (actual, universal) => " +
+      "by forall_apply(universal, actual);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type witness_predicate = " +
+      "(actual: I32, evidence: Proof predicate(actual)) -> " +
+      "Proof exists (found: I32). predicate(found)\n" +
+      "let witness_predicate = (actual, evidence) => " +
+      "by exists_intro(actual, evidence);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type preserve_predicate_witness = " +
+      "(package: Proof exists (value: I32). predicate(value)) -> " +
+      "Proof exists (copy: I32). predicate(copy)\n" +
+      "let preserve_predicate_witness = package => " +
+      "by exists_elim(package, witness, evidence => " +
+      "exists_intro(witness, evidence));\n42\n",
+      "type ordered_identity = () -> " +
+      "Proof forall (value: I32). value < value implies value < value\n" +
+      "let ordered_identity = () => by value => evidence => evidence;\n42\n",
+      "type held_identity = () -> " +
+      "Proof forall (value: Bool). value implies value\n" +
+      "let held_identity = () => by value => evidence => evidence;\n42\n",
+      "type type_test_identity = () -> " +
+      "Proof forall (value: I32). (value is I32) implies (value is I32)\n" +
+      "let type_test_identity = () => by value => evidence => evidence;\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("quantified proofs elaborate structural product terms", () => {
+  const source = "type empty_product_reflexivity = () -> Proof [] = []\n" +
+    "let empty_product_reflexivity = () => by refl;\n" +
+    "type singleton_product_reflexivity = () -> " +
+    "Proof forall (value: I32). [value] = [value]\n" +
+    "let singleton_product_reflexivity = () => " +
+    "by { intro value exact refl };\n" +
+    "type product_reflexivity = () -> " +
+    "Proof forall (value: I32). [value, value] = [value, value]\n" +
+    "let product_reflexivity = () => by { intro value exact refl };\n" +
+    "42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 3);
+  assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+});
+
+Deno.test("direct equality transformations produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type mapped = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let mapped = (left, right, equality) => " +
+      "by congr(value => value, equality);\n42\n",
+      "type constant_map = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof true = true\n" +
+      "let constant_map = (left, right, equality) => " +
+      "by congr(value => true, equality);\n42\n",
+      "type substitute_reflexivity = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof left = left) -> Proof right = right\n" +
+      "let substitute_reflexivity = (left, right, equality, evidence) => " +
+      "by transport(equality, value => value = value, evidence);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type substitute = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+      "let substitute = (left, right, equality, evidence) => " +
+      "by transport(equality, value => predicate(value), evidence);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type shadowed_substitute = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+      "let shadowed_substitute = (actual_left, actual_right, same, known) => " +
+      "by transport(same, actual_left => predicate(actual_left), known);\n" +
+      "42\n",
+      "type arithmetic_substitute = " +
+      "(left: I32, right: I32, equality: Proof left = right, " +
+      "evidence: Proof left + 0 = left + 0) -> " +
+      "Proof right + 0 = right + 0\n" +
+      "let arithmetic_substitute = (left, right, equality, evidence) => " +
+      "by transport(" +
+      "equality, value => value + 0 = value + 0, evidence);\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("invalid equality transformations fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => by congr(value => value, evidence);\n42\n",
+        "congr requires an equality proof",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => " +
+        "by transport(evidence, value => True, evidence);\n42\n",
+        "transport requires an equality proof",
+      ],
+      [
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right) -> " +
+        "Proof left = right\n" +
+        "let bad = (left, right, equality) => " +
+        "by congr(value => value + 1, equality);\n42\n",
+        "not #0 = #1",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "opaque fact predicate = value => True;\n" +
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right, " +
+        "evidence: Proof predicate(right)) -> Proof predicate(right)\n" +
+        "let bad = (left, right, equality, evidence) => " +
+        "by transport(equality, value => predicate(value), evidence);\n42\n",
+        "Proof establishes fact:root:predicate(#1), not fact:root:predicate(#0)",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "opaque fact predicate = value => True;\n" +
+        "type bad = " +
+        "(left: I32, right: I32, equality: Proof left = right, " +
+        "evidence: Proof predicate(left)) -> Proof predicate(right)\n" +
+        "let bad = (left, right, equality, evidence) => " +
+        "by transport(equality, value => predicate(missing), evidence);\n42\n",
+        "refers to unbound logical value missing",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("quantified predicate certificates retain structured arguments", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type predicate = (value: I32) -> Prop\n" +
+      "opaque fact predicate = value => True;\n" +
+      "type predicate_identity = () -> " +
+      "Proof forall (value: I32). predicate(value) implies predicate(value)\n" +
+      "let predicate_identity = () => by value => evidence => evidence;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const checked = analysis.proofs.get("root:predicate_identity:proof");
+  if (checked === undefined) {
+    throw new Error("Expected a quantified predicate certificate.");
+  }
+  const predicate = {
+    tag: "atom" as const,
+    name: "fact:root:predicate",
+    arguments: [{ tag: "var" as const, index: 0 }],
+  };
+  assert_equals(checked.certificate.proposition, {
+    tag: "forall",
+    domain: { tag: "constant", name: "I32" },
+    body: {
+      tag: "implies",
+      premise: predicate,
+      conclusion: predicate,
+    },
+  });
+});
+
+Deno.test("invalid direct quantified proof terms fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = " +
+        "(evidence: Proof True, value: I32) -> Proof value = value\n" +
+        "let bad = (evidence, value) => " +
+        "by forall_apply(evidence, value);\n42\n",
+        "forall_apply requires a universal proof",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by exists_intro(0, true_intro);\n42\n",
+        "exists_intro requires an existential goal",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> Proof True\n" +
+        "let bad = evidence => " +
+        "by exists_elim(evidence, witness, opened => opened);\n42\n",
+        "exists_elim requires an existential proof",
+      ],
+      [
+        "type bad = " +
+        "(universal: Proof forall (value: I32). True) -> Proof True\n" +
+        "let bad = universal => by forall_apply(universal, missing);\n42\n",
+        "Unsupported universal argument missing",
+      ],
+      [
+        "type bad = " +
+        "(universal: Proof forall (value: I32). True, text: Text) -> " +
+        "Proof True\n" +
+        "let bad = (universal, text) => " +
+        "by forall_apply(universal, text);\n42\n",
+        "universal argument text has type Text, expected I32",
+      ],
+      [
+        "type bad = " +
+        "(text: Text) -> Proof exists (value: I32). True\n" +
+        "let bad = text => by exists_intro(text, true_intro);\n42\n",
+        "existential witness text has type Text, expected I32",
+      ],
+      [
+        "type bad = " +
+        "(package: Proof exists (value: I32). False) -> Proof True\n" +
+        "let bad = package => " +
+        "by exists_elim(package, witness, impossible => witness);\n42\n",
+        "Unknown proof evidence witness",
+      ],
+      [
+        "type bad = " +
+        "(package: Proof exists (value: I32). False) -> Proof True\n" +
+        "let bad = package => " +
+        "by exists_elim(package, witness, impossible => missing);\n42\n",
+        "Unknown proof evidence missing",
+      ],
+      [
+        "type bad = " +
+        "(package: Proof exists (value: I32). False) -> Proof False\n" +
+        "let bad = package => " +
+        "by exists_elim(package, witness, impossible => true_intro);\n42\n",
+        "Proof establishes True, not False",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "opaque fact predicate = value => True;\n" +
+        "type bad = " +
+        "(outer: I32, evidence: Proof predicate(outer)) -> " +
+        "Proof forall (inner: I32). predicate(inner)\n" +
+        "let bad = (outer, evidence) => by inner => evidence;\n42\n",
+        "Proof establishes fact:root:predicate(#1), not fact:root:predicate(#0)",
+      ],
+      [
+        "type predicate = (value: I32) -> Prop\n" +
+        "opaque fact predicate = value => True;\n" +
+        "type bad = " +
+        "() -> Proof forall (value: I32). predicate(value + 1)\n" +
+        "let bad = () => by value => true_intro;\n42\n",
+        "Proof establishes True, not fact:root:predicate",
+      ],
+      [
+        "type bad = " +
+        "() -> Proof forall (value: I32). value + 0 = value\n" +
+        "let bad = () => by value => refl;\n42\n",
+        "Reflexivity term does not match both equality sides",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("incomplete quantified proofs preserve unaffected semantics", () => {
+  for (
+    const source of [
+      "let broken = () => by forall_apply(proof, );\n" +
+      "let kept = 42;\nkept\n",
+      "let broken = () => by exists_intro(value, );\n" +
+      "let kept = 42;\nkept\n",
+      "let broken = () => " +
+      "by exists_elim(package, witness, evidence => );\n" +
+      "let kept = 42;\nkept\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("Baba parser rejected MISSING")
+      ),
+      true,
+    );
+    assert_equals(analysis.symbols.has("kept"), true);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("invalid direct proof declarations fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = () -> Proof False\n" +
+        "let bad = () => by true_intro;\n42\n",
+        "Proof establishes True, not False",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by missing;\n42\n",
+        "Unknown proof evidence missing",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => true;\n42\n",
+        "must use a direct by proof term body",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "ensures False\n" +
+        "let bad = () => by true_intro;\n42\n",
+        "must express its guarantee in the Proof result",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by true_intro\n" +
+        "and runtime = () => 42;\n42\n",
+        "cannot yet erase from a mutual binding group",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "@[test]\n" +
+        "let bad = () => by true_intro;\n42\n",
+        "cannot carry runtime binding attributes",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("unsafe proof assumptions retain provenance and erase before Core", () => {
+  const source = "type admitted = () -> Proof False\n" +
+    "unsafe let admitted = () => by unsafe { assume False };\n" +
+    "42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+
+  assert_equals(analysis.diagnostics, []);
+  const checked = analysis.proofs.get("root:admitted:proof");
+  if (checked === undefined) {
+    throw new Error("Expected an unsafe proof certificate.");
+  }
+  assert_equals(checked.certificate.safety, {
+    tag: "unsafe",
+    origins: [{
+      tag: "source",
+      start: source.indexOf("unsafe {"),
+      end: source.indexOf("unsafe {") + "unsafe { assume False }".length,
+    }],
+  });
+  assert_equals(checked_value(lower_duck_source(analysis))?.core, {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: { tag: "num", type: "i32", value: 42 },
+    }],
+  });
+});
+
+Deno.test("unsafe proof assumptions require explicit unsafe declarations", () => {
+  for (
+    const [source, code, message] of [
+      [
+        "type bad = () -> Proof False\n" +
+        "let bad = () => by unsafe { assume False };\n42\n",
+        "DUCK2606",
+        "requires an unsafe proof declaration",
+      ],
+      [
+        "unsafe let runtime = () => 42;\nruntime()\n",
+        "DUCK2606",
+        "requires a matching prefix signature with a Proof result",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "unsafe let bad = () => by true_intro;\n42\n",
+        "DUCK2605",
+        "does not depend on unsafe evidence",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "unsafe let bad = () => by unsafe { assume False };\n42\n",
+        "DUCK2605",
+        "Proof establishes False, not True",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "unsafe let bad = () => by unsafe { assume missing };\n42\n",
+        "DUCK2605",
+        "unbound logical value missing",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === code &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("proof declarations reject conflicting inline annotations", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = (value: I32) -> Proof True\n" +
+        "let bad = (value: Text) => by true_intro;\n42\n",
+        "parameter value has type I32, but its inline annotation is Text",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad: I32 = () => by true_intro;\n42\n",
+        "cannot combine a prefix signature with an inline annotation",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2602" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("incomplete Proof recovery preserves unaffected semantics", () => {
+  for (
+    const source of [
+      "type broken = () -> Proof\nlet kept = 42;\nkept\n",
+      "type broken = () -> Proof   \nlet kept = 42;\nkept\n",
+      "type broken = () -> Proof // missing\nlet kept = 42;\nkept\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("Proof requires a proposition")
+      ),
+      true,
+    );
+    assert_equals(analysis.symbols.has("kept"), true);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("rejected mutual proofs preserve runtime peer symbols", () => {
+  const source = "type proof = () -> Proof True\n" +
+    "let rec proof = () => by true_intro\n" +
+    "and runtime = () => 42;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("requires a checked totality derivation")
+    ),
+    true,
+  );
+  assert_equals(analysis.symbols.has("runtime"), true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("a by body without a proof result is rejected", () => {
+  const source = "type bad = () -> I32\n" +
+    "let bad = () => by refl;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "requires a matching prefix signature with a Proof result",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("orphan proof bodies do not erase enclosing runtime bindings", () => {
+  const source = "let outer = () => do\n" +
+    "  let orphan = () => by refl;\n" +
+    "  42\n" +
+    "end;\n" +
+    "outer()\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "requires a matching prefix signature with a Proof result",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.symbols.has("outer"), true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+
+  const direct = analyze_duck_source(
+    parse_duck_source("let orphan = by refl;\n42\n"),
+  );
+  assert_equals(
+    direct.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2605"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(direct)), undefined);
+});
+
+Deno.test("proof atoms preserve literal contents during kernel checking", () => {
+  const source = "type text_property = (value: Text) -> Prop\n" +
+    "opaque fact text_property = value => True;\n" +
+    "type bad = " +
+    '(evidence: Proof text_property("a b")) -> Proof text_property("ab")\n' +
+    "let bad = proof => by proof;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Proof establishes") &&
+      diagnostic.message.includes('literal:Text:"a b"') &&
+      diagnostic.message.includes('literal:Text:"ab"')
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("structured predicate atoms preserve quantified variable identity", () => {
+  const source = "type predicate = (value: I32) -> Prop\n" +
+    "opaque fact predicate = value => True;\n" +
+    "type bad = " +
+    "(outer: I32, evidence: Proof " +
+    "forall (x: I32). predicate(outer)) -> " +
+    "Proof forall (outer: I32). predicate(outer)\n" +
+    "let bad = (value, proof) => by proof;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "Proof establishes (forall I32. fact:root:predicate(#1)), not (forall I32. fact:root:predicate(#0))",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("semantic program brands reject analysis and Core mutation", () => {
+  const invalid = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => 0;\n",
+  ));
+  assert_throws(
+    () => {
+      (invalid.diagnostics as unknown[]).length = 0;
+    },
+    "Cannot assign to read only property",
+  );
+  assert_equals(checked_value(lower_duck_source(invalid)), undefined);
+
+  const changed = analyze_duck_source(parse_duck_source(
+    "let value = 42;\nvalue\n",
+  ));
+  const binding = changed.source.statements[0];
+  if (binding === undefined || binding.tag !== "bind") {
+    throw new Error("Expected a source binding.");
+  }
+  binding.name = "forged";
+  assert_throws(
+    () => lower_duck_source(changed),
+    "Duck analysis source changed after semantic checking.",
+  );
+
+  const checked = analyze_duck_source(parse_duck_source("40 + 2"));
+  const program = checked_value(lower_duck_source(checked));
+  if (program === undefined) {
+    throw new Error("Expected a checked semantic program.");
+  }
+  assert_throws(
+    () => {
+      (program.core.statements as unknown[]).length = 0;
+    },
+    "Cannot assign to read only property",
+  );
+});
+
+Deno.test("analysis options cannot suppress source prefix signatures", () => {
+  const parsed = parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "\n",
+  );
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2601"),
+    true,
+  );
+});
+
+Deno.test("semantic analysis rejects an unsatisfiable literal contract", () => {
+  const parsed = parse_duck_source(
+    "type f = (value: I32) -> I32\n" +
+      "ensures false\n" +
+      "let f = value => value;\n",
+  );
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("requirements are enforced at direct and aliased calls", () => {
+  const called = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires False\n" +
+      "let f = value => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    called.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "disproved: call to f cannot prove requires False",
+      )
+    ),
+    true,
+  );
+
+  const uncalled = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires False\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(uncalled.diagnostics, []);
+
+  const alias = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires False\n" +
+      "let f = value => value;\n" +
+      "let alias = f;\n" +
+      "alias 1\n",
+  ));
+  assert_equals(
+    alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "disproved: call to f cannot prove requires False",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("requirements reject unbound names before tautology checking", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires missing = missing\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value missing")
+    ),
+    true,
+  );
+});
+
+Deno.test("malformed contract clauses report one syntax root cause", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "requires\n" +
+    "let f = value => value;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      span: diagnostic.span,
+    })),
+    [{
+      code: "DUCK1001",
+      message: "Contract clause requires a proposition before the next clause",
+      span: {
+        start: source.indexOf("requires") + "requires".length,
+        end: source.indexOf("requires") + "requires".length,
+      },
+    }],
+  );
+});
+
+Deno.test("malformed decreases clauses report one syntax root cause", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "decreases\n" +
+    "let f = value => value;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      span: diagnostic.span,
+    })),
+    [{
+      code: "DUCK1001",
+      message: "Contract clause requires a metric before the next clause",
+      span: {
+        start: source.indexOf("decreases") + "decreases".length,
+        end: source.indexOf("decreases") + "decreases".length,
+      },
+    }],
+  );
+});
+
+Deno.test("fact definitions check arity and free logical values", () => {
+  const unbound = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => missing = missing;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    unbound.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value missing")
+    ),
+    true,
+  );
+
+  const arity = analyze_duck_source(parse_duck_source(
+    "type lie = (first: I32, second: I32) -> Prop\n" +
+      "fact lie = value => False;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    arity.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2602"),
+    true,
+  );
+});
+
+Deno.test("transparent facts unfold into contextual call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type nonzero = (value: I32) -> Prop\n" +
+      "fact nonzero = candidate => candidate != 0;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof nonzero(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual != 0 then consume actual else 0 end;\n" +
+      "guarded 7\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "machine_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("opaque facts do not unfold into contextual call obligations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type nonzero = (value: I32) -> Prop\n" +
+      "opaque fact nonzero = candidate => candidate != 0;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof nonzero(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual != 0 then consume actual else 0 end;\n" +
+      "guarded 7\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("opaque predicate evidence follows value-preserving aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  let alias = actual;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("opaque predicate evidence stays bound to ordered arguments", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (left: I32, right: I32) -> Prop\n" +
+      "opaque fact p = (left, right) => True;\n" +
+      "type consume = " +
+      "(left: I32, right: I32, evidence: Proof p(left, right)) -> I32\n" +
+      "let consume = (left, right, evidence) => left;\n" +
+      "type forward = " +
+      "(left: I32, right: I32, evidence: Proof p(left, right)) -> I32\n" +
+      "let forward = (left, right, evidence) => consume (right, left);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("opaque predicate evidence does not cross mixed alias joins", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  let alias = if actual == 0 then actual else 0 end;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("opaque predicate evidence survives joins of proven aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = " +
+      "(value: I32, choose_left: Bool, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, choose_left, evidence) => do\n" +
+      "  let alias = if choose_left then actual else actual end;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("opaque predicate evidence does not cross rebinding", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  let actual = 0;\n" +
+      "  consume actual\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("captured opaque evidence keeps its lexical predicate identity", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type forward = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let forward = (actual, evidence) => do\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  let alias = actual;\n" +
+      "  consume alias\n" +
+      "end;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("transparent aliases retain lexical opaque predicate identities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "do\n" +
+      "  type q = (value: I32) -> Prop\n" +
+      "  fact q = value => p(value);\n" +
+      "  type forward = " +
+      "(value: I32, evidence: Proof p(value)) -> I32\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  type consume = " +
+      "(value: I32, evidence: Proof q(value)) -> I32\n" +
+      "  let consume = (actual, evidence) => actual;\n" +
+      "  let forward = (actual, evidence) => do\n" +
+      "    let alias = actual;\n" +
+      "    consume alias\n" +
+      "  end;\n" +
+      "  42\n" +
+      "end\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "predicate_alias",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("shadowed opaque facts cannot satisfy outer contracts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type consume = (value: I32, evidence: Proof p(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "do\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  type forward = " +
+      "(value: I32, evidence: Proof p(value)) -> I32\n" +
+      "  let forward = (actual, evidence) => consume actual;\n" +
+      "  42\n" +
+      "end\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("transparent fact bodies retain lexical predicate identities", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "opaque fact p = value => True;\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact q = value => p(value);\n" +
+      "do\n" +
+      "  type p = (value: I32) -> Prop\n" +
+      "  opaque fact p = value => False;\n" +
+      "  type invalid = " +
+      "(value: I32, evidence: Proof p(value)) -> Proof q(value)\n" +
+      "  let invalid = (actual, evidence) => by evidence;\n" +
+      "  42\n" +
+      "end\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Proof establishes")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("direct proofs use transparent fact definitions", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type nonzero = (value: I32) -> Prop\n" +
+      "fact nonzero = candidate => candidate != 0;\n" +
+      "type preserve = " +
+      "(value: I32, evidence: Proof value != 0) -> Proof nonzero(value)\n" +
+      "let preserve = (actual, evidence) => by evidence;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("proof bodies see transparent facts defined after their signature", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type reflexive = (value: I32) -> Prop\n" +
+      "type prove = () -> Proof reflexive(1)\n" +
+      "fact reflexive = value => value = value;\n" +
+      "let prove = () => by refl;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("polymorphic transparent facts infer type substitutions", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type all_reflexive = forall (a: Type). (value: a) -> Prop\n" +
+      "fact all_reflexive = value => " +
+      "forall (other: a). other = other;\n" +
+      "type prove = (value: I32) -> Proof all_reflexive(value)\n" +
+      "let prove = actual => by other => refl;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const checked = analysis.proofs.get("root:prove:proof");
+  if (checked === undefined) {
+    throw new Error("Expected a polymorphic transparent fact certificate.");
+  }
+  assert_equals(checked.certificate.proposition, {
+    tag: "forall",
+    domain: { tag: "constant", name: "I32" },
+    body: {
+      tag: "equal",
+      type: { tag: "constant", name: "I32" },
+      left: { tag: "var", index: 0 },
+      right: { tag: "var", index: 0 },
+    },
+  });
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("polymorphic transparent facts refine contextual calls", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type reflexive = forall (a: Type). (value: a) -> Prop\n" +
+      "fact reflexive = value => value = value;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof reflexive(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual == actual then consume actual else 0 end;\n" +
+      "guarded 7\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("polymorphic fact unfolding rejects undetermined type arguments", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type always = forall (a: Type). () -> Prop\n" +
+      "fact always = () => True;\n" +
+      "type invalid = () -> Proof always()\n" +
+      "let invalid = () => by true_intro;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Proof establishes True")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("term binders do not shadow polymorphic fact type substitutions", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type typed = forall (a: Type). (value: a) -> Prop\n" +
+      "fact typed = value => forall (a: I32). value is a;\n" +
+      "type prove = " +
+      "(value: I32, evidence: Proof forall (a: I32). value is I32) " +
+      "-> Proof typed(value)\n" +
+      "let prove = (actual, evidence) => by evidence;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("transparent fact substitution avoids quantified capture", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type relates = (outer: I32) -> Prop\n" +
+      "fact relates = outer => " +
+      "forall (inner: I32). outer = inner;\n" +
+      "type invalid = (inner: I32) -> Proof relates(inner)\n" +
+      "let invalid = inner => by witness => refl;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Reflexivity term does not match")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("fact definitions require well-formed propositions", () => {
+  const runtime_value = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    runtime_value.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("value: I32 as a proposition")
+    ),
+    true,
+  );
+
+  const predicate_arity = analyze_duck_source(parse_duck_source(
+    "type predicate = (left: I32, right: I32) -> Prop\n" +
+      "fact predicate = (left, right) => left = right;\n" +
+      "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => predicate(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    predicate_arity.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("expects 2 arguments but received 1")
+    ),
+    true,
+  );
+
+  const unknown_quantifier_type = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => forall (x: Bogus). x = x;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    unknown_quantifier_type.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unknown logical type Bogus")
+    ),
+    true,
+  );
+
+  const zero_divisor = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value % 0 = 0;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    zero_divisor.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove 0 is nonzero")
+    ),
+    true,
+  );
+
+  const unsupported_index = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value[0] = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    unsupported_index.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term value[0]")
+    ),
+    true,
+  );
+});
+
+Deno.test("fact totality checks every partial operation structurally", () => {
+  const nested_zero = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value / 0 + value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    nested_zero.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove 0 is nonzero")
+    ),
+    true,
+  );
+
+  const first_unguarded = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, first: I32, second: I32) -> Prop\n" +
+      "fact lie = (value, first, second) =>\n" +
+      "  second != 0 and value / first / second = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    first_unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove first is nonzero")
+    ),
+    true,
+  );
+
+  const expression_guard = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, divisor: I32) -> Prop\n" +
+      "fact lie = (value, divisor) =>\n" +
+      "  divisor + 1 != 0 and value / divisor = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    expression_guard.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove divisor is nonzero")
+    ),
+    true,
+  );
+
+  const shadowed_guard = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, divisor: I32) -> Prop\n" +
+      "fact lie = (value, divisor) => divisor != 0 and\n" +
+      "  (forall (divisor: I32). value / divisor = value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    shadowed_guard.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove divisor is nonzero")
+    ),
+    true,
+  );
+
+  const signed_overflow = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, divisor: I32) -> Prop\n" +
+      "fact lie = (value, divisor) =>\n" +
+      "  divisor != 0 and value / divisor = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    signed_overflow.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot rule out signed division overflow")
+    ),
+    true,
+  );
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "type multiple_of = (value: I32, divisor: I32) -> Prop\n" +
+      "fact multiple_of = (value, divisor) =>\n" +
+      "  divisor != 0 and value % divisor = 0;\n" +
+      "42\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+
+  const literal_guards = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value % 1i32 = 0i32;\n" +
+      "type q = (value: I64) -> Prop\n" +
+      "fact q = value => value / 2i64 = value;\n" +
+      "type r = (value: U32) -> Prop\n" +
+      "fact r = value => value / 1u32 = value;\n" +
+      "42\n",
+  ));
+  assert_equals(literal_guards.diagnostics, []);
+
+  const typed_variable_guard = analyze_duck_source(parse_duck_source(
+    "type p = (value: I64, divisor: I64) -> Prop\n" +
+      "fact p = (value, divisor) =>\n" +
+      "  divisor != 0i64 and value % divisor = 0i64;\n" +
+      "42\n",
+  ));
+  assert_equals(typed_variable_guard.diagnostics, []);
+});
+
+Deno.test("fact terms use structural operator typing", () => {
+  const chained_comparison = analyze_duck_source(parse_duck_source(
+    "type lie = (a: I32, b: I32, c: I32) -> Prop\n" +
+      "fact lie = (a, b, c) => a < b < c;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    chained_comparison.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term")
+    ),
+    true,
+  );
+
+  const address = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => &value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    address.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term &value")
+    ),
+    true,
+  );
+
+  const mixed = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      'fact lie = value => "a" + value + "b" = "anything";\n' +
+      "42\n",
+  ));
+  assert_equals(
+    mixed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes('unsupported logical term "a" + value')
+    ),
+    true,
+  );
+});
+
+Deno.test("logical binders shadow fact names", () => {
+  const parameter = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = (q: I32) -> Prop\n" +
+      "fact p = q => q(1);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term q(1)")
+    ),
+    true,
+  );
+
+  const quantified = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = (value: I32) -> Prop\n" +
+      "fact p = value => forall (q: I32). q(1);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    quantified.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term q(1)")
+    ),
+    true,
+  );
+});
+
+Deno.test("logical numbers preserve suffixes and ranges", () => {
+  const suffix = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = 1i64;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    suffix.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("compares I32 with I64")
+    ),
+    true,
+  );
+
+  const oversized = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value / 4294967296 = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    oversized.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("out-of-range I32 logical number")
+    ),
+    true,
+  );
+
+  const matching = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = 1i32;\n" +
+      "42\n",
+  ));
+  assert_equals(matching.diagnostics, []);
+
+  const positive_i32_minimum_magnitude = analyze_duck_source(
+    parse_duck_source(
+      "type p = (value: I32) -> Prop\n" +
+        "fact p = value => value = 2147483648i32;\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(
+    positive_i32_minimum_magnitude.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("out-of-range I32 logical number")
+    ),
+    true,
+  );
+
+  const positive_i64_minimum_magnitude = analyze_duck_source(
+    parse_duck_source(
+      "type p = (value: I64) -> Prop\n" +
+        "fact p = value => value = 9223372036854775808i64;\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(
+    positive_i64_minimum_magnitude.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("out-of-range I64 logical number")
+    ),
+    true,
+  );
+
+  const negative_minimums = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = -2147483648i32;\n" +
+      "type q = (value: I64) -> Prop\n" +
+      "fact q = value => value = -9223372036854775808i64;\n" +
+      "42\n",
+  ));
+  assert_equals(negative_minimums.diagnostics, []);
+
+  const parenthesized_unsigned_negative = analyze_duck_source(
+    parse_duck_source(
+      "type p = (value: U8) -> Prop\n" +
+        "fact p = value => value = -(1u8);\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(
+    parenthesized_unsigned_negative.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("negates unsigned logical number")
+    ),
+    true,
+  );
+
+  const absurd_width = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = 1i9007199254740991;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    absurd_width.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("unsupported logical integer width")
+    ),
+    true,
+  );
+});
+
+Deno.test("fact signatures reject unknown parameter types", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type lie = (value: Bogus) -> Prop\n" +
+      "fact lie = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("unknown parameter type Bogus")
+    ),
+    true,
+  );
+
+  for (
+    const malformed of [
+      "I32 :| Bogus",
+      "I32 :& Bogus",
+      "I32 :- Bogus",
+      "Maybe Bogus",
+      "Maybe I32 Text",
+    ]
+  ) {
+    const malformed_analysis = analyze_duck_source(parse_duck_source(
+      "type Maybe a = | #None | #Some a\n" +
+        `type p = (value: ${malformed}) -> Prop\n` +
+        "fact p = value => value = value;\n" +
+        "42\n",
+    ));
+    assert_equals(
+      malformed_analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2602" &&
+        diagnostic.message.includes(`unknown parameter type ${malformed}`)
+      ),
+      true,
+    );
+    assert_equals(
+      checked_value(lower_duck_source(malformed_analysis)),
+      undefined,
+    );
+  }
+});
+
+Deno.test("fact signatures accept resolved structural parameter types", () => {
+  for (const type of ["[I32]", "(I32, I32)", "1", '"a"']) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      `type p = (value: ${type}) -> Prop\n` +
+        "fact p = value => value = value;\n" +
+        "42\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+
+  const refined_numbers = analyze_duck_source(parse_duck_source(
+    "type p = (value: 1) -> Prop\n" +
+      "fact p = value => value = 1 and value < 2 and value + 1 = 2;\n" +
+      "42\n",
+  ));
+  assert_equals(refined_numbers.diagnostics, []);
+
+  const finite_numbers = analyze_duck_source(parse_duck_source(
+    "type p = (value: 1 :| 2) -> Prop\n" +
+      "fact p = value => value < 3 and value + 1 = 2;\n" +
+      "42\n",
+  ));
+  assert_equals(finite_numbers.diagnostics, []);
+
+  const refined_text = analyze_duck_source(parse_duck_source(
+    'type p = (value: "a") -> Prop\n' +
+      'fact p = value => value = "a";\n' +
+      "42\n",
+  ));
+  assert_equals(refined_text.diagnostics, []);
+
+  const weakening = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = (value: 1) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "type r = () -> Prop\n" +
+      "fact r = () => p(1);\n" +
+      "42\n",
+  ));
+  assert_equals(weakening.diagnostics, []);
+
+  const strengthening = analyze_duck_source(parse_duck_source(
+    "type p = (value: 1) -> Prop\n" +
+      "fact p = value => value = value;\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact q = value => p(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    strengthening.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires 1 but received I32")
+    ),
+    true,
+  );
+
+  const alpha_equivalent = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (value: a) -> Prop\n" +
+      "type p = forall (b: Type). (value: b) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(alpha_equivalent.diagnostics, []);
+
+  const applied_alpha_equivalent = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type q = forall (a: Type). (value: Box a) -> Prop\n" +
+      "type p = forall (b: Type). (value: Box b) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(applied_alpha_equivalent.diagnostics, []);
+
+  const concrete_instantiation = analyze_duck_source(parse_duck_source(
+    "type Alias = I32\n" +
+      "type q = forall (a: Type). (left: a, right: a) -> Prop\n" +
+      "fact q = (left, right) => left = right;\n" +
+      "type p = () -> Prop\n" +
+      "fact p = () => q(1, 2);\n" +
+      "type r = (left: Alias, right: I32) -> Prop\n" +
+      "fact r = (left, right) => q(left, right);\n" +
+      "42\n",
+  ));
+  assert_equals(concrete_instantiation.diagnostics, []);
+
+  const incoherent_instantiation = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (left: a, right: a) -> Prop\n" +
+      "fact q = (left, right) => left = right;\n" +
+      "type p = () -> Prop\n" +
+      'fact p = () => q(1, "wrong");\n' +
+      "42\n",
+  ));
+  assert_equals(
+    incoherent_instantiation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires a but received Text")
+    ),
+    true,
+  );
+
+  const aliases_inside_applications = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type Alias = I32\n" +
+      "type q = forall (a: Type). " +
+      "(left: Box a, right: Box a) -> Prop\n" +
+      "type p = (left: Box Alias, right: Box I32) -> Prop\n" +
+      "fact q = (left, right) => left = right;\n" +
+      "fact p = (left, right) => q(left, right);\n" +
+      "42\n",
+  ));
+  assert_equals(aliases_inside_applications.diagnostics, []);
+
+  const transparent_head = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type q = forall (a: Type). (value: Box a) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = () -> Prop\n" +
+      "fact p = () => q(1);\n" +
+      "42\n",
+  ));
+  assert_equals(transparent_head.diagnostics, []);
+
+  const repeated_transparent_instantiation = analyze_duck_source(
+    parse_duck_source(
+      "type Box a = a\n" +
+        "type q = forall (a: Type). (left: a, right: a) -> Prop\n" +
+        "type p = (left: Box I32, right: I32) -> Prop\n" +
+        "fact q = (left, right) => left = right;\n" +
+        "fact p = (left, right) => q(left, right);\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(repeated_transparent_instantiation.diagnostics, []);
+
+  const reordered_type_sets = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32 :| (Text :| Bool)) -> Prop\n" +
+      "type p = (value: (Bool :| I32) :| Text) -> Prop\n" +
+      "type r = (value: I32 :& Text) -> Prop\n" +
+      "type s = (value: Text :& I32) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "fact r = value => True;\n" +
+      "fact s = value => r(value);\n" +
+      "42\n",
+  ));
+  assert_equals(reordered_type_sets.diagnostics, []);
+
+  const nested_forall = analyze_duck_source(parse_duck_source(
+    "type q = (value: forall a. a -> a) -> Prop\n" +
+      "type p = (value: forall b. b -> b) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(nested_forall.diagnostics, []);
+
+  const regrouped_forall = analyze_duck_source(parse_duck_source(
+    "type q = (value: forall a b. a -> b) -> Prop\n" +
+      "type p = (value: forall x. forall y. x -> y) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(regrouped_forall.diagnostics, []);
+
+  const captured_forall = analyze_duck_source(parse_duck_source(
+    "type q = (value: forall a. forall b. a -> b) -> Prop\n" +
+      "type p = (value: forall x. forall x. x -> x) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    captured_forall.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("Fact q argument 1")
+    ),
+    true,
+  );
+
+  const escaping_forall = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (value: forall x. a -> x) -> Prop\n" +
+      "type p = (value: forall y. y -> y) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    escaping_forall.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("Fact q argument 1")
+    ),
+    true,
+  );
+
+  const scoped_forall_instantiation = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (value: forall x. a -> x) -> Prop\n" +
+      "type p = forall (b: Type). (value: forall y. b -> y) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(scoped_forall_instantiation.diagnostics, []);
+
+  const refined_bool = analyze_duck_source(parse_duck_source(
+    "type p = (value: true) -> Prop\n" +
+      "fact p = value => value;\n" +
+      "42\n",
+  ));
+  assert_equals(refined_bool.diagnostics, []);
+
+  const runtime_booleans = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value == value;\n" +
+      "type q = () -> Prop\n" +
+      "fact q = () => true && true;\n" +
+      "42\n",
+  ));
+  assert_equals(runtime_booleans.diagnostics, []);
+});
+
+Deno.test("fact propositions resolve aliases in quantified types", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias = I32\n" +
+      "type p = (value: I32) -> Prop\n" +
+      "fact p = value => forall (other: Alias). other + 1 = other;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+
+  const generic = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type p = forall (a: Type). (value: Box a) -> Prop\n" +
+      "fact p = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(generic.diagnostics, []);
+
+  const concrete_generic = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type q = (value: Box I32) -> Prop\n" +
+      "fact q = value => value = 1;\n" +
+      "type p = (value: I32) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(concrete_generic.diagnostics, []);
+
+  const malformed_quantifier = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => forall (other: I32 :| Bogus). True;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    malformed_quantifier.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unknown logical type")
+    ),
+    true,
+  );
+});
+
+Deno.test("recursive facts require a checked totality derivation", () => {
+  const direct = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => lie(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    direct.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("recursive without a checked totality")
+    ),
+    true,
+  );
+
+  const mutual = analyze_duck_source(parse_duck_source(
+    "type first = (value: I32) -> Prop\n" +
+      "fact first = value => second(value);\n" +
+      "type second = (value: I32) -> Prop\n" +
+      "fact second = value => first(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    mutual.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value second")
+    ),
+    true,
+  );
+});
+
+Deno.test("decreases clauses require well-formed integer metrics", () => {
+  const missing = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases missing\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    missing.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term missing")
+    ),
+    true,
+  );
+
+  const partial = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases value / 0\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    partial.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove 0 is nonzero")
+    ),
+    true,
+  );
+
+  const valid = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(valid.diagnostics, []);
+
+  const floating = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases 1.5f32\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    floating.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("non-integer decreases metric")
+    ),
+    true,
+  );
+
+  const components = Array.from({ length: 17 }, () => "value").join(", ");
+  const oversized = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      `decreases (${components})\n` +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    oversized.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "decreases metric must have between 1 and 16 machine-integer components",
+      )
+    ),
+    true,
+  );
+
+  const recursive_oversized = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      `decreases (${components})\n` +
+      "let rec f = value => f(value);\n",
+  ));
+  assert_equals(
+    recursive_oversized.diagnostics.filter((diagnostic) =>
+      diagnostic.code === "DUCK2608"
+    ).length,
+    1,
+  );
+
+  const recursive = analyze_duck_source(parse_duck_source(
+    "type f = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec f = value => f value;\n",
+  ));
+  assert_equals(
+    recursive.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes("cannot prove decreases value < value")
+    ),
+    true,
+  );
+});
+
+Deno.test("recursive decreases checks every machine-integer edge", () => {
+  const unsigned = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0u32 then 0u32 else countdown(value - 1u32) end;\n" +
+      "countdown 3u32\n",
+  ));
+  assert_equals(unsigned.diagnostics, []);
+  assert_equals(unsigned.proofs.size, 1);
+
+  const signed = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: I8) -> (result: I8)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == -128i8 then value else countdown(value - 1i8) end;\n" +
+      "countdown 3i8\n",
+  ));
+  assert_equals(signed.diagnostics, []);
+  assert_equals(signed.proofs.size, 1);
+
+  const default_integer = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: Int) -> (result: Int)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == -2147483648 then value " +
+      "else countdown(value - 1) end;\n" +
+      "countdown 3\n",
+  ));
+  assert_equals(default_integer.diagnostics, []);
+  assert_equals(default_integer.proofs.size, 1);
+
+  const wrapping_default_integer = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: Int) -> (result: Int)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0 then value else countdown(value - 1) end;\n",
+  ));
+  assert_equals(
+    wrapping_default_integer.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes("cannot prove decreases")
+    ),
+    true,
+  );
+
+  const aliased = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0u32 then 0u32 else do " +
+      "let next = countdown; next(value - 1u32) end end;\n" +
+      "countdown 3u32\n",
+  ));
+  assert_equals(aliased.diagnostics, []);
+  assert_equals(aliased.proofs.size, 1);
+
+  for (
+    const recursive_call of [
+      "repeat(value)",
+      "repeat(value + 1u8)",
+      "repeat(value - 1u8)",
+    ]
+  ) {
+    const rejected = analyze_duck_source(parse_duck_source(
+      "type repeat = (value: U8) -> (result: U8)\n" +
+        "decreases value\n" +
+        `let rec repeat = value => ${recursive_call};\n`,
+    ));
+    assert_equals(
+      rejected.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2608" &&
+        diagnostic.message.includes("cannot prove decreases")
+      ),
+      true,
+    );
+  }
+});
+
+Deno.test("mutual decreases checks every recursive group edge", () => {
+  const accepted = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => " +
+      "if value == 0u32 then true else odd(value - 1u32) end\n" +
+      "and odd = value => " +
+      "if value == 0u32 then false else even(value - 1u32) end;\n" +
+      "even 4u32\n",
+  ));
+  assert_equals(accepted.diagnostics, []);
+  assert_equals(accepted.proofs.size, 2);
+
+  const bad_edge = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value - 1u32);\n",
+  ));
+  assert_equals(
+    bad_edge.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes("call to odd cannot prove decreases")
+    ),
+    true,
+  );
+
+  const missing_metric = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value);\n",
+  ));
+  assert_equals(
+    missing_metric.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "group member odd must declare a prefix signature with decreases",
+      )
+    ),
+    true,
+  );
+
+  const missing_signature = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value);\n" +
+      "even 1u32\n",
+  ));
+  assert_equals(
+    missing_signature.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "group member odd must declare a prefix signature with decreases",
+      )
+    ),
+    true,
+  );
+  assert_equals(missing_signature.proofs.size, 0);
+
+  const incompatible_metrics = analyze_duck_source(parse_duck_source(
+    "type even = (value: U32) -> (result: Bool)\n" +
+      "decreases (value, value)\n" +
+      "type odd = (value: U32) -> (result: Bool)\n" +
+      "decreases value\n" +
+      "let rec even = value => odd(value)\n" +
+      "and odd = value => even(value);\n",
+  ));
+  assert_equals(
+    incompatible_metrics.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "uses incompatible decreases metric arities 2 and 1",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("decreases uses lexicographic product order", () => {
+  for (
+    const [guard, recursive_call, expected_proofs] of [
+      ["major == 0u32", "walk(major - 1u32, 255u32)", 1],
+      ["minor == 0u32", "walk(major, minor - 1u32)", 2],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type walk = (major: U32, minor: U32) -> (result: U32)\n" +
+        "decreases (major, minor)\n" +
+        "let rec walk = (major, minor) => " +
+        `if ${guard} then major else ${recursive_call} end;\n` +
+        "walk(2u32, 2u32)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, expected_proofs);
+  }
+
+  const rejected = analyze_duck_source(parse_duck_source(
+    "type walk = (major: U32, minor: U32) -> (result: U32)\n" +
+      "decreases (major, minor)\n" +
+      "let rec walk = (major, minor) => " +
+      "if minor == 0u32 then major " +
+      "else walk(major + 1u32, minor - 1u32) end;\n",
+  ));
+  assert_equals(
+    rejected.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2608" &&
+      diagnostic.message.includes(
+        "cannot prove decreases (major + 1u32, minor - 1u32) < (major, minor)",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("unreachable recursive edges need no decreases proof", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type unreachable = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec unreachable = value => " +
+      "if false then unreachable(value) else value end;\n" +
+      "unreachable 1u32\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 0);
+});
+
+Deno.test("decreasing recursive callables cannot escape unchecked", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type countdown = (value: U32) -> (result: U32)\n" +
+      "decreases value\n" +
+      "let rec countdown = value => " +
+      "if value == 0u32 then 0u32 else countdown(value - 1u32) end;\n" +
+      "let escaped = countdown;\n" +
+      "escaped\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot be used as a runtime value")
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signatures reject duplicate logical binders", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = (left, right) => left;\n" +
+      "f(1, 2)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("repeats logical binder value")
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+
+  const callable = analyze_duck_source(parse_duck_source(
+    "type f = (left: I32, right: I32) -> (result: I32)\n" +
+      "ensures result = left\n" +
+      "let f = (x, x) => x;\n" +
+      "f(1, 2)\n",
+  ));
+  assert_equals(
+    callable.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("repeats parameter x")
+    ),
+    true,
+  );
+  assert_equals(callable.proofs.size, 0);
+
+  const duplicate_type = analyze_duck_source(parse_duck_source(
+    "type f = forall (a: Type) (a: Type). " +
+      "(value: a) -> (result: a)\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    duplicate_type.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("repeats logical binder a")
+    ),
+    true,
+  );
+
+  const camel_type = analyze_duck_source(parse_duck_source(
+    "type f = forall (camelCase: Type). " +
+      "(value: camelCase) -> (result: camelCase)\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    camel_type.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("must use snake_case")
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signatures reject structural predeclarations", () => {
+  const structural = analyze_duck_source(parse_duck_source(
+    "type left = (value: I32) -> (result: I32)\n" +
+      'let [left] = [value => "wrong"];\n' +
+      "left 1\n",
+  ));
+  assert_equals(
+    structural.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("structural or mutual definition")
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signatures predeclare every mutual callable", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type first = (value: I32) -> (result: I32)\n" +
+      "type second = (value: I32) -> (result: I32)\n" +
+      "let rec first = value => if value == 0 then 0 else second(value - 1) end\n" +
+      "and second = value => if value == 0 then 0 else first(value - 1) end;\n" +
+      "first 2\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    analysis.types.get(analysis.symbols.get("first")?.[0]!)?.tag,
+    "function",
+  );
+  assert_equals(
+    analysis.types.get(analysis.symbols.get("second")?.[0]!)?.tag,
+    "function",
+  );
+});
+
+Deno.test("prefix signatures check direct callable body representations", () => {
+  const result = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      'let f = value => "wrong";\n' +
+      "f 1\n",
+  ));
+  assert_equals(
+    result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("declares result I32") &&
+      diagnostic.message.includes("body has Text")
+    ),
+    true,
+  );
+
+  const parameter = analyze_duck_source(parse_duck_source(
+    "type f = (value: Text) -> (result: Text)\n" +
+      "let f = value => value + 1;\n" +
+      'f "a"\n',
+  ));
+  assert_equals(
+    parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term value + 1")
+    ),
+    true,
+  );
+
+  const unsuffixed = analyze_duck_source(parse_duck_source(
+    "type f = (value: I64) -> (result: I64)\n" +
+      "let f = value => 1;\n" +
+      "f 1i64\n",
+  ));
+  assert_equals(
+    unsuffixed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("declares result I64") &&
+      diagnostic.message.includes("body has I32")
+    ),
+    true,
+  );
+
+  const inline_parameter = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = (value: Text) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    inline_parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes(
+        "parameter value declares Text but its prefix signature requires I32",
+      )
+    ),
+    true,
+  );
+  assert_equals(inline_parameter.proofs.size, 0);
+});
+
+Deno.test("prefix callable types compare semantic spelling and aliases", () => {
+  const compact_inline = analyze_duck_source(parse_duck_source(
+    "type f = (value: [I32, I32]) -> (result: [I32, I32])\n" +
+      "let f = (value: [I32,I32]) => value;\n",
+  ));
+  assert_equals(compact_inline.diagnostics, []);
+
+  const compact_signature = analyze_duck_source(parse_duck_source(
+    "type f = (value: [I32,I32]) -> (result: [I32, I32])\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(compact_signature.diagnostics, []);
+  assert_equals(compact_signature.proofs.size, 1);
+
+  const alias = analyze_duck_source(parse_duck_source(
+    "type Identity = I32\n" +
+      "type f = (value: Identity) -> (result: Identity)\n" +
+      "ensures result = value\n" +
+      "let f = (value: I32) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(alias.diagnostics, []);
+  assert_equals(alias.proofs.size, 1);
+
+  const fact_alias = analyze_duck_source(parse_duck_source(
+    "type Identity = I32\n" +
+      "type p = (value: Identity) -> Prop\n" +
+      "fact p = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(fact_alias.diagnostics, []);
+
+  const generic_alias = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type f = (value: Box I32) -> (result: Box I32)\n" +
+      "let f = (value: I32) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(generic_alias.diagnostics, []);
+
+  const generic_result = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type f = () -> (result: Box I32)\n" +
+      "let f = () => 1;\n" +
+      "f()\n",
+  ));
+  assert_equals(generic_result.diagnostics, []);
+
+  const generic_identity = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type f = (value: Box I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(generic_identity.diagnostics, []);
+  assert_equals(generic_identity.proofs.size, 1);
+
+  const distinct_application = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type BoxI32 = Text\n" +
+      "type f = (value: Box I32) -> (result: Box I32)\n" +
+      "let f = (value: BoxI32) => value;\n" +
+      'f "oops"\n',
+  ));
+  assert_equals(
+    distinct_application.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes(
+        "declares BoxI32 but its prefix signature requires Box I32",
+      )
+    ),
+    true,
+  );
+
+  const singleton = analyze_duck_source(parse_duck_source(
+    "type f = (value: 1) -> (result: 1)\n" +
+      "let f = (value: 1) => value;\n" +
+      "type one = () -> (result: 1)\n" +
+      "let one = () => 1;\n" +
+      "f(one())\n",
+  ));
+  assert_equals(singleton.diagnostics, []);
+
+  const wrong_singleton_parameter = analyze_duck_source(parse_duck_source(
+    "type f = (value: 1) -> (result: 1)\n" +
+      "let f = (value: 2) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    wrong_singleton_parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("declares 2") &&
+      diagnostic.message.includes("requires 1")
+    ),
+    true,
+  );
+
+  const wrong_singleton_result = analyze_duck_source(parse_duck_source(
+    'type text = () -> (result: "a")\n' +
+      'let text = () => "b";\n' +
+      "text()\n",
+  ));
+  assert_equals(
+    wrong_singleton_result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes('declares result "a"')
+    ),
+    true,
+  );
+});
+
+Deno.test("logical numerals retain their source value type", () => {
+  const equality = analyze_duck_source(parse_duck_source(
+    "type p = (value: I64) -> Prop\n" +
+      "fact p = value => value = 1;\n",
+  ));
+  assert_equals(
+    equality.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("compares I64 with I32")
+    ),
+    true,
+  );
+
+  const fact_call = analyze_duck_source(parse_duck_source(
+    "type p = (value: I64) -> Prop\n" +
+      "fact p = value => True;\n" +
+      "type q = () -> Prop\n" +
+      "fact q = () => p(1);\n",
+  ));
+  assert_equals(
+    fact_call.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires I64 but received I32")
+    ),
+    true,
+  );
+});
+
+Deno.test("identity certificates require a direct callable definition", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = if false then value => value else value => 0 end;\n" +
+      "f 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires a direct callable definition")
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("fact signatures are not visible before their declaration", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value q")
+    ),
+    true,
+  );
+
+  const predeclared = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "fact q = value => True;\n" +
+      "42\n",
+  ));
+  assert_equals(predeclared.diagnostics, []);
+});
+
+Deno.test("contract equality certificates use heterogeneous parameter indices", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (left: I32, right: Text) -> (result: I32)\n" +
+      "ensures result = left\n" +
+      "let f = (left, right) => left;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+});
+
+Deno.test("prefix signatures reject non-type erased binders", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = forall (n: I32). (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("cannot erase dependent binder")
+    ),
+    true,
+  );
+});
+
+Deno.test("identity contracts accept aggregate representations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: [I32]) -> (result: [I32])\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+});
+
+Deno.test("semantic analysis checks identity postconditions against lambda bodies", () => {
+  const parsed = parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => 0;\n",
+  );
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("identity postconditions check every reachable normal return", () => {
+  const accepted = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(flag: Bool, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (flag, value) => do\n" +
+      "  if flag then return value; end;\n" +
+      "  value\n" +
+      "end;\n",
+  ));
+  assert_equals(accepted.diagnostics, []);
+  assert_equals(accepted.proofs.size, 1);
+
+  const constant_branch = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = value => if true then value else 0i32 end;\n",
+  ));
+  assert_equals(constant_branch.diagnostics, []);
+  assert_equals(constant_branch.proofs.size, 1);
+
+  const false_branch = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = value => if false then 0i32 else value end;\n",
+  ));
+  assert_equals(false_branch.diagnostics, []);
+  assert_equals(false_branch.proofs.size, 1);
+
+  const reversed = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(value: I32) -> (result: I32)\n" +
+      "ensures value = result\n" +
+      "let choose = value => value;\n",
+  ));
+  assert_equals(reversed.diagnostics, []);
+  assert_equals(reversed.proofs.size, 1);
+
+  const rejected = analyze_duck_source(parse_duck_source(
+    "type choose = " +
+      "(flag: Bool, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let choose = (flag, value) => do\n" +
+      "  if flag then return 0i32; end;\n" +
+      "  value\n" +
+      "end;\n",
+  ));
+  assert_equals(
+    rejected.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("on every normal return")
+    ),
+    true,
+  );
+  assert_equals(rejected.proofs.size, 0);
+});
+
+Deno.test("semantic analysis alpha-renames contract parameters positionally", () => {
+  const accepted = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = ignored => ignored;\n" +
+      "f 1\n",
+  ));
+  assert_equals(accepted.diagnostics, []);
+
+  const rejected = analyze_duck_source(parse_duck_source(
+    "let value = 0;\n" +
+      "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = ignored => value;\n",
+  ));
+  assert_equals(
+    rejected.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+
+  const multiple = analyze_duck_source(parse_duck_source(
+    "type pair = (first: I32, second: I32) -> (result: I32)\n" +
+      "ensures result = second\n" +
+      "let pair = (left, right) => right;\n" +
+      "pair(1, 2)\n",
+  ));
+  assert_equals(multiple.diagnostics, []);
+});
+
+Deno.test("contract certificates match the inferred callable representation", () => {
+  const unknown = analyze_duck_source(parse_duck_source(
+    "type f = (value: Bogus) -> (result: Bogus)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    unknown.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(unknown.proofs.size, 0);
+
+  const mismatched = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n" +
+      'f "oops"\n',
+  ));
+  assert_equals(
+    mismatched.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2310"),
+    true,
+  );
+  assert_equals(mismatched.proofs.size, 1);
+});
+
+Deno.test("semantic analysis rejects unsupported raw postconditions", () => {
+  const parsed = parse_duck_source(
+    "type f = (value: I32) -> I32\n" +
+      "ensures false and true\n" +
+      "let f = value => value;\n",
+  );
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("Baba conditional patterns reach proof-erased semantic Core", () => {
+  for (
+    const example of [
+      {
+        source: "type Maybe = | #None | #Some I32\n" +
+          "let current: Maybe = #Some 42;\n" +
+          "let out = if let #Some value = current then value else 0 end;\n" +
+          "out\n",
+        expected: "if_let",
+      },
+      {
+        source: "let current = 0;\n" +
+          "let out = if let 0 = current then 42 else 0 end;\n" +
+          "out\n",
+        expected: "if",
+      },
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(example.source));
+    assert_equals(analysis.diagnostics, []);
+    const program = checked_value(lower_duck_source(analysis));
+    if (program === undefined) {
+      throw new Error("Expected the Baba conditional to reach Core.");
+    }
+    const out = program.core.statements.find((statement) =>
+      statement.tag === "bind" && statement.name === "out"
+    );
+    if (out?.tag !== "bind") {
+      throw new Error("Conditional Core omitted its result binding.");
+    }
+    assert_equals(out.value.tag, example.expected);
+  }
+});
+
+Deno.test("Baba case expressions reach proof-erased semantic Core", () => {
+  const source = "type Maybe = | #None | #Some I32\n" +
+    "let current: Maybe = #Some 42;\n" +
+    "let out = case current of #Some value => value, #None => 0;\n" +
+    "out\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected the Baba case expression to reach Core.");
+  }
+  const out = program.core.statements.find((statement) =>
+    statement.tag === "bind" && statement.name === "out"
+  );
+  if (out?.tag !== "bind") {
+    throw new Error("Case Core omitted its result binding.");
+  }
+  if (out.value.tag !== "block") {
+    throw new Error("Case Core did not elaborate its match.");
+  }
+  const case_statement = out.value.statements[0];
+  if (case_statement?.tag !== "expr") {
+    throw new Error("Case Core omitted its elaborated expression.");
+  }
+  assert_equals(case_statement.expr.tag, "if_let");
+});
+
+Deno.test("Baba loops reach proof-erased semantic Core", () => {
+  for (
+    const example of [
+      {
+        source: "let total = 0;\n" +
+          "for value in 0..3 do\n" +
+          "  total = total + value;\n" +
+          "end\n" +
+          "total\n",
+        expected_tags: ["bind", "bind", "expr", "expr"],
+      },
+      {
+        source: "let values = [1, 2];\n" +
+          "let total = 0;\n" +
+          "for value in values do\n" +
+          "  total = total + value;\n" +
+          "end\n" +
+          "total\n",
+        expected_tags: ["bind", "bind", "bind", "expr", "expr"],
+      },
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(example.source));
+    assert_equals(analysis.diagnostics, []);
+    const program = checked_value(lower_duck_source(analysis));
+    if (program === undefined) {
+      throw new Error("Expected the Baba loop to reach Core.");
+    }
+    assert_equals(
+      program.core.statements.map((statement) => statement.tag),
+      example.expected_tags,
+    );
+  }
+});
+
+Deno.test("Baba recursion reaches proof-erased semantic Core", () => {
+  for (
+    const [path, expected_tags] of [
+      [
+        "examples/functions/04_recursive_fibonacci.duck",
+        ["bind", "bind", "expr"],
+      ],
+      [
+        "examples/functions/05_tail_recursive_gcd.duck",
+        ["bind", "expr"],
+      ],
+      [
+        "examples/functions/11_mutual_recursion.duck",
+        ["bind", "expr"],
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(
+      parse_duck_source(Deno.readTextFileSync(path)),
+    );
+    assert_equals(analysis.diagnostics, []);
+    const program = checked_value(lower_duck_source(analysis));
+    if (program === undefined) {
+      throw new Error("Expected Baba recursion to reach Core for " + path);
+    }
+    assert_equals(
+      program.core.statements.map((statement) => statement.tag),
+      expected_tags,
+    );
+  }
+});
+
+Deno.test("Baba source operators reach proof-erased semantic Core", () => {
+  const source = "infixl 60 +++ = add\n" +
+    "let add = (left, right) => left + right;\n" +
+    "let value = 20 +++ 22;\n" +
+    "value\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected a source operator to reach semantic Core.");
+  }
+  assert_equals(
+    program.core.statements.map((statement) => statement.tag),
+    ["bind", "bind", "expr"],
+  );
+});
+
+Deno.test("semantic analysis preserves malformed fixity diagnostics", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "infixl 60 +++ =\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.message),
+    [
+      "Malformed fixity declaration.",
+      "Baba parser rejected MISSING",
+    ],
+  );
+});
+
+Deno.test("semantic Core elaborates product destructuring before lowering", () => {
+  const source = "let [left, right] = [1, 2];\nleft + right;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected product destructuring to reach Core.");
+  }
+  assert_equals(
+    program.core.statements.map((statement) => {
+      if (statement.tag === "bind") return statement.name;
+      return statement.tag;
+    }),
+    ["_pattern#source0", "left", "right", "expr"],
+  );
+  assert_equals(program.core.statements.at(-1), {
+    tag: "expr",
+    expr: {
+      tag: "prim",
+      prim: "i32.add",
+      args: [
+        { tag: "var", name: "left" },
+        { tag: "var", name: "right" },
+      ],
+      integer: undefined,
+    },
+  });
+});
+
+Deno.test("empty shape bindings erase from semantic Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let {} = {};\n0\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected an empty shape binding to reach Core.");
+  }
+  assert_equals(program.core.statements, [
+    {
+      tag: "expr",
+      expr: { tag: "num", type: "i32", value: 0 },
+    },
+  ]);
+});
+
+Deno.test("semantic Core preserves irrefutable union alternatives", () => {
+  for (
+    const source of [
+      "let x | #Some x = #Some 1;\nx;\n",
+      "let #Some x | x = #Some 1;\nx;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(
+      checked_value(lowered)?.core.statements.some((statement) =>
+        statement.tag === "bind" && statement.name === "x"
+      ),
+      true,
+    );
+  }
+});
+
+Deno.test("refutable plain bindings stop at checked diagnostics", () => {
+  for (
+    const source of [
+      "let #Some value = #Some 1;\nvalue;\n",
+      "let 1 = 1;\n",
+      "let true = true;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2315"),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("refutable bindings with terminating fallbacks reach Core", () => {
+  const source = "let #Some value = #Some 1 else do return 0; end;\n" +
+    "value;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered) !== undefined, true);
+});
+
+Deno.test("redundant let-else fallbacks do not create unreachable matches", () => {
+  for (
+    const source of [
+      "let x = 1 else do return 0; end;\nx;\n",
+      "let [x] = [1] else do return 0; end;\nx;\n",
+      "let { .x } = { .x = 1 } else do return 0; end;\nx;\n",
+      "let x | #Some x = #Some 1 else do return 0; end;\nx;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered) !== undefined, true);
+  }
+});
+
+Deno.test("structural formation failures stop before Core", () => {
+  for (
+    const source of [
+      "let [head, ...tail] = value;\nhead;\n",
+      "let (head, ...tail) = value;\nhead;\n",
+      "let [x, y] = [1];\nx;\n",
+      "let [x] = [1, 2];\nx;\n",
+      "let { .missing } = { .present = 1 };\nmissing;\n",
+      "let { .x } = [1];\nx;\n",
+      "let [x] = 1;\nx;\n",
+      "let [x] = #Some 1;\nx;\n",
+      "let { .x } = 1;\nx;\n",
+      "let { .x } = #Some 1;\nx;\n",
+      "let f = (value: I32) => do let [x] = value; x end;\nf(1);\n",
+      "let f = (value: [I32, I32]) => do let [x] = value; x end;\n" +
+      "f([1, 2]);\n",
+      "type Point = struct { .x = I32 }\n" +
+      "let f = (value: Point) => do let { .y } = value; y end;\n" +
+      "f(Point(1));\n",
+      "let f = (value: [[I32, I32]]) => do let [[x]] = value; x end;\n" +
+      "f([[1, 2]]);\n",
+      "type Inner = struct { .x = I32 }\n" +
+      "type Outer = struct { .inner = Inner }\n" +
+      "let f = (value: Outer) => do " +
+      "let { .inner = { .y } } = value; y end;\n",
+      "let value = [[1]];\n" +
+      "let [[x, y], ...tail] = value;\n" +
+      "x;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2316"),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("known named destructuring reaches Core without a shape carrier", () => {
+  const source = "const { .present } = { .present = 1 };\npresent;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(checked_value(lower_duck_source(analysis))?.core, {
+    tag: "program",
+    statements: [
+      {
+        tag: "bind",
+        kind: "const",
+        name: "present",
+        is_linear: false,
+        annotation: undefined,
+        value: { tag: "num", type: "i32", value: 1 },
+      },
+      { tag: "expr", expr: { tag: "var", name: "present" } },
+    ],
+  });
+});
+
+Deno.test("runtime named destructuring projects known shape fields", () => {
+  const source = "let { .x, .y } = { .x = 1, .y = 2 };\nx + y;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(
+    checked_value(lowered)?.core.statements.map((statement) => {
+      if (statement.tag === "bind") return statement.name;
+      return statement.tag;
+    }),
+    ["x", "y", "expr"],
+  );
+});
+
+Deno.test("structural binding annotations validate projected values", () => {
+  const accepted = analyze_duck_source(
+    parse_duck_source(
+      "let { .x: Text, .nested = { .value: I32 } } = " +
+        '{ .x = "hi", .nested = { .value = 1 } };\n' +
+        "x;\n",
+    ),
+  );
+  assert_equals(accepted.diagnostics, []);
+  assert_equals(
+    checked_value(lower_duck_source(accepted)) !== undefined,
+    true,
+  );
+
+  const source = 'let { .x: I32 } = { .x = "hi" };\nx;\n';
+  const mismatch = analyze_duck_source(parse_duck_source(source));
+  assert_equals(mismatch.diagnostics, [{
+    code: "DUCK2306",
+    severity: "error",
+    message: "Binding annotation expects I32, got Text",
+    span: {
+      start: source.indexOf('"hi"'),
+      end: source.indexOf('"hi"') + '"hi"'.length,
+    },
+  }]);
+  assert_equals(checked_value(lower_duck_source(mismatch)), undefined);
+
+  const typed_source = "type Point = struct { .x = Text }\n" +
+    "let f = (value: Point) => do let { .x: I32 } = value; x end;\n" +
+    'f(Point("text"));\n';
+  const typed_mismatch = analyze_duck_source(
+    parse_duck_source(typed_source),
+  );
+  assert_equals(
+    typed_mismatch.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2306" &&
+      diagnostic.message === "Binding annotation expects I32, got Text"
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(typed_mismatch)), undefined);
+});
+
+Deno.test("structural alternatives select a compatible known aggregate", () => {
+  for (
+    const source of [
+      "let [x] | [x, ..._] = [1, 2];\nx;\n",
+      "let { .x } | { .x, .y = _ } = { .x = 1, .y = 2 };\nx;\n",
+      "let { .x, .y = _ } | { .x } = { .x = 1, .y = 2 };\nx;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered) !== undefined, true);
+  }
+});
+
+Deno.test("array rest patterns project known shape entries", () => {
+  for (
+    const source of [
+      "let [x, ...rest] = { .x = 1, .y = 2 };\nx;\n",
+      "let [x, ..._] = { .x = 1, .y = 2 };\nx;\n",
+      "let [x] | [x, ..._] = { .x = 1, .y = 2 };\nx;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered) !== undefined, true);
+  }
+});
+
+Deno.test("typed array rest patterns lower with their declared shape", () => {
+  for (
+    const source of [
+      "let f = (value: [I32, I32]) => do " +
+      "let [x, ...rest] = value; x end;\nf([1, 2]);\n",
+      "let f = (value: [I32, I32]) => do " +
+      "let [x, ..._] = value; x end;\nf([1, 2]);\n",
+      "let f = (value: [[I32, I32]]) => do " +
+      "let [[x, ...rest]] = value; x end;\nf([[1, 2]]);\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered) !== undefined, true);
+  }
+});
+
+Deno.test("semantic indexes expose structural binders with exact origins", () => {
+  for (
+    const [source, names] of [
+      ["let [left, right] = pair;\n", ["left", "right"]],
+      ["let #Some value = option;\n", ["value"]],
+      ["let x | x = value;\n", ["x"]],
+      ['let "${capture}" = text;\n', ["capture"]],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals([...analysis.symbols.keys()], [...names]);
+    for (const name of names) {
+      const value = analysis.symbols.get(name)?.[0];
+      if (value === undefined) {
+        throw new Error("Expected a semantic identity for " + name);
+      }
+      const start = source.indexOf(name);
+      assert_equals(analysis.origins.get(value), {
+        source_node: analysis.origins.get(value)?.source_node,
+        start,
+        end: start + name.length,
+      });
+    }
+  }
+});
+
+Deno.test("semantic indexes expose every mutual binding with exact origins", () => {
+  const source = "let rec even = value => odd(value)\n" +
+    "and odd = value => even(value);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals([...analysis.symbols.keys()], ["even", "odd", "value"]);
+  assert_equals(analysis.symbols.get("value")?.length, 2);
+  for (const name of ["even", "odd"]) {
+    const value = analysis.symbols.get(name)?.[0];
+    if (value === undefined) {
+      throw new Error("Expected a semantic identity for " + name);
+    }
+    const start = source.indexOf(name + " =");
+    assert_equals(analysis.origins.get(value), {
+      source_node: analysis.origins.get(value)?.source_node,
+      start,
+      end: start + name.length,
+    });
+  }
+});
+
+Deno.test("semantic origins exclude binder annotations", () => {
+  for (
+    const source of [
+      "let x: I32 = 1;\nx;\n",
+      "let { .x: I32 } = { .x = 1 };\nx;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const value = analysis.symbols.get("x")?.[0];
+    if (value === undefined) {
+      throw new Error("Expected an exact origin for annotated binder x");
+    }
+    const start = source.indexOf("x");
+    assert_equals(analysis.origins.get(value), {
+      source_node: analysis.origins.get(value)?.source_node,
+      start,
+      end: start + 1,
+    });
+  }
+});
+
+Deno.test("unusable shorthand keywords never enter the semantic index", () => {
+  for (
+    const source of [
+      "let { .true } = value;\n",
+      "let { .false: I32 } = value;\n",
+      "let { .let } = value;\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics.length > 0, true);
+    assert_equals([...analysis.symbols.keys()], []);
+  }
+});

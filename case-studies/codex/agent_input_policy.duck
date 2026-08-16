@@ -6,36 +6,36 @@ const {} = import "./agent_types.duck" ();
 type AgentInputTextOption = AgentTextOption
 type AgentInputI64Option = AgentI64Option
 
-const validate_collab_input = (message: AgentInputTextOption, item_count: I32) => {
-  if let `Some text = message {
-    if item_count >= 0 {
-      `InputRejected "Provide either message or items, but not both"
-    } else if text_trim_ascii_whitespace text == "" {
-      `InputRejected "Empty message can't be sent to an agent"
-    } else {
-      `InputAccepted text
-    }
-  } else if item_count < 0 {
-    `InputRejected "Provide one of: message or items"
-  } else if item_count == 0 {
-    `InputRejected "Items can't be empty"
-  } else {
-    `InputAccepted "items"
-  }
-};
+const validate_collab_input = (message: AgentInputTextOption, item_count: I32) => do
+  if let #Some text = message then
+    if item_count >= 0 then
+      #InputRejected "Provide either message or items, but not both"
+    else text_trim_ascii_whitespace text == "" then
+      #InputRejected "Empty message can't be sent to an agent"
+    else
+      #InputAccepted text
+    end;
+  else item_count < 0 then
+    #InputRejected "Provide one of: message or items"
+  else item_count == 0 then
+    #InputRejected "Items can't be empty"
+  else
+    #InputAccepted "items"
+  end;
+end;
 
-const normalize_wait_timeout = (configured: AgentInputI64Option) => {
-  let timeout = if let `Some value = configured { value } else { 30000i64 };
+const normalize_wait_timeout = (configured: AgentInputI64Option) => do
+  let timeout = if let #Some value = configured then value else 30000i64 end;
 
-  if timeout <= 0i64 {
-    `InvalidTimeout "timeout_ms must be greater than zero"
-  } else if timeout < 10000i64 {
-    `Timeout 10000i64
-  } else if timeout > 3600000i64 {
-    `Timeout 3600000i64
-  } else {
-    `Timeout timeout
-  }
-};
+  if timeout <= 0i64 then
+    #InvalidTimeout "timeout_ms must be greater than zero"
+  else timeout < 10000i64 then
+    #Timeout 10000i64
+  else timeout > 3600000i64 then
+    #Timeout 3600000i64
+  else
+    #Timeout timeout
+  end;
+end;
 
 return { .normalize_wait_timeout, .validate_collab_input };

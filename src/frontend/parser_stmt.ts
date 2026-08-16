@@ -25,6 +25,7 @@ import type { RecoveryInterval } from "./parser_cursor.ts";
 import type { FixityTable } from "./fixity.ts";
 import { is_fixity_keyword } from "./fixity.ts";
 import { parse_type_expr } from "./type_expr.ts";
+import { is_effect_scalar_type } from "./effect_operation.ts";
 
 export class ParserStmt extends ParserTypeDeclaration {
   constructor(
@@ -128,7 +129,8 @@ export class ParserStmt extends ParserTypeDeclaration {
 
       if (
         this.peek().kind === "name" &&
-        is_fixity_keyword(this.peek().text)
+        is_fixity_keyword(this.peek().text) &&
+        this.peek(1).kind === "number"
       ) {
         declarations.push(this.concrete_node(
           start,
@@ -238,7 +240,8 @@ export class ParserStmt extends ParserTypeDeclaration {
           ));
         } else if (
           this.peek().kind === "name" &&
-          is_fixity_keyword(this.peek().text)
+          is_fixity_keyword(this.peek().text) &&
+          this.peek(1).kind === "number"
         ) {
           declarations.push(this.concrete_node(
             start,
@@ -669,7 +672,7 @@ export class ParserStmt extends ParserTypeDeclaration {
   private parse_effect_param(text: string): EffectParam {
     const parts = text.split(/\s+/);
 
-    if (parts[0] !== "&" && parts[0] !== "#") {
+    if (parts[0] !== "&" && parts[0] !== "freeze") {
       if (is_legacy_effect_ownership(parts[0])) {
         throw new Error("Unknown effect parameter ownership: " + parts[0]);
       }
@@ -691,7 +694,7 @@ export class ParserStmt extends ParserTypeDeclaration {
       return { type_name, ownership: "bounded_borrow" };
     }
 
-    if (ownership_symbol === "#") {
+    if (ownership_symbol === "freeze") {
       return { type_name, ownership: "frozen_shareable" };
     }
 
@@ -708,7 +711,7 @@ export class ParserStmt extends ParserTypeDeclaration {
         throw new Error("Effect results cannot use bounded borrow ownership");
       }
 
-      if (ownership_symbol === "#") {
+      if (ownership_symbol === "freeze") {
         const type_name = parts.slice(1).join("");
         expect(type_name.length > 0, "Expected effect result type");
         return { type_name, ownership: "frozen_shareable" };
@@ -934,6 +937,11 @@ export class ParserStmt extends ParserTypeDeclaration {
       const next = this.peek(1);
 
       if (next.kind === "symbol" && (next.text === "=" || next.text === ":=")) {
+        if (name === "end") {
+          throw this.error(
+            "`end` is reserved and cannot be used as a variable",
+          );
+        }
         this.expect_supported_name(name, "Runtime binding");
         expect_snake_case(name, "Runtime binding");
         this.advance();
@@ -964,6 +972,11 @@ export class ParserStmt extends ParserTypeDeclaration {
         const after = this.tokens[after_index];
 
         if (after && after.kind === "symbol" && after.text === "=") {
+          if (name === "end") {
+            throw this.error(
+              "`end` is reserved and cannot be used as a variable",
+            );
+          }
           this.expect_supported_name(name, "Runtime binding");
           expect_snake_case(name, "Runtime binding");
           this.advance();
@@ -1034,10 +1047,4 @@ function is_legacy_effect_ownership(name: string | undefined): boolean {
   return name === "bounded_borrow" || name === "frozen_shareable" ||
     name === "ownership_transfer" || name === "unique_heap" ||
     name === "scalar";
-}
-
-function is_effect_scalar_type(type_name: string): boolean {
-  return type_name === "Unit" || type_name === "Bool" || type_name === "Char" ||
-    type_name === "Int" || type_name === "I32" || type_name === "U32" ||
-    type_name === "I64" || type_name === "F32" || type_name === "F64";
 }

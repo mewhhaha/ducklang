@@ -8,8 +8,16 @@ let conventional: FixtureName = ["mcp__calendar", "create_event"];
 let trailing_separator: FixtureName = ["mcp__sample__", "lookup"];
 let leading_separator: FixtureName = ["group", "_lookup"];
 let score = 0;
-if code_mode_name plain == "update_plan" { score = score + 1 }
-if code_mode_name conventional == "mcp__calendar__create_event" { score = score + 10 }
-if code_mode_name trailing_separator == "mcp__sample__lookup" { score = score + 100 }
-if code_mode_name leading_separator == "group_lookup" { score = score + 1000 }
+if code_mode_name plain == "update_plan" then
+  score = score + 1
+end;
+if code_mode_name conventional == "mcp__calendar__create_event" then
+  score = score + 10
+end;
+if code_mode_name trailing_separator == "mcp__sample__lookup" then
+  score = score + 100
+end;
+if code_mode_name leading_separator == "group_lookup" then
+  score = score + 1000
+end;
 return { .score = score };

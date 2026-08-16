@@ -14,50 +14,50 @@ type TurnPagesPage = AppServerThreadTurnsPage
 type TurnPagesPageResult = AppServerThreadTurnsPageResult
 
 const serialize_optional_cursor: TurnPagesCursorOption -> TurnPagesTextOption = (
-  cursor: TurnPagesCursorOption ) => {
-  if let `Some value = cursor {
-    `Some (serialize_thread_turns_cursor value)
-  } else {
-    `None ()
-  }
-};
+  cursor: TurnPagesCursorOption) => do
+    if let #Some value = cursor then
+      #Some (serialize_thread_turns_cursor value)
+    else
+      #None
+    end;
+  end;
 
-let list_legacy_thread_turns: [TurnPagesTurns, TurnPagesParams] -> TurnPagesPageResult = (
+let list_legacy_thread_turns: (TurnPagesTurns, TurnPagesParams) -> TurnPagesPageResult = (
   history: TurnPagesTurns,
   params: TurnPagesParams,
-) => {
+) => do
   let [_, encoded_cursor, page_size, sort_direction, items_view] = params;
-  let cursor: TurnPagesCursorOption = `None ();
-  let cursor_error: TurnPagesTextOption = `None ();
+  let cursor: TurnPagesCursorOption = #None;
+  let cursor_error: TurnPagesTextOption = #None;
 
-  if let `Some encoded = encoded_cursor {
+  if let #Some encoded = encoded_cursor then
     let parsed = parse_thread_turns_cursor encoded;
-    if let `Ok value = parsed {
-      cursor = `Some value
-    } else if let `Err reason = parsed {
-      cursor_error = `Some reason
-    }
-  }
+    if let #Ok value = parsed then
+      cursor = #Some value
+    else let #Err reason = parsed then
+      cursor_error = #Some reason
+    end;
+  end;
 
-  if let `Some reason = cursor_error {
-    `Err reason
-  } else {
-    let paginated = paginate_thread_turns [history, cursor, page_size, sort_direction, items_view];
-    if let `Ok page = paginated {
+  if let #Some reason = cursor_error then
+    #Err reason
+  else
+    let paginated = paginate_thread_turns (history, cursor, page_size, sort_direction, items_view);
+    if let #Ok page = paginated then
       let [turns, next_cursor, backwards_cursor] = page;
       let response: TurnPagesPage = [
         turns,
         serialize_optional_cursor next_cursor,
         serialize_optional_cursor backwards_cursor,
       ];
-      `Ok response;
-    } else if let `Err reason = paginated {
-      `Err reason
-    } else {
-      `Err "thread/turns/list could not materialize a legacy page"
-    }
-  }
-};
+      #Ok response;
+    else let #Err reason = paginated then
+      #Err reason
+    else
+      #Err "thread/turns/list could not materialize a legacy page"
+    end;
+  end;
+end;
 
 return {
   .list_legacy_thread_turns,

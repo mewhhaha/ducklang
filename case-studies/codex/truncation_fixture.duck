@@ -10,20 +10,20 @@ const {
 
 let score: I32 = 0;
 
-if text_truncate_middle_bytes("éabcdefghij", 5) == "é…7 chars truncated…hij" {
+if text_truncate_middle_bytes("éabcdefghij", 5) == "é…7 chars truncated…hij" then
   score = score + 1
-}
+end;
 
-if text_truncate_middle_tokens("abcdefghijklmnopqrst", 2) == "abcd…3 tokens truncated…qrst" {
+if text_truncate_middle_tokens("abcdefghijklmnopqrst", 2) == "abcd…3 tokens truncated…qrst" then
   score = score + 10
-}
+end;
 
-if format_i32 - 2147483648 == "-2147483648" {
+if format_i32 - 2147483648 == "-2147483648" then
   score = score + 100
-}
+end;
 
-if text_utf8_length "aé🙂" == 3 && text_take_utf8_characters("aé🙂z", 3) == "aé🙂" {
+if text_utf8_length "aé🙂" == 3 && text_take_utf8_characters("aé🙂z", 3) == "aé🙂" then
   score = score + 1000
-}
+end;
 
 return { .score = score };

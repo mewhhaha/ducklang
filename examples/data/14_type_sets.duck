@@ -3,7 +3,7 @@ const { .length } = import "duck:prelude/runtime" ();
 type Value = Int :| Text :| I64
 type Answer = (Value :- Text) :& Int
 type Marker = #answer
-type FrozenText = #Text
+type FrozenText = freeze Text
 
 const marker: Marker = #answer;
 let greeting: FrozenText = "hello";
@@ -11,10 +11,10 @@ let view: &Text = &greeting;
 let value: Value = 37;
 let marker_matches = marker is #answer;
 
-let answer: Answer = if value is Int {
+let answer: Answer = if value is Int then
   value + length view
-} else {
+else
   0
-};
+end;
 
-if marker_matches { answer } else { 0 }
+if marker_matches then answer else 0 end;

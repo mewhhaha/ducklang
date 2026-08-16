@@ -5,8 +5,8 @@ const {} = import "./citation_parser.duck" ();
 const {} = import "./proposed_plan_types.duck" ();
 
 type AssistantTextMode =
-  | `NormalAssistantText Unit
-  | `PlanAssistantText Unit
+  | #NormalAssistantText
+  | #PlanAssistantText
 
 type AssistantTextParser = struct {
   .mode = AssistantTextMode,

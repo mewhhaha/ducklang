@@ -173,7 +173,13 @@ function format_type_declaration(declaration: TypeDeclaration): string {
   }
 
   const cases = declaration.body.cases.map((item) => {
-    return "  | `" + item.name + " " + format_type_text(item.type_name);
+    let text = "  | #" + item.name;
+
+    if (item.type_name !== "Unit") {
+      text += " " + format_type_text(item.type_name);
+    }
+
+    return text;
   });
 
   if (cases.length === 1) {
@@ -183,8 +189,13 @@ function format_type_declaration(declaration: TypeDeclaration): string {
       throw new Error("Missing single sum case");
     }
 
-    return head + " = `" + single.name + " " +
-      format_type_text(single.type_name);
+    let text = head + " = #" + single.name;
+
+    if (single.type_name !== "Unit") {
+      text += " " + format_type_text(single.type_name);
+    }
+
+    return text;
   }
 
   return head + " =\n" + cases.join("\n");

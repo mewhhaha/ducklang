@@ -1,0 +1,179 @@
+module () where
+
+const { .list, .text_append, .text_starts_with } = import "duck:prelude/functional" ();
+const {} = import "./tool_types.duck" ();
+
+type PatchSafetyApproval = ToolApprovalPolicy
+type PatchSafetyGranular = ToolGranularApprovals
+type PatchSafetySandbox = ToolFileSystemSandbox
+type PatchSafetyRuntimeProfile = ToolRuntimeProfile
+type PatchSafetyTarget = ToolPatchTarget
+type PatchSafetyTargets = ToolPatchTargets
+type PatchSafetyOutcome = ToolPatchSafety
+
+const paths = comptime list Text;
+const patch_targets = comptime list PatchSafetyTarget;
+
+const granular_allows_patch_sandbox_approval = (granular: PatchSafetyGranular) => do
+  let [sandbox_approval, _, _, _, _] = granular;
+  sandbox_approval
+end;
+
+const path_is_within = (path: Text, root: Text) => do
+  if path == root then
+    true
+  else root == "/" then
+    text_starts_with (path, "/")
+  else
+    text_starts_with (path, text_append (root, "/"))
+  end
+end;
+
+const path_is_writable = (path: Text, sandbox: PatchSafetySandbox) => do
+  let [_, writable_roots, full_disk_write, _, non_writable_roots] = sandbox;
+  let current = non_writable_roots;
+  let blocked = false;
+
+  loop do
+    if let #Cons [root, tail] = current then
+      if path_is_within(path, root) then
+        blocked = true
+        break;
+      end
+
+      current = tail
+    else
+      break;
+    end
+  end
+
+  if blocked then
+    false
+  else full_disk_write then
+    true
+  else
+    current = writable_roots
+    let writable = false;
+
+    loop do
+      if let #Cons [root, tail] = current then
+        if path_is_within(path, root) then
+          writable = true
+          break;
+        end
+
+        current = tail
+      else
+        break;
+      end
+    end
+
+    writable
+  end
+end;
+
+const patch_target_is_writable = (target: PatchSafetyTarget, sandbox: PatchSafetySandbox) => do
+  let [path, move_path] = target;
+  let writable = path_is_writable(path, sandbox);
+
+  if let #Some destination = move_path then
+    writable && path_is_writable(destination, sandbox)
+  else
+    writable
+  end
+end;
+
+const patch_is_constrained = (targets: PatchSafetyTargets, sandbox: PatchSafetySandbox) => do
+  let current = targets;
+  let constrained = true;
+
+  loop do
+    if let #Cons [target, tail] = current then
+      if !(patch_target_is_writable(target, sandbox)) then
+        constrained = false
+        break;
+      end
+
+      current = tail
+    else
+      break;
+    end
+  end
+
+  constrained
+end;
+
+const approval_rejects_patch_sandbox_prompt = (policy: PatchSafetyApproval) => do
+  if let #Never = policy then
+    true
+  else let #Granular granular = policy then
+    !(granular_allows_patch_sandbox_approval granular)
+  else
+    false
+  end
+end;
+
+const patch_rejection_reason = (
+  profile: PatchSafetyRuntimeProfile,
+  sandbox: PatchSafetySandbox,
+) => do
+  let [_, writable_roots, full_disk_write, _, _] = sandbox;
+  let read_only = false;
+
+  if let #Managed = profile then
+    read_only = !(full_disk_write) && paths.length(writable_roots) == 0
+  end
+
+  if read_only then
+    "writing is blocked by read-only sandbox; rejected by user approval settings"
+  else
+    "writing outside of the project; rejected by user approval settings"
+  end
+end;
+
+const assess_patch_safety: (
+  PatchSafetyTargets,
+  PatchSafetyApproval,
+  PatchSafetyRuntimeProfile,
+  PatchSafetySandbox,
+  Bool,
+) -> PatchSafetyOutcome = (
+  targets: PatchSafetyTargets,
+  policy: PatchSafetyApproval,
+  profile: PatchSafetyRuntimeProfile,
+  sandbox: PatchSafetySandbox,
+  platform_sandbox_available: Bool,
+) => do
+  if patch_targets.length(targets) == 0 then
+    #Reject ("empty patch")
+  else let #UnlessTrusted = policy then
+    #AskUser
+  else
+    let rejects_prompt = approval_rejects_patch_sandbox_prompt policy;
+    let constrained = patch_is_constrained(targets, sandbox);
+    let outer_sandbox_disabled = if let #Disabled = profile then
+      true
+    else let #External = profile then
+      true
+    else
+      false
+    end;
+
+    if constrained && outer_sandbox_disabled then
+      #AutoApprove ([false, false])
+    else constrained && platform_sandbox_available then
+      #AutoApprove ([true, false])
+    else rejects_prompt then
+      #Reject (patch_rejection_reason(profile, sandbox))
+    else
+      #AskUser
+    end
+  end
+end;
+
+return {
+  .path_is_within,
+  .path_is_writable,
+  .patch_is_constrained,
+  .assess_patch_safety,
+};

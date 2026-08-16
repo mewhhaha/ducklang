@@ -9,14 +9,14 @@ declare Init { input: Input }
 let value = 0;
 outer <- Input.flag()
 
-if outer {
+if outer then
   inner <- Input.flag()
-  if inner {
+  if inner then
     value = 42
-  }
-} else {
+  end;
+else
   value = 21
-}
+end;
 
 let result = value;
 return { .result = result };
